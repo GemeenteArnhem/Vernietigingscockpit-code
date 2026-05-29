@@ -11,8 +11,10 @@ import Tabs from "../components/Tabs";
 
 import TaskDefinitionInstances from "../features/task-definition/components/TaskDefinitionInstances";
 import TaskDefinitionConfiguration from "../features/task-definition/components/TaskDefinitionConfiguration";
+import type { Connector } from "../features/task-definition/components/ConnectorTable";
+import type { TaskDefinitionInstance } from "../features/task-definition/components/TaskDefinitionInstances";
 
-const mockInstanties = [
+const mockInstanties: TaskDefinitionInstance[] = [
   {
     id: "1",
     naam: "Zorgdomein 2026",
@@ -110,7 +112,7 @@ const configuratie = {
     "R. de Vries",
 };
 
-const stekkers = [
+const stekkers: Connector[] = [
   {
     id: "1",
     naam: "Suite4sociaaldomein",
@@ -165,21 +167,6 @@ export default function TaskDefinitionDetailPage() {
           color: "blue",
         }}
         subtitel="Taakdefinities, die de basis zijn voor (geplande) taakuitvoeringen"
-        meta={[
-          {
-            label:
-              "Eigenaar",
-            value:
-              "J. de Vries",
-          },
-
-          {
-            label:
-              "Archivaris",
-            value:
-              "M. Bakker",
-          },
-        ]}
         actions={[]}
       />
 

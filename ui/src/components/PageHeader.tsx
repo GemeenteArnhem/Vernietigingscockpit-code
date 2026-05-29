@@ -119,11 +119,7 @@ export default function TaskHeader({
                 `}
               >
                 {action.label}
-
-                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-current">
-                  {action.icon}
-                </span>
-                
+                {action.icon}
               </button>
             )
           )}

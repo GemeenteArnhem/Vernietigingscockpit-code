@@ -1,10 +1,3 @@
-type Stat = {
-  label: string;
-  value: string;
-  sub?: string;
-  color: "blue" | "orange" | "red" | "green";
-};
-
 const DatabaseIcon = () => (
   <svg viewBox="0 0 24 24" className="w-5 h-5">
     <ellipse cx="12" cy="6" rx="7" ry="3" stroke="currentColor" strokeWidth="1.5" fill="none" />
@@ -44,7 +37,16 @@ const CheckIcon = () => (
   </svg>
 );
 
-const stats = [
+type Stat = {
+  label: string;
+  value: string;
+  sub?: string;
+  color: Color;
+  icon: React.ReactNode; 
+};
+
+
+const stats: Stat[] = [
   {
     label: "Totaal objecten",
     value: "1.248",
@@ -93,11 +95,13 @@ const colorMap = {
   },
 };
 
+type Color = keyof typeof colorMap;
+
 const Icon = ({
   color,
   icon,
 }: {
-  color: keyof typeof colorMap;
+  color: Color;
   icon: React.ReactNode;
 }) => {
   return (
@@ -120,7 +124,7 @@ export default function StatsBar() {
           className="bg-white border border-gray-200 rounded-xl p-2 flex items-center gap-4"
         >
           {/* icon */}
-          <Icon color={stat.color} icon={stat.icon} />
+          <Icon color={stat.color as Color} icon={stat.icon} />
 
           {/* content */}
           <div className="flex flex-col">

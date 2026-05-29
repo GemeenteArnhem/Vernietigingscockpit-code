@@ -67,18 +67,6 @@ const connectors: Connector[] = [
   },
 ];
 
-const taskMeta = [
-  { label: "Taak-ID", value: "06" },
-  { label: "Recordmanager", value: "Marco de Boer" },
-  { label: "Startdatum", value: "08-04-2024" },
-];
-
-const ArrowCircleIcon = () => (
-  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-current">
-    <ArrowRight className="h-3.5 w-3.5" />
-  </span>
-);
-
 function renderStekkerStatus(status: Connector["stekkerStatus"]) {
   if (status === "SUCCES") {
     return <StatusBadge status="SUCCES" />;

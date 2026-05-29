@@ -37,11 +37,6 @@ const statusConfig: Record<
     variant: "danger",
   },
 
-  LOPEND: {
-    label: "Lopend",
-    variant: "info",
-  },
-
   IDLE: {
     label: "Idle",
     variant: "neutral",

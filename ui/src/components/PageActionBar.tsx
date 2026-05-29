@@ -1,15 +1,7 @@
-const ArrowRight = () => (
-  <svg viewBox="0 0 24 24" className="w-4 h-4">
-    <path
-      d="M5 12H19M19 12L13 6M19 12L13 18"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      fill="none"
-    />
-  </svg>
-);
+import 
+{ 
+  CircleArrowRight,
+} from "lucide-react";
 
 type Props = {
   onBack?: () => void;
@@ -44,9 +36,7 @@ export default function PageActionBar({
           className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700"
         >
           {nextLabel}
-          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-current">
-            <ArrowRight className="h-3.5 w-3.5" />
-          </span>
+          <CircleArrowRight  />
         </button>
 
       </div>

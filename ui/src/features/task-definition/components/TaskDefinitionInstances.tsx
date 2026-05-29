@@ -3,23 +3,16 @@ import StatusBadge from "../../../components/StatusBadge";
 export type TaskDefinitionInstance =
   {
     id: string;
-
     naam: string;
-
     subtitle: string;
-
     recordmanager: string;
-
     status:
       | "GEPLAND"
       | "LOPEND"
       | "VOLTOOID"
       | "VERTRAAGD";
-
     stap: string;
-
     voortgang: number;
-
     highlighted?: boolean;
   };
 

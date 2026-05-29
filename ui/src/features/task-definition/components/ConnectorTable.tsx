@@ -11,7 +11,8 @@ export type Connector = {
     | "ACTIEF_CONNECTOR"
     | "INACTIEF"
     | "FOUT"
-    | "WAARSCHUWING";
+    | "WAARSCHUWING"
+    | "SUCCES";
 };
 
 type Props = {
