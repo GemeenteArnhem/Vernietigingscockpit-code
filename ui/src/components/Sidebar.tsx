@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import 
+{ 
+  LayoutDashboard,
+  Clipboard,
+  Archive,
+} from "lucide-react";
 
 import SidebarFooter from "./SidebarFooter";
 import SidebarItem from "./SidebarItem";
@@ -27,41 +33,9 @@ const ShieldIcon = () => (
   </svg>
 );
 
-const TakenIcon = () => (
-  <svg viewBox="0 0 24 24" className="h-5 w-5">
-    <path
-      d="M9 3H15V5H9V3ZM5 7H19V21H5V7Z"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      fill="none"
-    />
-  </svg>
-);
-
-const DashboardIcon = () => (
-  <svg viewBox="0 0 24 24" className="h-5 w-5">
-    <path
-      d="M4 4H10V10H4V4ZM14 4H20V8H14V4ZM14 12H20V20H14V12ZM4 14H10V20H4V14Z"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      fill="none"
-    />
-  </svg>
-);
-
-const ArchiefIcon = () => (
-  <svg viewBox="0 0 24 24" className="h-5 w-5">
-    <path
-      d="M4 4H20V8H4V4ZM6 10H18V20H6V10Z"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      fill="none"
-    />
-  </svg>
-);
-
 function shouldAutoCollapse(pathname: string) {
   return (
+    /^\/taak\/[^/]+$/.test(pathname) ||
     pathname.includes("/beoordeling") ||
     pathname.includes("/accordering")
   );
@@ -132,7 +106,7 @@ export default function Sidebar() {
         <div className="mt-2 flex flex-col gap-1 px-2">
           <SidebarItem
             label="Dashboard"
-            icon={<DashboardIcon />}
+            icon={<LayoutDashboard />}
             active={location.pathname.startsWith("/dashboard")}
             expanded={isExpanded}
             onClick={() => navigate("/dashboard")}
@@ -140,7 +114,7 @@ export default function Sidebar() {
 
           <SidebarItem
             label="Taken"
-            icon={<TakenIcon />}
+            icon={<Clipboard />}
             active={
               location.pathname.startsWith("/taken") ||
               location.pathname.startsWith("/taak/")
@@ -151,7 +125,7 @@ export default function Sidebar() {
 
           <SidebarItem
             label="Archief"
-            icon={<ArchiefIcon />}
+            icon={<Archive />}
             active={location.pathname.startsWith("/taakdefinities")}
             expanded={isExpanded}
           />
