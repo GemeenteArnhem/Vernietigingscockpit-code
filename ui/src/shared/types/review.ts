@@ -6,7 +6,8 @@ export type ReviewQueueStatus =
   | "nog-te-beoordelen"
   | "retour"
   | "conflict"
-  | "afgerond";
+  | "afgerond"
+  | "uitgesteld";
 
 export type ReviewWorkflowItem = {
   actor: string;

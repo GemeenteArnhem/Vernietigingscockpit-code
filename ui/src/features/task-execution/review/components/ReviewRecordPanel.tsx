@@ -55,6 +55,8 @@ function formatQueueStatus(status?: ReviewRecordContext["queueStatus"]) {
   switch (status) {
     case "afgerond":
       return "VOLTOOID";
+    case "uitgesteld":
+      return "GEPAUZEERD";
     case "conflict":
       return "FOUT";
     case "retour":
@@ -232,10 +234,18 @@ export default function ReviewRecordPanel({
             </div>
             <div className="border-b border-slate-100 pb-2">
               <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
-                Omvang
+                Omvang documenten
               </dt>
               <dd className="mt-1 text-sm font-medium text-slate-900">
-                {record.omvang} dossier{record.omvang === 1 ? "" : "s"}
+                {record.omvangDocumenten} document{record.omvangDocumenten === 1 ? "" : "en"}
+              </dd>
+            </div>
+            <div className="border-b border-slate-100 pb-2">
+              <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+                Omvang cliënten
+              </dt>
+              <dd className="mt-1 text-sm font-medium text-slate-900">
+                {record.omvangClienten} cliënt{record.omvangClienten === 1 ? "" : "en"}
               </dd>
             </div>
             <div className="border-b border-slate-100 pb-2">

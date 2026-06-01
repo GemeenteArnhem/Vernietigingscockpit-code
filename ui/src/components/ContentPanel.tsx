@@ -38,7 +38,7 @@ export default function ContentPanel({
 }: ContentPanelProps) {
   return (
     <main
-      className={`flex min-w-0 flex-1 flex-col overflow-hidden bg-slate-50/30 ${className}`.trim()}
+      className={`flex min-w-0 flex-1 basis-0 flex-col overflow-hidden bg-slate-50/30 ${className}`.trim()}
     >
       {children}
     </main>

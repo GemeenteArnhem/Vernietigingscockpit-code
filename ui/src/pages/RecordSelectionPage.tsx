@@ -186,7 +186,7 @@ export default function RecordSelectionPage() {
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <ContentPanel>
           <div className="flex-1 overflow-y-auto p-4">
-            <div className="flex w-full flex-col gap-4">
+            <div className="flex min-w-0 w-full flex-col gap-4">
             <ContentPanelHeader
               eyebrow="Taakuitvoering"
               title="Selectie"

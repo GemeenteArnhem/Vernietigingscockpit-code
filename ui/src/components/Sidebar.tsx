@@ -38,6 +38,7 @@ function shouldAutoCollapse(pathname: string) {
   return (
     /^\/taak\/[^/]+$/.test(pathname) ||
     pathname.includes("/dashboard") ||
+    pathname.includes("/selectie") ||
     pathname.includes("/beoordeling") ||
     pathname.includes("/accordering")
   );

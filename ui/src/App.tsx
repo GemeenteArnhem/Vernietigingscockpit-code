@@ -6,7 +6,6 @@ import {
 } from "react-router-dom";
 
 import AppShell from "./layouts/AppShell";
-import AppShellWithTaskSidebarAndContextSidebar from "./layouts/AppShellWithContextSidebar";
 
 import DashboardPage from "./pages/DashboardPage";
 import DestructionResultPage from "./pages/DestructionResultPage";
@@ -63,9 +62,7 @@ export default function App() {
 
       {/* TAAKUITVOERING MET RECHTERSIDEBAR */}
       <Route
-        element={
-          <AppShellWithTaskSidebarAndContextSidebar />
-        }
+        element={<AppShell />}
       >
         <Route
           path="/taak/:taakId/taakuitvoering/:id/accordering/proceseigenaar"

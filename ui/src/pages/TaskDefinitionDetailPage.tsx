@@ -801,7 +801,7 @@ export default function TaskDefinitionDetailPage() {
   });
 
   return (
-    <div className="flex min-h-0 flex-1">
+    <div className="flex min-h-0 flex-1 overflow-hidden">
       <RecordPaneBar
         title="Taakdefinities"
         searchValue={search}
@@ -930,10 +930,10 @@ export default function TaskDefinitionDetailPage() {
                     keyLabel: "D",
                     label: "Volgende",
                   },
-                  {
-                    keyLabel: "W",
-                    label: "Primaire actie",
-                  },
+                    {
+                      keyLabel: "W",
+                      label: "Actie uitvoeren",
+                    },
                 ]}
               />
             </div>

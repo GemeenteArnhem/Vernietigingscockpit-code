@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  ArrowLeftRight,
   CheckCheck,
+  Clock3,
   FileX2,
   SendToBack,
 } from "lucide-react";
@@ -11,29 +11,38 @@ import ActionPanel, {
   ActionPanelButton,
   ActionPanelButtonGroup,
   ActionPanelChoice,
+  ActionPanelEmptyState,
   ActionPanelSection,
   ActionPanelShortcuts,
-  ActionPanelSummary,
   ActionPanelTextarea,
 } from "../components/ActionPanel";
 import ConfirmDialog from "../components/ConfirmDialog";
 import RecordPaneBar, {
   type RecordPaneBarFilter,
+  type RecordPaneBarFilterSection,
   type RecordPaneBarItem,
   type RecordPaneBarTab,
   type RecordPaneBarTone,
 } from "../components/record-pane/RecordPaneBar";
 import ReviewRecordPanel from "../features/task-execution/review/components/ReviewRecordPanel";
-import { initialReviewDecisions, reviewRecordContexts, reviewTaskContext } from "../shared/mocks/reviewPage";
+import { initialReviewDecisions, reviewRecordContexts } from "../shared/mocks/reviewPage";
 import { reviewRows } from "../shared/mocks/reviewRows";
-import type { VernietigingsObject } from "../shared/types/destruction";
 import type {
+  ReviewComment,
   ReviewDecision,
   ReviewQueueStatus,
   ReviewRiskLevel,
 } from "../shared/types/review";
 
-type ReviewFilter = "alle" | "laag-risico" | "afwijkingen" | "retour";
+type ReviewStatusFilter =
+  | "alle"
+  | "nog-te-beoordelen"
+  | "retour"
+  | "conflict"
+  | "afgerond"
+  | "uitgesteld";
+type ReviewRiskFilter = "alle" | ReviewRiskLevel;
+type ReviewAction = ReviewDecision | "uitstellen";
 
 function getDecisionStatus(decision: ReviewDecision): ReviewQueueStatus {
   switch (decision) {
@@ -85,76 +94,65 @@ function getRiskLabel(risk: ReviewRiskLevel) {
   }
 }
 
-function getFilterLabel(filter: ReviewFilter) {
+function getStatusFilterLabel(filter: ReviewStatusFilter) {
   switch (filter) {
-    case "laag-risico":
-      return "Laag risico";
-    case "afwijkingen":
-      return "Afwijkingen";
+    case "alle":
+      return "Alle";
     case "retour":
       return "Retour";
+    case "conflict":
+      return "Uitgesloten";
+    case "afgerond":
+      return "Beoordeeld";
+    case "uitgesteld":
+      return "Uitgesteld";
     default:
-      return "Alle";
+      return "Open";
   }
 }
 
-function matchesFilter(
-  record: VernietigingsObject,
-  risk: ReviewRiskLevel,
-  queueStatus: ReviewQueueStatus,
-  filter: ReviewFilter
-) {
-  if (filter === "laag-risico") {
-    return risk === "laag";
-  }
-
-  if (filter === "afwijkingen") {
-    return queueStatus === "conflict" || record.uitgesloten;
-  }
-
-  if (filter === "retour") {
-    return queueStatus === "retour";
-  }
-
-  return true;
-}
-
-function getDecisionCopy(decision: ReviewDecision) {
-  switch (decision) {
-    case "akkoord":
-      return {
-        title: "Akkoord",
-        description: "Dit record kan worden doorgezet naar accordering.",
-      };
-    case "uitsluiten":
-      return {
-        title: "Uitsluiten",
-        description: "Dit record mag niet vernietigd worden.",
-      };
-    case "retour":
-      return {
-        title: "Retour sturen",
-        description: "Stuur terug voor aanvulling of extra informatie.",
-      };
-    default:
-      return {
-        title: "Nog geen keuze",
-        description: "Kies eerst een beoordeling voor dit record.",
-      };
-  }
-}
+const reviewActions = [
+  {
+    id: "akkoord" as const,
+    title: "Akkoord",
+    icon: <CheckCheck size={18} />,
+    tone: "success" as const,
+  },
+  {
+    id: "uitsluiten" as const,
+    title: "Uitsluiten",
+    icon: <FileX2 size={18} />,
+    tone: "danger" as const,
+  },
+  {
+    id: "retour" as const,
+    title: "Retour sturen",
+    icon: <SendToBack size={18} />,
+    tone: "warning" as const,
+  },
+  {
+    id: "uitstellen" as const,
+    title: "Uitstellen",
+    icon: <Clock3 size={18} />,
+    tone: "neutral" as const,
+  },
+];
 
 export default function RecordReviewPage() {
   const navigate = useNavigate();
   const { taakId, id } = useParams();
 
   const [search, setSearch] = useState("");
-  const [activeTab, setActiveTab] = useState<ReviewQueueStatus>("nog-te-beoordelen");
-  const [activeFilter, setActiveFilter] = useState<ReviewFilter>("alle");
+  const [activeStatusFilter, setActiveStatusFilter] =
+    useState<ReviewStatusFilter>("alle");
+  const [activeRiskFilter, setActiveRiskFilter] = useState<ReviewRiskFilter>("alle");
   const [selectedId, setSelectedId] = useState<string | null>(reviewRows[0]?.id ?? null);
   const [decisions, setDecisions] =
     useState<Record<string, ReviewDecision>>(initialReviewDecisions);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [deferredRecords, setDeferredRecords] = useState<Record<string, boolean>>({});
+  const [selectedActions, setSelectedActions] = useState<Record<string, ReviewAction>>({});
+  const [manualComments, setManualComments] = useState<Record<string, ReviewComment[]>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const contextById = useMemo(
@@ -167,70 +165,121 @@ export default function RecordReviewPage() {
       reviewRows.map((row) => {
         const context = contextById[row.id];
         const computedStatus = getDecisionStatus(decisions[row.id] ?? "open");
-        const queueStatus =
-          decisions[row.id] && decisions[row.id] !== "open"
+        const isDeferred = deferredRecords[row.id] === true;
+        const queueStatus = isDeferred
+          ? "uitgesteld"
+          : decisions[row.id] && decisions[row.id] !== "open"
             ? computedStatus
             : context?.queueStatus ?? "nog-te-beoordelen";
         const risk = context?.risiconiveau ?? "laag";
 
         return {
           row,
-          context,
+          context: context
+            ? {
+                ...context,
+                comments: [...context.comments, ...(manualComments[row.id] ?? [])],
+              }
+            : context,
           queueStatus,
           risk,
         };
       }),
-    [contextById, decisions]
-  );
-
-  const tabs = useMemo<RecordPaneBarTab[]>(
-    () => [
-      {
-        key: "nog-te-beoordelen",
-        label: "Open",
-        count: queueRows.filter((item) => item.queueStatus === "nog-te-beoordelen").length,
-      },
-      {
-        key: "retour",
-        label: "Retour",
-        count: queueRows.filter((item) => item.queueStatus === "retour").length,
-      },
-      {
-        key: "conflict",
-        label: "Uitgesloten",
-        count: queueRows.filter((item) => item.queueStatus === "conflict").length,
-      },
-      {
-        key: "afgerond",
-        label: "Beoordeeld",
-        count: queueRows.filter((item) => item.queueStatus === "afgerond").length,
-      },
-    ],
-    [queueRows]
+    [contextById, decisions, deferredRecords, manualComments]
   );
 
   const filters = useMemo<RecordPaneBarFilter[]>(
-    () => [
-      { key: "alle", label: "Alle" },
-      { key: "laag-risico", label: "Laag risico" },
-      { key: "afwijkingen", label: "Afwijkingen" },
-      { key: "retour", label: "Retour" },
-    ],
+    () => [],
     []
+  );
+
+  const tabs = useMemo<RecordPaneBarTab[]>(() => [], []);
+
+  const filterSections = useMemo<RecordPaneBarFilterSection[]>(
+    () => [
+      {
+        key: "status",
+        label: "Status",
+        activeKey: activeStatusFilter,
+        onChange: (key) => setActiveStatusFilter(key as ReviewStatusFilter),
+        options: [
+          {
+            key: "alle",
+            label: "Alle",
+            count: queueRows.length,
+          },
+          {
+            key: "nog-te-beoordelen",
+            label: "Open",
+            count: queueRows.filter((item) => item.queueStatus === "nog-te-beoordelen").length,
+          },
+          {
+            key: "retour",
+            label: "Retour",
+            count: queueRows.filter((item) => item.queueStatus === "retour").length,
+          },
+          {
+            key: "conflict",
+            label: "Uitgesloten",
+            count: queueRows.filter((item) => item.queueStatus === "conflict").length,
+          },
+          {
+            key: "afgerond",
+            label: "Beoordeeld",
+            count: queueRows.filter((item) => item.queueStatus === "afgerond").length,
+          },
+          {
+            key: "uitgesteld",
+            label: "Uitgesteld",
+            count: queueRows.filter((item) => item.queueStatus === "uitgesteld").length,
+          },
+        ],
+      },
+      {
+        key: "risico",
+        label: "Risico",
+        activeKey: activeRiskFilter,
+        onChange: (key) => setActiveRiskFilter(key as ReviewRiskFilter),
+        options: [
+          {
+            key: "alle",
+            label: "Alle",
+            count: queueRows.length,
+          },
+          {
+            key: "laag",
+            label: "Laag risico",
+            count: queueRows.filter((item) => item.risk === "laag").length,
+          },
+          {
+            key: "middel",
+            label: "Midden risico",
+            count: queueRows.filter((item) => item.risk === "middel").length,
+          },
+          {
+            key: "hoog",
+            label: "Hoog risico",
+            count: queueRows.filter((item) => item.risk === "hoog").length,
+          },
+        ],
+      },
+    ],
+    [activeRiskFilter, activeStatusFilter, queueRows]
   );
 
   const visibleRows = useMemo(
     () =>
       queueRows.filter(({ row, queueStatus, risk }) => {
-        const matchesTab = queueStatus === activeTab;
         const matchesSearch =
           row.titel.toLowerCase().includes(search.toLowerCase()) ||
           row.bron_id?.toLowerCase().includes(search.toLowerCase());
-        const filterMatch = matchesFilter(row, risk, queueStatus, activeFilter);
+        const matchesRisk = activeRiskFilter === "alle" ? true : risk === activeRiskFilter;
+        const matchesStatus =
+          activeStatusFilter === "alle" ? true : queueStatus === activeStatusFilter;
 
-        return matchesTab && matchesSearch && filterMatch;
+        return matchesStatus && matchesSearch && matchesRisk;
       }),
-    [activeFilter, activeTab, queueRows, search]
+    [activeRiskFilter, activeStatusFilter, queueRows, search]
   );
 
   useEffect(() => {
@@ -260,30 +309,92 @@ export default function RecordReviewPage() {
       visibleRows.map(({ row, queueStatus, risk }) => ({
         id: row.id,
         title: row.titel,
-        stepLabel:
-          queueStatus === "nog-te-beoordelen"
-            ? getRiskLabel(risk)
-            : `${getRiskLabel(risk)} / ${getQueueStatusLabel(queueStatus)}`,
+        stepLabel: getRiskLabel(risk),
         stepTone: getQueueStatusTone(queueStatus),
         status:
           queueStatus === "afgerond"
             ? "Beoordeeld"
             : queueStatus === "conflict"
               ? "Uitgesloten"
-              : queueStatus === "retour"
-                ? "WAARSCHUWING"
+            : queueStatus === "retour"
+                ? "Retour"
+              : queueStatus === "uitgesteld"
+                ? "Uitgesteld"
                 : "Open",
       })),
     [visibleRows]
   );
 
-  const selectedDecision = selectedItem ? decisions[selectedItem.row.id] ?? "open" : "open";
+  const committedDecision = selectedItem ? decisions[selectedItem.row.id] ?? "open" : "open";
+  const selectedDecision = selectedItem
+    ? selectedActions[selectedItem.row.id] ?? committedDecision
+    : "open";
   const selectedNote = selectedItem ? notes[selectedItem.row.id] ?? "" : "";
   const completedCount = queueRows.filter((item) => {
     const decision = decisions[item.row.id] ?? "open";
     return decision !== "open";
   }).length;
   const allReviewed = queueRows.length > 0 && completedCount === queueRows.length;
+
+  const executeAction = (action: ReviewAction) => {
+    if (!selectedItem || action === "open") {
+      return;
+    }
+
+    setDeferredRecords((current) => {
+      const nextState = { ...current };
+
+      if (action === "uitstellen") {
+        nextState[selectedItem.row.id] = true;
+      } else {
+        delete nextState[selectedItem.row.id];
+      }
+
+      return nextState;
+    });
+
+    if (action !== "uitstellen") {
+      setDecisions((current) => ({
+        ...current,
+        [selectedItem.row.id]: action,
+      }));
+    }
+
+    if (selectedNote.trim()) {
+      setManualComments((current) => ({
+        ...current,
+        [selectedItem.row.id]: [
+          ...(current[selectedItem.row.id] ?? []),
+          {
+            author: "Proceseigenaar",
+            role: "Proceseigenaar",
+            message: selectedNote.trim(),
+            timestamp: "1 juni 2026, 14:30",
+          },
+        ],
+      }));
+
+      setNotes((current) => ({
+        ...current,
+        [selectedItem.row.id]: "",
+      }));
+    }
+
+    setSelectedActions((current) => {
+      const nextState = { ...current };
+      delete nextState[selectedItem.row.id];
+      return nextState;
+    });
+
+    if (nextRecord) {
+      setSelectedId(nextRecord.row.id);
+      return;
+    }
+
+    if (allReviewed) {
+      setConfirmOpen(true);
+    }
+  };
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -298,22 +409,27 @@ export default function RecordReviewPage() {
 
       const key = event.key.toLowerCase();
 
-      if (key === "a") {
+      if (key === "y") {
         event.preventDefault();
-        setDecisions((current) => ({ ...current, [selectedItem.row.id]: "akkoord" }));
+        executeAction("akkoord");
       }
 
       if (key === "u") {
         event.preventDefault();
-        setDecisions((current) => ({ ...current, [selectedItem.row.id]: "uitsluiten" }));
+        executeAction("uitsluiten");
       }
 
-      if (key === "r") {
+      if (key === "t") {
         event.preventDefault();
-        setDecisions((current) => ({ ...current, [selectedItem.row.id]: "retour" }));
+        executeAction("retour");
       }
 
-      if (key === "n" && nextRecord) {
+      if (key === "a" && previousRecord) {
+        event.preventDefault();
+        setSelectedId(previousRecord.row.id);
+      }
+
+      if (key === "d" && nextRecord) {
         event.preventDefault();
         setSelectedId(nextRecord.row.id);
       }
@@ -321,46 +437,35 @@ export default function RecordReviewPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [nextRecord, selectedItem]);
+  }, [allReviewed, nextRecord, previousRecord, selectedItem, selectedNote]);
 
-  const saveAndGoNext = () => {
-    if (!selectedItem || selectedDecision === "open") {
-      return;
-    }
-
-    if (nextRecord) {
-      setSelectedId(nextRecord.row.id);
-      return;
-    }
-
-    if (allReviewed) {
-      setConfirmOpen(true);
-    }
+  const executeSelectedAction = () => {
+    executeAction(selectedDecision);
   };
 
   return (
-    <div className="flex flex-1 min-h-0">
+    <div className="flex flex-1 min-h-0 overflow-hidden">
       <RecordPaneBar
         title="Records"
         searchValue={search}
         onSearchChange={setSearch}
         searchPlaceholder="Zoek record..."
         tabs={tabs}
-        activeTab={activeTab}
-        onTabChange={(key) => setActiveTab(key as ReviewQueueStatus)}
+        activeTab=""
+        onTabChange={() => undefined}
         filters={filters}
-        activeFilter={activeFilter}
-        onFilterChange={(key) => setActiveFilter(key as ReviewFilter)}
+        activeFilter=""
+        onFilterChange={() => undefined}
+        filterSections={filterSections}
         items={paneItems}
         selectedId={selectedItem?.row.id ?? null}
         onSelect={setSelectedId}
-        emptyMessage={`Geen records gevonden voor ${getQueueStatusLabel(activeTab).toLowerCase()} met filter ${getFilterLabel(activeFilter).toLowerCase()}.`}
-        widthClassName="w-[440px]"
+        emptyMessage={`Geen records gevonden voor ${getStatusFilterLabel(activeStatusFilter).toLowerCase()}${activeRiskFilter ? ` met ${getRiskLabel(activeRiskFilter).toLowerCase()}` : ""}.`}
         density="compact"
         showItemMeta={false}
       />
 
-      <div className="flex min-w-0 flex-1">
+      <div className="flex min-w-0 flex-1 overflow-hidden">
         <ReviewRecordPanel
           record={selectedItem?.row}
           context={selectedItem?.context}
@@ -372,165 +477,88 @@ export default function RecordReviewPage() {
         />
 
         <ActionPanel
-          title="Jouw beslissing"
-          subtitle="Leg per record een duidelijke keuze vast en werk daarna door naar het volgende record."
+          title="Acties"
+          subtitle="Snelle vervolgstappen voor het geselecteerde record."
           footer={
+            selectedItem ? (
             <div className="space-y-2.5">
               <ActionPanelButtonGroup>
                 <ActionPanelButton
-                  label="Opslaan en volgende"
+                  label={
+                    reviewActions.find((item) => item.id === selectedDecision)?.title ??
+                    "Open record"
+                  }
                   variant="primary"
-                  hotkey="N"
                   disabled={!selectedItem || selectedDecision === "open"}
-                  onClick={saveAndGoNext}
-                />
-                <ActionPanelButton
-                  label="Opslaan en later beoordelen"
-                  variant="secondary"
-                  onClick={() => undefined}
-                  disabled={!selectedItem || selectedDecision === "open"}
+                  onClick={executeSelectedAction}
                 />
                 <ActionPanelButton
                   label="Door naar accordering"
-                  variant="ghost"
-                  disabled={!allReviewed}
+                  variant="secondary"
                   onClick={() => setConfirmOpen(true)}
                 />
               </ActionPanelButtonGroup>
 
               <ActionPanelShortcuts
                 shortcuts={[
-                  { keyLabel: "A", label: "Akkoord" },
+                  { keyLabel: "A", label: "Vorige" },
+                  { keyLabel: "D", label: "Volgende" },
+                  { keyLabel: "T", label: "Retour" },
+                  { keyLabel: "Y", label: "Akkoord" },
                   { keyLabel: "U", label: "Uitsluiten" },
-                  { keyLabel: "R", label: "Retour" },
-                  { keyLabel: "N", label: "Volgende" },
                 ]}
               />
             </div>
+            ) : null
           }
         >
-          <ActionPanelSummary
-            eyebrow="Taak"
-            title={reviewTaskContext.procesnaam}
-            items={[
-              {
-                label: "Nog te beoordelen",
-                value: `${queueRows.filter((item) => item.queueStatus === "nog-te-beoordelen").length}`,
-              },
-              {
-                label: "Afgerond",
-                value: `${queueRows.filter((item) => item.queueStatus === "afgerond").length}`,
-              },
-              {
-                label: "Recordmanager",
-                value: reviewTaskContext.recordmanager,
-              },
-              {
-                label: "Proceseigenaar",
-                value: reviewTaskContext.proceseigenaar,
-              },
-            ]}
-          />
-
-          <ActionPanelSection
-            title="Kies een beslissing"
-            description="Houd de keuze sober en eenduidig. De context staat links."
-          >
-            <div className="space-y-3">
-              <ActionPanelChoice
-                title="Akkoord"
-                description="Dit record kan vernietigd worden en door naar accordering."
-                icon={<CheckCheck size={18} />}
-                tone="success"
-                selected={selectedDecision === "akkoord"}
-                onClick={() =>
-                  selectedItem &&
-                  setDecisions((current) => ({
-                    ...current,
-                    [selectedItem.row.id]: "akkoord",
-                  }))
-                }
-              />
-              <ActionPanelChoice
-                title="Uitsluiten"
-                description="Dit record moet uit de vernietigingslijst gehaald worden."
-                icon={<FileX2 size={18} />}
-                tone="danger"
-                selected={selectedDecision === "uitsluiten"}
-                onClick={() =>
-                  selectedItem &&
-                  setDecisions((current) => ({
-                    ...current,
-                    [selectedItem.row.id]: "uitsluiten",
-                  }))
-                }
-              />
-              <ActionPanelChoice
-                title="Retour sturen"
-                description="Stuur terug voor extra informatie of correctie."
-                icon={<SendToBack size={18} />}
-                tone="warning"
-                selected={selectedDecision === "retour"}
-                onClick={() =>
-                  selectedItem &&
-                  setDecisions((current) => ({
-                    ...current,
-                    [selectedItem.row.id]: "retour",
-                  }))
-                }
-              />
-            </div>
-          </ActionPanelSection>
-
-          <ActionPanelSection
-            title="Opmerking"
-            description={getDecisionCopy(selectedDecision).description}
-          >
-            <ActionPanelTextarea
-              label={getDecisionCopy(selectedDecision).title}
-              placeholder="Voeg een korte toelichting toe voor deze beoordeling..."
-              value={selectedNote}
-              onChange={(value) => {
-                if (!selectedItem) {
-                  return;
-                }
-
-                setNotes((current) => ({
-                  ...current,
-                  [selectedItem.row.id]: value,
-                }));
-              }}
+          {!selectedItem ? (
+            <ActionPanelEmptyState
+              title="Kies eerst een record"
+              description="Na selectie tonen we hier de aanbevolen vervolgstap, notities en snelle acties."
             />
-          </ActionPanelSection>
+          ) : (
+            <>
+              <ActionPanelSection
+                title="Kies een actie"
+              >
+                <div className="space-y-3">
+                  {reviewActions.map((item) => (
+                    <ActionPanelChoice
+                      key={item.id}
+                      title={item.title}
+                      description=""
+                      icon={item.icon}
+                      tone={item.tone}
+                      selected={selectedDecision === item.id}
+                      onClick={() =>
+                        setSelectedActions((current) => ({
+                          ...current,
+                          [selectedItem.row.id]: item.id,
+                        }))
+                      }
+                    />
+                  ))}
+                </div>
+              </ActionPanelSection>
 
-          <ActionPanelSection
-            title="Voortgang"
-            description="Je kunt pas door naar accordering als alle records een keuze hebben."
-          >
-            <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
-              <div className="flex items-center justify-between gap-3">
+              {selectedDecision !== "open" && (
                 <div>
-                  <div className="text-sm font-semibold text-slate-900">
-                    {completedCount} van {queueRows.length} beoordeeld
-                  </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    Openstaand: {queueRows.length - completedCount} records
-                  </div>
-                </div>
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 shadow-sm shadow-slate-200/50">
-                  <ArrowLeftRight size={18} />
-                </div>
-              </div>
-              <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-200">
-                <div
-                  className="h-full rounded-full bg-blue-600"
-                  style={{
-                    width: `${queueRows.length === 0 ? 0 : (completedCount / queueRows.length) * 100}%`,
-                  }}
+                <ActionPanelTextarea
+                  label="Toelichting"
+                  placeholder="Voeg een toelichting toe voor deze actie..."
+                  value={selectedNote}
+                  onChange={(value) =>
+                    setNotes((current) => ({
+                      ...current,
+                      [selectedItem.row.id]: value,
+                    }))
+                  }
                 />
-              </div>
-            </div>
-          </ActionPanelSection>
+                </div>
+              )}
+            </>
+          )}
         </ActionPanel>
       </div>
 

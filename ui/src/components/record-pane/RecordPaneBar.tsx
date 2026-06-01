@@ -1,4 +1,6 @@
+import { useState } from "react";
 import {
+  ChevronDown,
   ChevronRight,
   Circle,
 } from "lucide-react";
@@ -21,6 +23,18 @@ export type RecordPaneBarTab = {
 export type RecordPaneBarFilter = {
   key: string;
   label: string;
+};
+
+export type RecordPaneBarFilterSection = {
+  key: string;
+  label: string;
+  options: Array<{
+    key: string;
+    label: string;
+    count?: number;
+  }>;
+  activeKey?: string | null;
+  onChange: (key: string) => void;
 };
 
 export type RecordPaneBarItem = {
@@ -48,6 +62,7 @@ type Props = {
   filters: RecordPaneBarFilter[];
   activeFilter: string;
   onFilterChange: (key: string) => void;
+  filterSections?: RecordPaneBarFilterSection[];
   items: RecordPaneBarItem[];
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -97,6 +112,7 @@ export default function RecordPaneBar({
   filters,
   activeFilter,
   onFilterChange,
+  filterSections = [],
   items,
   selectedId,
   onSelect,
@@ -106,6 +122,7 @@ export default function RecordPaneBar({
   showItemMeta = true,
 }: Props) {
   const isCompact = density === "compact";
+  const [openSecondaryFilterKey, setOpenSecondaryFilterKey] = useState<string | null>(null);
 
   return (
     <aside className={`${widthClassName} border-r border-slate-200 bg-slate-50/60 p-4`}>
@@ -172,31 +189,108 @@ export default function RecordPaneBar({
             </div>
           )}
 
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {filters.map((filter) => {
-              const active =
-                activeFilter ===
-                filter.key;
+          {filterSections.length > 0 ? (
+            <div className="mt-4 space-y-2">
+              <div className="flex flex-wrap gap-1.5">
+                {filterSections.map((section) => {
+                  const activeOption = section.options.find(
+                    (option) => option.key === section.activeKey
+                  );
+                  const isOpen = openSecondaryFilterKey === section.key;
 
-              return (
-                <button
-                  key={filter.key}
-                  onClick={() =>
-                    onFilterChange(
-                      filter.key
-                    )
-                  }
-                  className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-                    active
-                      ? "border-blue-600 bg-blue-600 text-white shadow-sm"
-                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                  }`}
-                >
-                  {filter.label}
-                </button>
-              );
-            })}
-          </div>
+                  return (
+                    <button
+                      key={section.key}
+                      onClick={() =>
+                        setOpenSecondaryFilterKey((current) =>
+                          current === section.key ? null : section.key
+                        )
+                      }
+                      className={`inline-flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                        activeOption
+                          ? "border-blue-200 bg-blue-50 text-blue-700"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      <span>{section.label}:</span>
+                      <span>{activeOption?.label ?? "Alle"}</span>
+                      <ChevronDown
+                        size={14}
+                        className={`transition-transform ${isOpen ? "rotate-180" : ""}`}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+
+              {filterSections.map((section) => {
+                if (openSecondaryFilterKey !== section.key) {
+                  return null;
+                }
+
+                return (
+                  <div
+                    key={section.key}
+                    className="rounded-lg border border-slate-200 bg-slate-50/70 p-2"
+                  >
+                    <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                      {section.label}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {section.options.map((option) => {
+                        const active = section.activeKey === option.key;
+
+                        return (
+                          <button
+                            key={option.key}
+                            onClick={() => section.onChange(option.key)}
+                            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                              active
+                                ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                            }`}
+                          >
+                            <span>{option.label}</span>
+                            {typeof option.count === "number" && (
+                              <span
+                                className={`rounded-md px-1.5 py-0.5 text-[11px] ${
+                                  active
+                                    ? "bg-white/20 text-white"
+                                    : "bg-slate-100 text-slate-500"
+                                }`}
+                              >
+                                {option.count}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {filters.map((filter) => {
+                const active = activeFilter === filter.key;
+
+                return (
+                  <button
+                    key={filter.key}
+                    onClick={() => onFilterChange(filter.key)}
+                    className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                      active
+                        ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    {filter.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-4">
