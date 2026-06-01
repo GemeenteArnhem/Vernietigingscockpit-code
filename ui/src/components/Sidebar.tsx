@@ -33,9 +33,11 @@ const ShieldIcon = () => (
   </svg>
 );
 
+
 function shouldAutoCollapse(pathname: string) {
   return (
     /^\/taak\/[^/]+$/.test(pathname) ||
+    pathname.includes("/dashboard") ||
     pathname.includes("/beoordeling") ||
     pathname.includes("/accordering")
   );

@@ -23,7 +23,7 @@ export default function WorkflowBar({
   const activeIndex = steps.findIndex((step) => step.id === activeStep);
 
   return (
-    <div className="mb-2 rounded-xl border border-gray-200 px-4 py-2.5">
+    <div className="rounded-md border border-slate-200 bg-white px-4 py-4 shadow-sm shadow-slate-200/40">
       <div className="flex items-center justify-between">
         {steps.map((step, index) => {
           const isLast = index === steps.length - 1;
@@ -63,7 +63,7 @@ export default function WorkflowBar({
               </div>
 
               {!isLast && (
-                <div className="mx-3 h-px flex-1 bg-gray-200" />
+                <div className="mx-3 h-px flex-1 bg-slate-200" />
               )}
             </div>
           );

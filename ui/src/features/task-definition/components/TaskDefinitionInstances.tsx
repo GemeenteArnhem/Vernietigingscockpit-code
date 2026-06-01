@@ -13,6 +13,7 @@ export type TaskDefinitionInstance =
       | "VERTRAAGD";
     stap: string;
     voortgang: number;
+    plannedStartDate?: string;
     highlighted?: boolean;
   };
 
@@ -24,47 +25,6 @@ type Props = {
     id: string
   ) => void;
 };
-
-function getAction(
-  instantie: TaskDefinitionInstance
-) {
-  switch (
-    instantie.status
-  ) {
-    case "GEPLAND":
-      return {
-        label:
-          instantie.highlighted
-            ? "Starten"
-            : "Vervroegd starten",
-        variant:
-          "secondary",
-      };
-
-    case "LOPEND":
-    case "VERTRAAGD":
-      return {
-        label: "Open",
-        variant:
-          "secondary",
-      };
-
-    case "VOLTOOID":
-      return {
-        label:
-          "Dossier",
-        variant:
-          "secondary",
-      };
-
-    default:
-      return {
-        label: "Open",
-        variant:
-          "secondary",
-      };
-  }
-}
 
 function ProgressBar({
   value,
@@ -155,7 +115,7 @@ export default function TaskDefinitionInstances({
       bg-white
       border
       border-gray-200
-      rounded-2xl
+      rounded-md
       overflow-hidden
     "
   >
@@ -204,7 +164,7 @@ export default function TaskDefinitionInstances({
             <th
               className="
                 text-left
-                px-5
+                px-4
                 py-3
                 text-xs
                 uppercase
@@ -219,7 +179,7 @@ export default function TaskDefinitionInstances({
             <th
               className="
                 text-left
-                px-5
+                px-4
                 py-3
                 text-xs
                 uppercase
@@ -235,7 +195,7 @@ export default function TaskDefinitionInstances({
             <th
               className="
                 text-left
-                px-5
+                px-4
                 py-3
                 text-xs
                 uppercase
@@ -251,33 +211,17 @@ export default function TaskDefinitionInstances({
             <th
               className="
                 text-left
-                px-5
+                px-4
                 py-3
                 text-xs
                 uppercase
                 tracking-wide
                 text-gray-500
                 font-semibold
-                w-[260px]
+                w-[280px]
               "
             >
               Voortgang
-            </th>
-
-            <th
-              className="
-                text-center
-                px-5
-                py-3
-                text-xs
-                uppercase
-                tracking-wide
-                text-gray-500
-                font-semibold
-                w-[160px]
-              "
-            >
-              Actie
             </th>
           </tr>
         </thead>
@@ -290,6 +234,7 @@ export default function TaskDefinitionInstances({
                   instantie.id
                 }
                 className={`
+                  ${onOpen ? "cursor-pointer" : ""}
                   border-b
                   border-gray-100
                   last:border-0
@@ -300,16 +245,21 @@ export default function TaskDefinitionInstances({
                     instantie.highlighted
                       ? `
                         bg-blue-50
-                      `
+                    `
                       : ""
                   }
                 `}
+                onClick={() =>
+                  onOpen?.(
+                    instantie.id
+                  )
+                }
               >
                 {/* instantie */}
                 <td
                   className="
-                    px-5
-                    py-5
+                    px-4
+                    py-4
                   "
                 >
                   <div
@@ -340,8 +290,8 @@ export default function TaskDefinitionInstances({
                 {/* RM */}
                 <td
                   className="
-                    px-5
-                    py-5
+                    px-4
+                    py-4
                     text-sm
                     text-gray-700
                   "
@@ -354,8 +304,8 @@ export default function TaskDefinitionInstances({
                 {/* status */}
                 <td
                   className="
-                    px-5
-                    py-5
+                    px-4
+                    py-4
                   "
                 >
                   <StatusBadge
@@ -368,8 +318,8 @@ export default function TaskDefinitionInstances({
                 {/* voortgang */}
                 <td
                   className="
-                    px-5
-                    py-5
+                    px-4
+                    py-4
                   "
                 >
                   <ProgressBar
@@ -380,50 +330,6 @@ export default function TaskDefinitionInstances({
                       instantie.status
                     }
                   />
-                </td>
-
-                {/* actie */}
-                <td
-                  className="
-                    px-5
-                    py-5
-                    text-right
-                  "
-                >
-                  {(() => {
-                    const action =
-                      getAction(
-                        instantie
-                      );
-
-                    return (
-                      <button
-                        onClick={() =>
-                          onOpen?.(
-                            instantie.id
-                          )
-                        }
-                        className="
-                          inline-flex
-                          items-center
-                          justify-center
-                          h-10
-                          w-[170px]
-                          text-sm
-                          font-medium
-                          text-gray-700
-                          bg-white
-                          border
-                          border-gray-300
-                          rounded-lg
-                          hover:bg-gray-50
-                          transition-colors
-                        "
-                      >
-                        {action.label}
-                      </button>
-                    );
-                  })()}
                 </td>
               </tr>
             )

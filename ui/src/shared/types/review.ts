@@ -1,0 +1,39 @@
+export type ReviewDecision = "open" | "akkoord" | "uitsluiten" | "retour";
+
+export type ReviewRiskLevel = "laag" | "middel" | "hoog";
+
+export type ReviewQueueStatus =
+  | "nog-te-beoordelen"
+  | "retour"
+  | "conflict"
+  | "afgerond";
+
+export type ReviewWorkflowItem = {
+  actor: string;
+  detail: string;
+  state: "done" | "active" | "upcoming";
+  timestamp?: string;
+};
+
+export type ReviewComment = {
+  author: string;
+  role: string;
+  message: string;
+  timestamp: string;
+};
+
+export type ReviewRecordContext = {
+  recordId: string;
+  proces: string;
+  recordmanager: string;
+  proceseigenaar: string;
+  archivaris: string;
+  startdatumTaak: string;
+  vernietigbaarSinds: string;
+  risiconiveau: ReviewRiskLevel;
+  queueStatus: ReviewQueueStatus;
+  beoordelingsRedenen: string[];
+  aandachtspunt?: string;
+  workflow: ReviewWorkflowItem[];
+  comments: ReviewComment[];
+};

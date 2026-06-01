@@ -1,0 +1,31 @@
+import { Outlet } from "react-router-dom";
+import Sidebar from "../components/Sidebar";
+import PageHeader from "../components/PageHeader";
+
+export default function AppShell() {
+  return (
+    <div className="flex h-screen">
+
+      {/* LB */}
+      <Sidebar />
+
+      {/* MAIN AREA */}
+      <div className="flex flex-1 flex-col min-w-0">
+
+        {/* HEADER */}
+        <div className="shrink-0 border-b border-gray-200 bg-white">
+          <PageHeader
+            titel="Dashboard"
+            subtitel="Taakuitvoeringen die aandacht vragen"
+          />
+        </div>
+
+        {/* PAGE CONTENT */}
+        <main className="flex flex-1 min-h-0 overflow-hidden">
+          <Outlet />
+        </main>
+
+      </div>
+    </div>
+  );
+}
