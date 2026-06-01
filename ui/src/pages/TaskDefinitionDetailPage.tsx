@@ -785,6 +785,15 @@ export default function TaskDefinitionDetailPage() {
         event.preventDefault();
         handlePrimaryAction();
       }
+
+      if (key === "o" && selectedDefinition) {
+        event.preventDefault();
+        openInstance(
+          navigate,
+          selectedDefinition.id,
+          primaryInstance
+        );
+      }
     };
 
     window.addEventListener(
@@ -850,20 +859,6 @@ export default function TaskDefinitionDetailPage() {
               subtitle={
                 selectedDefinition.subtitle
               }
-              aside={
-                <div className="flex flex-wrap items-center justify-end gap-3">
-                  <div className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-medium text-slate-600">
-                    {
-                      selectedDefinition.frequentie
-                    }
-                  </div>
-                  <div
-                    className={`inline-flex rounded-sm px-2.5 py-1 text-sm font-medium ${risk.className}`}
-                  >
-                    {risk.label}
-                  </div>
-                </div>
-              }
             />
 
             <TaskDefinitionConfiguration
@@ -906,18 +901,22 @@ export default function TaskDefinitionDetailPage() {
             <div className="space-y-2.5">
               <ActionPanelButtonGroup>
                 <ActionPanelButton
-                  label={
-                    decisions.find(
-                      (item) =>
-                        item.id ===
-                        activeDecision
-                    )?.title ??
-                    "Open uitvoering"
-                  }
+                  label="Actie uitvoeren"
                   onClick={
                     handlePrimaryAction
                   }
                   variant="primary"
+                />
+                <ActionPanelButton
+                  label="Open uitvoering"
+                  onClick={() =>
+                    openInstance(
+                      navigate,
+                      selectedDefinition.id,
+                      primaryInstance
+                    )
+                  }
+                  variant="secondary"
                 />
               </ActionPanelButtonGroup>
               <ActionPanelShortcuts
@@ -933,6 +932,10 @@ export default function TaskDefinitionDetailPage() {
                     {
                       keyLabel: "W",
                       label: "Actie uitvoeren",
+                    },
+                    {
+                      keyLabel: "O",
+                      label: "Open uitvoering",
                     },
                 ]}
               />
@@ -957,9 +960,16 @@ export default function TaskDefinitionDetailPage() {
                     <ActionPanelChoice
                       key={item.id}
                       title={item.title}
-                      description=""
+                      description={
+                        item.id === "open-uitvoering"
+                          ? "Open de meest relevante taakuitvoering vanuit deze definitie."
+                          : item.id === "bewerk-configuratie"
+                            ? "Werk taakinformatie, rollen en instellingen bij."
+                            : "Beheer gekoppelde bronnen en stekkers voor deze definitie."
+                      }
                       icon={item.icon}
                       tone={item.tone}
+                      density="compact"
                       selected={
                         activeDecision ===
                         item.id

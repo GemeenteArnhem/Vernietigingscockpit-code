@@ -1,6 +1,7 @@
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet, matchPath, useLocation } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import PageHeader from "../components/PageHeader";
+import { reviewRows } from "../shared/mocks/reviewRows";
 
 export default function AppShell() {
   const location = useLocation();
@@ -10,19 +11,38 @@ export default function AppShell() {
       "/taak/"
     );
 
-  const title = isTaskPage
-    ? "Taken"
-    : "Dashboard";
+  const taskExecutionMatch =
+    matchPath("/taak/:taakId/taakuitvoering/:id/selectie", location.pathname) ??
+    matchPath("/taak/:taakId/taakuitvoering/:id/beoordeling", location.pathname) ??
+    matchPath("/taak/:taakId/taakuitvoering/:id/accordering/proceseigenaar", location.pathname) ??
+    matchPath("/taak/:taakId/taakuitvoering/:id/accordering/archivaris", location.pathname) ??
+    matchPath("/taak/:taakId/taakuitvoering/:id/uitvoering", location.pathname) ??
+    matchPath("/taak/:taakId/taakuitvoering/:id/resultaat", location.pathname) ??
+    matchPath("/taak/:taakId/taakuitvoering/:id", location.pathname);
 
-  const breadcrumbs = isTaskPage
+  const taskExecutionTitle = taskExecutionMatch
+    ? reviewRows.find((row) => row.id === taskExecutionMatch.params.id)?.titel ??
+      "Taakuitvoering"
+    : null;
+
+  const title = taskExecutionTitle ?? (isTaskPage ? "Taken" : "Dashboard");
+
+  const breadcrumbs = taskExecutionTitle
     ? [
         { label: "Home", href: "/" },
         { label: "Taken" },
+        { label: "Taakuitvoering" },
+        { label: taskExecutionTitle },
       ]
-    : [
-        { label: "Home", href: "/" },
-        { label: "Dashboard" },
-      ];
+    : isTaskPage
+      ? [
+          { label: "Home", href: "/" },
+          { label: "Taken" },
+        ]
+      : [
+          { label: "Home", href: "/" },
+          { label: "Dashboard" },
+        ];
 
   return (
     <div className="flex h-screen">

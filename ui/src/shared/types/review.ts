@@ -1,3 +1,5 @@
+import type { TaskExecutionComment } from "./taskExecution";
+
 export type ReviewDecision = "open" | "akkoord" | "uitsluiten" | "retour";
 
 export type ReviewRiskLevel = "laag" | "middel" | "hoog";
@@ -16,12 +18,7 @@ export type ReviewWorkflowItem = {
   timestamp?: string;
 };
 
-export type ReviewComment = {
-  author: string;
-  role: string;
-  message: string;
-  timestamp: string;
-};
+export type ReviewComment = TaskExecutionComment;
 
 export type ReviewRecordContext = {
   recordId: string;

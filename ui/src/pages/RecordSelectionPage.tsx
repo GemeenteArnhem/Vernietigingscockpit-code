@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowRight,
@@ -10,11 +10,13 @@ import {
 } from "lucide-react";
 
 import StatusBadge from "../components/StatusBadge";
+import TaskMetaBar from "../components/TaskMetaBar";
 import ActionPanel, {
   ActionPanelButton,
   ActionPanelButtonGroup,
   ActionPanelChoice,
   ActionPanelSection,
+  ActionPanelShortcuts,
 } from "../components/ActionPanel";
 import ContentPanel, {
   ContentPanelHeader,
@@ -94,6 +96,13 @@ const connectors: Connector[] = [
   },
 ];
 
+const taskMetaItems = [
+  { label: "Recordmanager", value: "S. Janssen" },
+  { label: "Proceseigenaar", value: "Jan de Vries" },
+  { label: "Archivaris", value: "M. Blom" },
+  { label: "Startdatum", value: "31 mei 2026" },
+];
+
 function getSelectieStatusLabel(status: Connector["selectieStatus"]) {
   switch (status) {
     case "NIET_GESTART":
@@ -147,25 +156,6 @@ export default function RecordSelectionPage() {
     connectors.find((connector) => connector.id === selectedConnectorId) ??
     connectors[0];
 
-  const completedCount = useMemo(
-    () =>
-      connectors.filter(
-        (connector) => connector.selectieStatus === "VOLTOOID"
-      ).length,
-    []
-  );
-
-  const retryableCount = useMemo(
-    () =>
-      connectors.filter(
-        (connector) =>
-          connector.selectieStatus === "GEDEELTELIJK_VOLTOOID" ||
-          connector.stekkerStatus === "FOUT"
-      ).length,
-    []
-  );
-
-  const allCompleted = completedCount === connectors.length;
   const selectedConnectorNeedsRetry =
     selectedConnector.selectieStatus === "GEDEELTELIJK_VOLTOOID" ||
     selectedConnector.stekkerStatus === "FOUT";
@@ -181,6 +171,31 @@ export default function RecordSelectionPage() {
     navigate(`/taak/${taakId}/taakuitvoering/${id}/beoordeling`);
   };
 
+  const handleSecondaryAction = () => {
+    navigate(`/taak/${taakId}/taakuitvoering/${id}/beoordeling`);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName ?? "";
+      const isTyping =
+        tagName === "INPUT" || tagName === "TEXTAREA" || target?.isContentEditable;
+
+      if (isTyping) {
+        return;
+      }
+
+      if (event.key.toLowerCase() === "w") {
+        event.preventDefault();
+        handlePrimaryAction();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedAction, selectedConnectorNeedsRetry]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -193,43 +208,14 @@ export default function RecordSelectionPage() {
               subtitle="Start de selectie taakbreed voor alle gekoppelde stekkers. Kies daarna een stekker om de voortgang of een eventuele herkansing te bekijken."
             />
 
-            <WorkflowBar activeStep="SELECTIE" />
-
             <section className="rounded-md border border-slate-200 bg-white px-4 py-4 shadow-sm shadow-slate-200/40">
-              <dl className="grid gap-x-8 gap-y-4 md:grid-cols-2 xl:grid-cols-4">
-                <div>
-                  <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
-                    Recordmanager
-                  </dt>
-                  <dd className="mt-1 text-sm font-medium text-slate-900">
-                    S. Janssen
-                  </dd>
+              <div className="flex flex-col gap-3">
+                <WorkflowBar activeStep="SELECTIE" variant="embedded" />
+
+                <div className="border-t border-slate-100 pt-3">
+                  <TaskMetaBar items={taskMetaItems} variant="embedded" />
                 </div>
-                <div>
-                  <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
-                    Proceseigenaar
-                  </dt>
-                  <dd className="mt-1 text-sm font-medium text-slate-900">
-                    Jan de Vries
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
-                    Archivaris
-                  </dt>
-                  <dd className="mt-1 text-sm font-medium text-slate-900">
-                    M. Blom
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
-                    Startdatum
-                  </dt>
-                  <dd className="mt-1 text-sm font-medium text-slate-900">
-                    31 mei 2026
-                  </dd>
-                </div>
-              </dl>
+              </div>
             </section>
 
             <ContentPanelSection
@@ -402,29 +388,30 @@ export default function RecordSelectionPage() {
         <ActionPanel
           title="Acties"
           footer={
-            <ActionPanelButtonGroup>
-              <ActionPanelButton
-                label={
-                  selectedAction === "herkansen"
-                    ? `Herkansen voor ${selectedConnector.naam}`
-                    : "Selectie ophalen"
-                }
-                variant="primary"
-                disabled={
-                  selectedAction === "herkansen" &&
-                  !selectedConnectorNeedsRetry
-                }
-                onClick={handlePrimaryAction}
+            <div className="space-y-2.5">
+              <ActionPanelButtonGroup>
+                <ActionPanelButton
+                  label="Actie uitvoeren"
+                  variant="primary"
+                  disabled={
+                    selectedAction === "herkansen" &&
+                    !selectedConnectorNeedsRetry
+                  }
+                  onClick={handlePrimaryAction}
+                />
+                <ActionPanelButton
+                  label="Verder naar beoordeling"
+                  variant="secondary"
+                  onClick={handleSecondaryAction}
+                />
+              </ActionPanelButtonGroup>
+
+              <ActionPanelShortcuts
+                shortcuts={[
+                  { keyLabel: "W", label: "Actie uitvoeren" },
+                ]}
               />
-              <ActionPanelButton
-                label="Verder naar beoordeling"
-                variant="secondary"
-                disabled={!allCompleted}
-                onClick={() =>
-                  navigate(`/taak/${taakId}/taakuitvoering/${id}/beoordeling`)
-                }
-              />
-            </ActionPanelButtonGroup>
+            </div>
           }
         >
           <ActionPanelSection
@@ -436,6 +423,7 @@ export default function RecordSelectionPage() {
                 description=""
                 icon={<ArrowRight size={18} />}
                 tone="primary"
+                density="compact"
                 selected={selectedAction === "selectie-ophalen"}
                 onClick={() => setSelectedAction("selectie-ophalen")}
               />
@@ -445,6 +433,7 @@ export default function RecordSelectionPage() {
                 description=""
                 icon={<RotateCcw size={18} />}
                 tone={selectedConnectorNeedsRetry ? "warning" : "neutral"}
+                density="compact"
                 selected={selectedAction === "herkansen"}
                 onClick={() => setSelectedAction("herkansen")}
               />

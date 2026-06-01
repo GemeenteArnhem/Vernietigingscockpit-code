@@ -1,3 +1,9 @@
+import {
+  CheckCheck,
+  Circle,
+  CircleDotDashed,
+} from "lucide-react";
+
 type Step = {
   id: string;
   label: string;
@@ -6,6 +12,7 @@ type Step = {
 
 type Props = {
   activeStep?: string;
+  variant?: "default" | "embedded";
 };
 
 const steps: Step[] = [
@@ -17,45 +24,81 @@ const steps: Step[] = [
   { id: "RESULTAAT", label: "Resultaat" },
 ];
 
+function getStepState(
+  index: number,
+  activeIndex: number
+): "done" | "active" | "todo" {
+  if (index < activeIndex) {
+    return "done";
+  }
+
+  if (index === activeIndex) {
+    return "active";
+  }
+
+  return "todo";
+}
+
 export default function WorkflowBar({
   activeStep = "BEOORDELING",
+  variant = "default",
 }: Props) {
   const activeIndex = steps.findIndex((step) => step.id === activeStep);
 
   return (
-    <div className="rounded-md border border-slate-200 bg-white px-4 py-4 shadow-sm shadow-slate-200/40">
-      <div className="flex items-center justify-between">
+    <div
+      className={
+        variant === "embedded"
+          ? "px-0 py-0"
+          : "rounded-md border border-slate-200 bg-white px-4 py-4 shadow-sm shadow-slate-200/40"
+      }
+    >
+      <div className="flex items-start justify-between gap-3 overflow-x-auto">
         {steps.map((step, index) => {
           const isLast = index === steps.length - 1;
-          const state =
-            index < activeIndex
-              ? "done"
-              : index === activeIndex
-                ? "active"
-                : "todo";
+          const state = getStepState(index, activeIndex);
 
           return (
-            <div key={step.id} className="flex min-w-0 flex-1 items-center">
-              <div className="flex min-w-[140px] items-center gap-2">
+            <div key={step.id} className="flex min-w-[136px] flex-1 items-center">
+              <div className="flex min-w-0 items-start gap-2.5">
                 <div
-                  className={`flex h-6 w-6 items-center justify-center rounded-full text-sm font-medium ${
+                  className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${
                     state === "done"
-                      ? "bg-green-100 text-green-700"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                       : state === "active"
-                        ? "bg-blue-600 text-white"
-                        : "bg-gray-200 text-gray-600"
+                        ? "border-blue-200 bg-blue-50 text-blue-700"
+                        : "border-slate-200 bg-slate-50 text-slate-400"
                   }`}
+                  aria-hidden="true"
                 >
-                  {state === "done" ? "OK" : index + 1}
+                  {state === "done" ? (
+                    <CheckCheck size={16} strokeWidth={2.2} />
+                  ) : state === "active" ? (
+                    <CircleDotDashed size={16} strokeWidth={2.2} />
+                  ) : (
+                    <Circle size={14} strokeWidth={2} />
+                  )}
                 </div>
 
-                <div className="flex flex-col leading-snug">
-                  <span className="text-sm font-medium text-gray-700">
+                <div className="flex min-w-0 flex-col leading-snug">
+                  <span
+                    className={`text-sm font-semibold ${
+                      state === "active"
+                        ? "text-slate-950"
+                        : state === "done"
+                          ? "text-slate-800"
+                          : "text-slate-500"
+                    }`}
+                  >
                     {step.label}
                   </span>
 
                   {step.sublabel && (
-                    <span className="text-xs text-gray-400">
+                    <span
+                      className={`text-xs ${
+                        state === "active" ? "text-slate-500" : "text-slate-400"
+                      }`}
+                    >
                       {step.sublabel}
                     </span>
                   )}
@@ -63,7 +106,11 @@ export default function WorkflowBar({
               </div>
 
               {!isLast && (
-                <div className="mx-3 h-px flex-1 bg-slate-200" />
+                <div
+                  className={`mx-3 mt-4 h-px flex-1 ${
+                    state === "done" ? "bg-emerald-200" : "bg-slate-200"
+                  }`}
+                />
               )}
             </div>
           );

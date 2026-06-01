@@ -123,6 +123,9 @@ export default function RecordPaneBar({
 }: Props) {
   const isCompact = density === "compact";
   const [openSecondaryFilterKey, setOpenSecondaryFilterKey] = useState<string | null>(null);
+  const compactRowsWithMeta = items.some(
+    (item) => (showItemMeta || isCompact) && (item.quantityValue || typeof item.progress === "number")
+  );
 
   return (
     <aside className={`${widthClassName} border-r border-slate-200 bg-slate-50/60 p-4`}>
@@ -299,7 +302,15 @@ export default function RecordPaneBar({
               {emptyMessage}
             </div>
           ) : (
-            <div className={isCompact ? "space-y-1.5" : "space-y-2"}>
+            <div
+              className={
+                isCompact
+                  ? `overflow-hidden rounded-md border border-slate-200 bg-white ${
+                      compactRowsWithMeta ? "divide-y divide-slate-200" : "divide-y divide-slate-100"
+                    }`
+                  : "space-y-2"
+              }
+            >
               {items.map((item) => {
                 const selected =
                   selectedId === item.id;
@@ -323,18 +334,66 @@ export default function RecordPaneBar({
                     onClick={() =>
                       onSelect(item.id)
                     }
-                    className={`w-full border text-left transition-all ${
-                      selected
-                        ? "rounded-lg border-blue-200 bg-blue-50/60 shadow-sm shadow-blue-100/60"
-                        : "rounded-lg border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/70"
-                    } ${isCompact ? "px-3 py-2.5" : "px-4 py-3"}`}
+                    className={
+                      isCompact
+                        ? `group relative w-full text-left transition-colors ${
+                            selected
+                              ? "bg-blue-50/60"
+                              : "bg-white hover:bg-slate-50"
+                          }`
+                        : `w-full rounded-lg border text-left transition-all ${
+                            selected
+                              ? "border-blue-200 bg-blue-50/60 shadow-sm shadow-blue-100/60"
+                              : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/70"
+                          } px-4 py-3`
+                    }
                   >
-                    <div className={`flex items-start justify-between gap-3 ${isCompact ? "mb-2" : ""}`}>
+                    {isCompact ? (
+                      <div className="relative px-3 py-2.5">
+                        <div
+                          className={`absolute inset-y-1.5 left-0 w-0.5 rounded-full ${
+                            selected ? "bg-blue-600" : "bg-transparent"
+                          }`}
+                        />
+
+                        <div className="flex items-start gap-2.5">
+                          <div className="min-w-0 flex-1">
+                            <div
+                              className={`truncate text-[13px] font-semibold leading-5 ${
+                                selected ? "text-slate-950" : "text-slate-900"
+                              }`}
+                            >
+                              {item.title}
+                            </div>
+
+                            <div className="mt-0.5 flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
+                              <Circle
+                                size={6}
+                                fill="currentColor"
+                                className={stepTone.dot}
+                              />
+                              <span>{item.stepLabel}</span>
+                              <span className="text-slate-300">{"\u2022"}</span>
+                              <span>{item.status}</span>
+                            </div>
+                          </div>
+
+                          <ChevronRight
+                            size={15}
+                            className={`mt-0.5 shrink-0 transition-colors ${
+                              selected
+                                ? "text-blue-600"
+                                : "text-slate-300 group-hover:text-slate-400"
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                    <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div
-                          className={`font-semibold leading-5 text-slate-900 ${
-                            isCompact ? "text-[13px]" : "text-sm"
-                          }`}
+                          className="text-sm font-semibold leading-5 text-slate-900"
                         >
                           {item.title}
                         </div>
@@ -350,36 +409,40 @@ export default function RecordPaneBar({
                       />
                     </div>
 
-                    <div className="flex items-center justify-between gap-2">
-                      <div
-                        className={`inline-flex items-center gap-1.5 text-slate-600 ${
-                          isCompact
-                            ? "rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium"
-                            : "rounded-full px-2.5 py-1 text-xs font-medium"
-                        }`}
-                      >
-                        <Circle
-                          size={7}
-                          fill="currentColor"
-                          className={
-                            stepTone.dot
-                          }
-                        />
-                        <span>
-                          {item.stepLabel}
-                        </span>
-                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <div
+                          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium text-slate-600"
+                        >
+                          <Circle
+                            size={7}
+                            fill="currentColor"
+                            className={
+                              stepTone.dot
+                            }
+                          />
+                          <span>
+                            {item.stepLabel}
+                          </span>
+                        </div>
 
-                      <StatusBadge
-                        status={item.status}
-                      />
-                    </div>
+                        <StatusBadge
+                          status={item.status}
+                        />
+                      </div>
+                      </>
+                    )}
 
                     {(showItemMeta || isCompact) &&
                       (item.quantityValue ||
                         typeof item.progress ===
                           "number") && (
-                      <div className="mt-3 flex items-center justify-between gap-4 border-t border-slate-100 pt-3">
+                      <div
+                        className={`flex items-center justify-between gap-4 border-t pt-3 ${
+                          isCompact
+                            ? "mt-2 border-slate-100"
+                            : "mt-3 border-slate-100"
+                        } ${isCompact ? "px-3 pb-2.5" : ""}`}
+                      >
                         {item.quantityValue ? (
                           <div className={`${isCompact ? "text-sm" : "text-xs"} text-slate-500`}>
                             <span className={`text-slate-700 ${isCompact ? "font-medium" : "font-medium"}`}>

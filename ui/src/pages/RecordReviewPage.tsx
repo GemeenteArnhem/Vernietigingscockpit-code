@@ -57,19 +57,6 @@ function getDecisionStatus(decision: ReviewDecision): ReviewQueueStatus {
   }
 }
 
-function getQueueStatusLabel(status: ReviewQueueStatus) {
-  switch (status) {
-    case "afgerond":
-      return "Beoordeeld";
-    case "conflict":
-      return "Uitgesloten";
-    case "retour":
-      return "Retour";
-    default:
-      return "Open";
-  }
-}
-
 function getQueueStatusTone(status: ReviewQueueStatus): RecordPaneBarTone {
   switch (status) {
     case "afgerond":
@@ -94,6 +81,17 @@ function getRiskLabel(risk: ReviewRiskLevel) {
   }
 }
 
+function getRiskShortLabel(risk: ReviewRiskLevel) {
+  switch (risk) {
+    case "hoog":
+      return "Hoog";
+    case "middel":
+      return "Middel";
+    default:
+      return "Laag";
+  }
+}
+
 function getStatusFilterLabel(filter: ReviewStatusFilter) {
   switch (filter) {
     case "alle":
@@ -115,24 +113,28 @@ const reviewActions = [
   {
     id: "akkoord" as const,
     title: "Akkoord",
+    description: "Record markeren als inhoudelijk beoordeeld.",
     icon: <CheckCheck size={18} />,
     tone: "success" as const,
   },
   {
     id: "uitsluiten" as const,
     title: "Uitsluiten",
+    description: "Record buiten de vernietigingslijst plaatsen.",
     icon: <FileX2 size={18} />,
     tone: "danger" as const,
   },
   {
     id: "retour" as const,
     title: "Retour sturen",
+    description: "Terugzetten voor aanvullende controle of toelichting.",
     icon: <SendToBack size={18} />,
     tone: "warning" as const,
   },
   {
     id: "uitstellen" as const,
     title: "Uitstellen",
+    description: "Later opnieuw beoordelen binnen deze taak.",
     icon: <Clock3 size={18} />,
     tone: "neutral" as const,
   },
@@ -309,7 +311,7 @@ export default function RecordReviewPage() {
       visibleRows.map(({ row, queueStatus, risk }) => ({
         id: row.id,
         title: row.titel,
-        stepLabel: getRiskLabel(risk),
+        stepLabel: getRiskShortLabel(risk),
         stepTone: getQueueStatusTone(queueStatus),
         status:
           queueStatus === "afgerond"
@@ -424,6 +426,11 @@ export default function RecordReviewPage() {
         executeAction("retour");
       }
 
+      if (key === "w" && selectedDecision !== "open") {
+        event.preventDefault();
+        executeSelectedAction();
+      }
+
       if (key === "a" && previousRecord) {
         event.preventDefault();
         setSelectedId(previousRecord.row.id);
@@ -478,16 +485,13 @@ export default function RecordReviewPage() {
 
         <ActionPanel
           title="Acties"
-          subtitle="Snelle vervolgstappen voor het geselecteerde record."
+          subtitle="Kies de vervolgstap voor het geselecteerde record en voeg een toelichting toe."
           footer={
             selectedItem ? (
             <div className="space-y-2.5">
               <ActionPanelButtonGroup>
                 <ActionPanelButton
-                  label={
-                    reviewActions.find((item) => item.id === selectedDecision)?.title ??
-                    "Open record"
-                  }
+                  label="Actie uitvoeren"
                   variant="primary"
                   disabled={!selectedItem || selectedDecision === "open"}
                   onClick={executeSelectedAction}
@@ -503,6 +507,7 @@ export default function RecordReviewPage() {
                 shortcuts={[
                   { keyLabel: "A", label: "Vorige" },
                   { keyLabel: "D", label: "Volgende" },
+                  { keyLabel: "W", label: "Actie uitvoeren" },
                   { keyLabel: "T", label: "Retour" },
                   { keyLabel: "Y", label: "Akkoord" },
                   { keyLabel: "U", label: "Uitsluiten" },
@@ -521,15 +526,17 @@ export default function RecordReviewPage() {
             <>
               <ActionPanelSection
                 title="Kies een actie"
+                description="Selecteer eerst de gewenste uitkomst voor dit record."
               >
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {reviewActions.map((item) => (
                     <ActionPanelChoice
                       key={item.id}
                       title={item.title}
-                      description=""
+                      description={item.description}
                       icon={item.icon}
                       tone={item.tone}
+                      density="compact"
                       selected={selectedDecision === item.id}
                       onClick={() =>
                         setSelectedActions((current) => ({
@@ -542,21 +549,19 @@ export default function RecordReviewPage() {
                 </div>
               </ActionPanelSection>
 
-              {selectedDecision !== "open" && (
-                <div>
-                  <ActionPanelTextarea
-                    label="Toelichting"
-                    placeholder="Voeg een toelichting toe voor deze actie..."
-                    value={selectedNote}
-                    onChange={(value) =>
-                      setNotes((current) => ({
-                        ...current,
-                        [selectedItem.row.id]: value,
-                      }))
-                    }
-                  />
-                </div>
-              )}
+              <div>
+                <ActionPanelTextarea
+                  label="Toelichting"
+                  placeholder="Voeg context toe voor de gekozen of voorgenomen actie..."
+                  value={selectedNote}
+                  onChange={(value) =>
+                    setNotes((current) => ({
+                      ...current,
+                      [selectedItem.row.id]: value,
+                    }))
+                  }
+                />
+              </div>
             </>
           )}
         </ActionPanel>

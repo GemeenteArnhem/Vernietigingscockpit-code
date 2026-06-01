@@ -20,6 +20,7 @@ type ActionPanelChoiceProps = {
   description: string;
   icon?: ReactNode;
   tone?: "primary" | "success" | "warning" | "danger" | "neutral";
+  density?: "default" | "compact";
   selected?: boolean;
   onClick?: () => void;
 };
@@ -56,30 +57,40 @@ const choiceToneStyles = {
       "border-blue-400 bg-blue-50 shadow-[0_0_0_1px_rgba(59,130,246,0.2)]",
     iconWrap: "bg-blue-100 text-blue-700",
     radio: "border-blue-500 bg-blue-500 shadow-[inset_0_0_0_3px_white]",
+    rowSelected: "border-blue-200 bg-blue-50/70",
+    rowIcon: "text-blue-600",
   },
   success: {
     selected:
       "border-emerald-300 bg-emerald-50 shadow-[0_0_0_1px_rgba(16,185,129,0.16)]",
     iconWrap: "bg-emerald-100 text-emerald-700",
     radio: "border-emerald-500 bg-emerald-500 shadow-[inset_0_0_0_3px_white]",
+    rowSelected: "border-emerald-200 bg-emerald-50/70",
+    rowIcon: "text-emerald-600",
   },
   warning: {
     selected:
       "border-amber-300 bg-amber-50 shadow-[0_0_0_1px_rgba(245,158,11,0.16)]",
     iconWrap: "bg-amber-100 text-amber-700",
     radio: "border-amber-500 bg-amber-500 shadow-[inset_0_0_0_3px_white]",
+    rowSelected: "border-amber-200 bg-amber-50/70",
+    rowIcon: "text-amber-600",
   },
   danger: {
     selected:
       "border-rose-300 bg-rose-50 shadow-[0_0_0_1px_rgba(244,63,94,0.16)]",
     iconWrap: "bg-rose-100 text-rose-700",
     radio: "border-rose-500 bg-rose-500 shadow-[inset_0_0_0_3px_white]",
+    rowSelected: "border-rose-200 bg-rose-50/70",
+    rowIcon: "text-rose-600",
   },
   neutral: {
     selected:
       "border-slate-300 bg-slate-50 shadow-[0_0_0_1px_rgba(148,163,184,0.16)]",
     iconWrap: "bg-slate-100 text-slate-600",
     radio: "border-slate-500 bg-slate-500 shadow-[inset_0_0_0_3px_white]",
+    rowSelected: "border-slate-300 bg-slate-50/80",
+    rowIcon: "text-slate-500",
   },
 };
 
@@ -142,23 +153,33 @@ export function ActionPanelChoice({
   description,
   icon,
   tone = "primary",
+  density = "default",
   selected = false,
   onClick,
 }: ActionPanelChoiceProps) {
   const toneStyle = choiceToneStyles[tone];
+  const isCompact = density === "compact";
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`flex w-full items-start gap-3 rounded-xl border px-3.5 py-3.5 text-left transition-all ${
-        selected
-          ? toneStyle.selected
-          : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
-      }`}
+      className={
+        isCompact
+          ? `flex w-full items-start gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-all ${
+              selected
+                ? toneStyle.rowSelected
+                : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+            }`
+          : `flex w-full items-start gap-3 rounded-xl border px-3.5 py-3.5 text-left transition-all ${
+              selected
+                ? toneStyle.selected
+                : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+            }`
+      }
     >
       <div
-        className={`mt-1 h-4 w-4 shrink-0 rounded-full border ${
+        className={`${isCompact ? "mt-0.5" : "mt-1"} h-4 w-4 shrink-0 rounded-full border ${
           selected
             ? toneStyle.radio
             : "border-slate-300 bg-white"
@@ -167,7 +188,11 @@ export function ActionPanelChoice({
 
       {icon && (
         <div
-          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${toneStyle.iconWrap}`}
+          className={
+            isCompact
+              ? `mt-0.5 shrink-0 ${toneStyle.rowIcon}`
+              : `flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${toneStyle.iconWrap}`
+          }
         >
           {icon}
         </div>
@@ -176,7 +201,7 @@ export function ActionPanelChoice({
       <div className="min-w-0">
         <div className="text-sm font-semibold text-slate-900">{title}</div>
         {description && (
-          <div className="mt-1 text-sm leading-5 text-slate-500">
+          <div className={`${isCompact ? "mt-0.5 text-xs leading-[18px]" : "mt-1 text-sm leading-5"} text-slate-500`}>
             {description}
           </div>
         )}

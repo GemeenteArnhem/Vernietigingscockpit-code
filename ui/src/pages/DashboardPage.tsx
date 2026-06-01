@@ -4,6 +4,7 @@ import {
   Clock3,
   FolderOpen,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import RecordPaneBar, {
   type RecordPaneBarFilter,
   type RecordPaneBarItem,
@@ -176,6 +177,7 @@ function getDashboardDecisions(
 }
 
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const [search, setSearch] =
     useState("");
 
@@ -362,6 +364,27 @@ export default function DashboardPage() {
       ? panelState.decision
       : "openen";
 
+  function handlePrimaryAction() {
+    if (!selectedRecord) {
+      return;
+    }
+
+    if (activeDecision === "herinneren" || activeDecision === "herplannen") {
+      console.info("Actie uitgevoerd", activeDecision, selectedRecord.id);
+      return;
+    }
+
+    navigate(`/taak/${selectedRecord.id}/taakuitvoering/${selectedRecord.id}`);
+  }
+
+  function handleSecondaryAction() {
+    if (!selectedRecord) {
+      return;
+    }
+
+    navigate(`/taak/${selectedRecord.id}/taakuitvoering/${selectedRecord.id}`);
+  }
+
   useEffect(() => {
     const handleKeyDown = (
       event: KeyboardEvent
@@ -405,15 +428,12 @@ export default function DashboardPage() {
 
       if (key === "w") {
         event.preventDefault();
-        setPanelState({
-          recordId:
-            activeRecordId,
-          decision:
-            selectedRecord?.status ===
-            "GEPLAND"
-              ? "starten"
-              : "openen",
-        });
+        handlePrimaryAction();
+      }
+
+      if (key === "o" && selectedRecord) {
+        event.preventDefault();
+        handleSecondaryAction();
       }
     };
 
@@ -429,10 +449,9 @@ export default function DashboardPage() {
       );
     };
   }, [
-    activeRecordId,
     nextRecord,
     previousRecord,
-    selectedRecord?.status,
+    selectedRecord,
   ]);
 
   return (
@@ -504,15 +523,14 @@ export default function DashboardPage() {
             <div className="space-y-2.5">
               <ActionPanelButtonGroup>
                 <ActionPanelButton
-                  label={
-                    decisions.find(
-                      (item) =>
-                        item.id ===
-                        activeDecision
-                    )?.title ??
-                    "Open taak"
-                  }
+                  label="Actie uitvoeren"
                   variant="primary"
+                  onClick={handlePrimaryAction}
+                />
+                <ActionPanelButton
+                  label="Taak openen"
+                  variant="secondary"
+                  onClick={handleSecondaryAction}
                 />
               </ActionPanelButtonGroup>
 
@@ -529,6 +547,10 @@ export default function DashboardPage() {
                     {
                       keyLabel: "W",
                       label: "Actie uitvoeren",
+                    },
+                    {
+                      keyLabel: "O",
+                      label: "Taak openen",
                     },
                 ]}
               />
@@ -558,6 +580,7 @@ export default function DashboardPage() {
                     }
                     icon={item.icon}
                     tone={item.tone}
+                    density="compact"
                     selected={
                       activeDecision ===
                       item.id
