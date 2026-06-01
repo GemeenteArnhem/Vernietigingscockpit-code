@@ -242,10 +242,10 @@ export default function ReviewRecordPanel({
             </div>
             <div className="border-b border-slate-100 pb-2">
               <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
-                Omvang cliënten
+                Omvang clienten
               </dt>
               <dd className="mt-1 text-sm font-medium text-slate-900">
-                {record.omvangClienten} cliënt{record.omvangClienten === 1 ? "" : "en"}
+                {record.omvangClienten} client{record.omvangClienten === 1 ? "" : "en"}
               </dd>
             </div>
             <div className="border-b border-slate-100 pb-2">

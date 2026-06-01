@@ -460,7 +460,7 @@ export default function RecordReviewPage() {
         items={paneItems}
         selectedId={selectedItem?.row.id ?? null}
         onSelect={setSelectedId}
-        emptyMessage={`Geen records gevonden voor ${getStatusFilterLabel(activeStatusFilter).toLowerCase()}${activeRiskFilter ? ` met ${getRiskLabel(activeRiskFilter).toLowerCase()}` : ""}.`}
+        emptyMessage={`Geen records gevonden voor ${getStatusFilterLabel(activeStatusFilter).toLowerCase()}${activeRiskFilter !== "alle" ? ` met ${getRiskLabel(activeRiskFilter).toLowerCase()}` : ""}.`}
         density="compact"
         showItemMeta={false}
       />
@@ -544,17 +544,17 @@ export default function RecordReviewPage() {
 
               {selectedDecision !== "open" && (
                 <div>
-                <ActionPanelTextarea
-                  label="Toelichting"
-                  placeholder="Voeg een toelichting toe voor deze actie..."
-                  value={selectedNote}
-                  onChange={(value) =>
-                    setNotes((current) => ({
-                      ...current,
-                      [selectedItem.row.id]: value,
-                    }))
-                  }
-                />
+                  <ActionPanelTextarea
+                    label="Toelichting"
+                    placeholder="Voeg een toelichting toe voor deze actie..."
+                    value={selectedNote}
+                    onChange={(value) =>
+                      setNotes((current) => ({
+                        ...current,
+                        [selectedItem.row.id]: value,
+                      }))
+                    }
+                  />
                 </div>
               )}
             </>
