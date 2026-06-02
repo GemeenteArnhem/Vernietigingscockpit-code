@@ -54,3 +54,24 @@ export type DestructionResultRow = {
   bron_systeem?: string;
   melding?: string;
 };
+
+export type DestructionResultTaskContext = {
+  procesnaam: string;
+  recordmanager: string;
+  proceseigenaar: string;
+  archivaris: string;
+  startdatum: string;
+};
+
+export type DestructionResultContext = {
+  recordId: string;
+  recordmanager: string;
+  proceseigenaar: string;
+  archivaris: string;
+  startdatumTaak: string;
+  bronSysteem: string;
+  omvangLabel: string;
+  statusDetail: string;
+  vervolgstap: string;
+  comments: import("./taskExecution").TaskExecutionComment[];
+};
