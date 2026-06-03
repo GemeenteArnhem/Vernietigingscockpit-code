@@ -4,42 +4,17 @@ export type DestructionResultStatus =
   | "NIET_GEVONDEN"
   | "OVERIG";
 
-export type DestructionResultColumnKey =
-  | "omvang"
-  | "vernietigingsdatum"
-  | "bron_id"
-  | "code"
-  | "grondslag"
-  | "bron_systeem"
-  | "melding";
+export type DestructionResultAction =
+  | "verklaring-downloaden"
+  | "resultaat-exporteren"
+  | "archiveren";
 
-export const DESTRUCTION_RESULT_COLUMN_LABELS: Record<
-  DestructionResultColumnKey,
-  string
-> = {
-  omvang: "Omvang",
-  vernietigingsdatum: "Vernietigingsdatum",
-  bron_id: "Bron-ID",
-  code: "Code",
-  grondslag: "Grondslag",
-  bron_systeem: "Bronsysteem",
-  melding: "Melding",
+export type DestructionResultActionOption = {
+  id: DestructionResultAction;
+  title: string;
+  description: string;
+  tone: "primary" | "success" | "warning" | "danger" | "neutral";
 };
-
-export const DESTRUCTION_RESULT_COLUMN_GROUPS = [
-  {
-    label: "Secundaire kolommen",
-    keys: [
-      "omvang",
-      "vernietigingsdatum",
-      "bron_id",
-      "code",
-      "grondslag",
-      "bron_systeem",
-      "melding",
-    ] as DestructionResultColumnKey[],
-  },
-];
 
 export type DestructionResultRow = {
   id: string;

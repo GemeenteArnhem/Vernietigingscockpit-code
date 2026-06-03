@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Archive, Download, FileOutput, Filter, TableProperties } from "lucide-react";
+import { Archive, Download, FileOutput } from "lucide-react";
 
 import ActionPanel, {
   ActionPanelButton,
@@ -17,23 +17,16 @@ import RecordPaneBar, {
   type RecordPaneBarTone,
 } from "../components/record-pane/RecordPaneBar";
 import DestructionResultRecordPanel from "../features/task-execution/results/components/DestructionResultRecordPanel";
-import { destructionResultContexts } from "../shared/mocks/destructionResultPage";
+import {
+  destructionResultActions,
+  destructionResultContexts,
+} from "../shared/mocks/destructionResultPage";
 import { destructionResultRows } from "../shared/mocks/destructionResultRows";
 import type {
-  DestructionResultColumnKey,
+  DestructionResultAction,
   DestructionResultContext,
   DestructionResultStatus,
 } from "../shared/types/destructionResult";
-
-const COLUMN_DEFAULTS: Record<DestructionResultColumnKey, boolean> = {
-  omvang: false,
-  vernietigingsdatum: false,
-  bron_id: false,
-  code: false,
-  grondslag: false,
-  bron_systeem: false,
-  melding: false,
-};
 
 type ResultStatusFilter = "alle" | DestructionResultStatus;
 
@@ -68,18 +61,12 @@ export default function DestructionResultPage() {
   const [activeStatusFilter, setActiveStatusFilter] =
     useState<ResultStatusFilter>("alle");
   const [activeSourceFilter, setActiveSourceFilter] = useState("alle");
+  const [selectedAction, setSelectedAction] = useState<DestructionResultAction>(
+    destructionResultActions[0]?.id ?? "verklaring-downloaden"
+  );
   const [selectedId, setSelectedId] = useState<string | null>(
     destructionResultRows[0]?.id ?? null
   );
-  const [visibleColumns, setVisibleColumns] =
-    useState<Record<DestructionResultColumnKey, boolean>>(COLUMN_DEFAULTS);
-
-  const toggleColumn = (key: DestructionResultColumnKey) => {
-    setVisibleColumns((current) => ({
-      ...current,
-      [key]: !current[key],
-    }));
-  };
 
   const resultRows = useMemo(() => destructionResultRows, []);
   const contextById = useMemo<Record<string, DestructionResultContext>>(
@@ -169,20 +156,21 @@ export default function DestructionResultPage() {
       }),
     [activeSourceFilter, activeStatusFilter, resultRows, search]
   );
-
-  useEffect(() => {
-    if (!visibleRows.some((row) => row.id === selectedId)) {
-      setSelectedId(visibleRows[0]?.id ?? null);
+  const effectiveSelectedId = useMemo(() => {
+    if (selectedId && visibleRows.some((row) => row.id === selectedId)) {
+      return selectedId;
     }
+
+    return visibleRows[0]?.id ?? null;
   }, [selectedId, visibleRows]);
 
   const selectedIndex = useMemo(
-    () => visibleRows.findIndex((row) => row.id === selectedId),
-    [selectedId, visibleRows]
+    () => visibleRows.findIndex((row) => row.id === effectiveSelectedId),
+    [effectiveSelectedId, visibleRows]
   );
   const selectedRow = useMemo(
-    () => visibleRows.find((row) => row.id === selectedId) ?? visibleRows[0],
-    [selectedId, visibleRows]
+    () => visibleRows.find((row) => row.id === effectiveSelectedId) ?? visibleRows[0],
+    [effectiveSelectedId, visibleRows]
   );
   const selectedContext = selectedRow ? contextById[selectedRow.id] : undefined;
   const previousRecord = selectedIndex > 0 ? visibleRows[selectedIndex - 1] : undefined;
@@ -190,6 +178,10 @@ export default function DestructionResultPage() {
     selectedIndex >= 0 && selectedIndex < visibleRows.length - 1
       ? visibleRows[selectedIndex + 1]
       : undefined;
+  const selectedActionConfig = useMemo(
+    () => destructionResultActions.find((action) => action.id === selectedAction),
+    [selectedAction]
+  );
   const paneItems = useMemo<RecordPaneBarItem[]>(
     () =>
       visibleRows.map((row) => ({
@@ -201,6 +193,14 @@ export default function DestructionResultPage() {
       })),
     [visibleRows]
   );
+
+  const executeSelectedAction = () => {
+    if (!selectedRow || !selectedActionConfig) {
+      return;
+    }
+
+    console.info("Actie uitgevoerd", selectedActionConfig.id, selectedRow.id);
+  };
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -224,11 +224,16 @@ export default function DestructionResultPage() {
         event.preventDefault();
         setSelectedId(nextRecord.id);
       }
+
+      if (key === "w" && selectedRow && selectedActionConfig) {
+        event.preventDefault();
+        console.info("Actie uitgevoerd", selectedActionConfig.id, selectedRow.id);
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [nextRecord, previousRecord]);
+  }, [nextRecord, previousRecord, selectedActionConfig, selectedRow]);
 
   return (
     <div className="flex flex-1 min-h-0 overflow-hidden">
@@ -245,7 +250,7 @@ export default function DestructionResultPage() {
         onFilterChange={() => undefined}
         filterSections={filterSections}
         items={paneItems}
-        selectedId={selectedRow?.id ?? null}
+        selectedId={effectiveSelectedId}
         onSelect={setSelectedId}
         emptyMessage="Geen resultaten gevonden binnen deze selectie."
         density="compact"
@@ -264,103 +269,62 @@ export default function DestructionResultPage() {
 
         <ActionPanel
           title="Acties"
-          subtitle="Filter de resultaatlijst en beheer welke informatie je in deze stap wilt tonen of exporteren."
+          subtitle="Kies de vervolgstap voor het geselecteerde resultaat."
           footer={
-            <div className="space-y-2.5">
-              <ActionPanelButtonGroup>
-                <ActionPanelButton
-                  label="Verklaring downloaden"
-                  variant="primary"
-                  onClick={() => undefined}
-                />
-                <ActionPanelButton
-                  label="Exporteren"
-                  variant="secondary"
-                  onClick={() => undefined}
-                />
-                <ActionPanelButton
-                  label="Archiveren"
-                  variant="secondary"
-                  onClick={() => undefined}
-                />
-              </ActionPanelButtonGroup>
+            selectedRow ? (
+              <div className="space-y-2.5">
+                <ActionPanelButtonGroup>
+                  <ActionPanelButton
+                    label="Actie uitvoeren"
+                    variant="primary"
+                    onClick={executeSelectedAction}
+                  />
+                </ActionPanelButtonGroup>
 
-              <ActionPanelShortcuts
-                shortcuts={[
-                  { keyLabel: "A", label: "Vorige" },
-                  { keyLabel: "D", label: "Volgende" },
-                ]}
-              />
-            </div>
+                <ActionPanelShortcuts
+                  shortcuts={[
+                    { keyLabel: "A", label: "Vorige" },
+                    { keyLabel: "D", label: "Volgende" },
+                    { keyLabel: "W", label: "Actie uitvoeren" },
+                  ]}
+                />
+              </div>
+            ) : null
           }
         >
           {!selectedRow ? (
             <ActionPanelEmptyState
               title="Kies eerst een resultaat"
-              description="Na selectie tonen we hier de filters, kolominstellingen en uitvoeracties."
+              description="Na selectie tonen we hier de beschikbare uitvoeracties voor dit resultaat."
             />
           ) : (
-            <>
-              <ActionPanelSection
-                title="Statusfilter"
-                description="Verfijn de resultatenlijst op uitkomst van de vernietigingsactie."
-              >
-                <div className="space-y-2">
-                  {[
-                    { key: "alle", title: "Alle resultaten", description: "Toon alle verwerkte records.", icon: <Filter size={18} />, tone: "primary" as const },
-                    { key: "SUCCES", title: "Succes", description: "Alleen records die succesvol zijn verwijderd.", icon: <Download size={18} />, tone: "success" as const },
-                    { key: "FOUT", title: "Fouten", description: "Records met een fout tijdens de uitvoering.", icon: <Archive size={18} />, tone: "danger" as const },
-                    { key: "NIET_GEVONDEN", title: "Niet gevonden", description: "Records die niet meer in de bron aanwezig waren.", icon: <FileOutput size={18} />, tone: "warning" as const },
-                    { key: "OVERIG", title: "Overige", description: "Records met een alternatieve of overgeslagen uitkomst.", icon: <TableProperties size={18} />, tone: "neutral" as const },
-                  ].map((item) => (
-                    <ActionPanelChoice
-                      key={item.key}
-                      title={item.title}
-                      description={item.description}
-                      icon={item.icon}
-                      tone={item.tone}
-                      density="compact"
-                      selected={activeStatusFilter === item.key}
-                      onClick={() => setActiveStatusFilter(item.key as ResultStatusFilter)}
-                    />
-                  ))}
-                </div>
-              </ActionPanelSection>
-
-              <ActionPanelSection
-                title="Kolommen"
-                description="Bepaal welke aanvullende metadata zichtbaar moeten zijn in deze resultaatweergave."
-              >
-                <div className="space-y-2">
-                  {(
-                    [
-                      ["omvang", "Omvang"],
-                      ["vernietigingsdatum", "Vernietigingsdatum"],
-                      ["bron_id", "Bron-ID"],
-                      ["code", "Code"],
-                      ["grondslag", "Grondslag"],
-                      ["bron_systeem", "Bronsysteem"],
-                      ["melding", "Melding"],
-                    ] as Array<[DestructionResultColumnKey, string]>
-                  ).map(([key, label]) => (
-                    <ActionPanelChoice
-                      key={key}
-                      title={label}
-                      description={
-                        visibleColumns[key]
-                          ? "Deze kolom staat aan in de resultaatweergave."
-                          : "Deze kolom staat nu uit."
-                      }
-                      icon={<TableProperties size={18} />}
-                      tone={visibleColumns[key] ? "primary" : "neutral"}
-                      density="compact"
-                      selected={visibleColumns[key]}
-                      onClick={() => toggleColumn(key)}
-                    />
-                  ))}
-                </div>
-              </ActionPanelSection>
-            </>
+            <ActionPanelSection
+              title="Kies een actie"
+              description="De resultaatdetails staan links. Kies hier alleen de vervolgstap."
+            >
+              <div className="space-y-3">
+                {destructionResultActions.map((action) => (
+                  <ActionPanelChoice
+                    key={action.id}
+                    title={action.title}
+                    description={action.description}
+                    icon={
+                      action.id === "verklaring-downloaden" ? (
+                        <Download size={18} />
+                      ) : action.id === "resultaat-exporteren" ? (
+                        <FileOutput size={18} />
+                      ) : (
+                        <Archive size={18} />
+                      )
+                    }
+                    tone={action.tone}
+                    density="compact"
+                    selected={selectedAction === action.id}
+                    onClick={() => setSelectedAction(action.id)}
+                  />
+                ))}
+              </div>
+            </ActionPanelSection>
           )}
         </ActionPanel>
       </div>

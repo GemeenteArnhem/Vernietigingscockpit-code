@@ -11,8 +11,7 @@ import ContentPanel, {
 } from "../../../../components/ContentPanel";
 import RecordCommentsSection from "../../components/RecordCommentsSection";
 import RecordDetailsSection from "../../components/RecordDetailsSection";
-import TaskMetaBar from "../../../../components/TaskMetaBar";
-import WorkflowBar from "../../components/WorkflowBar";
+import TaskExecutionContextBar from "../../components/TaskExecutionContextBar";
 import type { VernietigingsObject } from "../../../../shared/types/destruction";
 import type {
   ReviewQueueStatus,
@@ -94,15 +93,7 @@ export default function ReviewRecordPanel({
           }
         />
 
-        <section className="rounded-md border border-slate-200 bg-white px-4 py-4 shadow-sm shadow-slate-200/40">
-          <div className="flex flex-col gap-3">
-            <WorkflowBar activeStep={activeStep} variant="embedded" />
-
-            <div className="border-t border-slate-100 pt-3">
-              <TaskMetaBar items={taskMetaItems} variant="embedded" />
-            </div>
-          </div>
-        </section>
+        <TaskExecutionContextBar activeStep={activeStep} items={taskMetaItems} />
 
         <RecordDetailsSection
           record={record}

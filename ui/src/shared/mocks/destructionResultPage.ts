@@ -1,5 +1,6 @@
 import { destructionResultRows } from "./destructionResultRows";
 import type {
+  DestructionResultActionOption,
   DestructionResultContext,
   DestructionResultStatus,
   DestructionResultTaskContext,
@@ -43,6 +44,27 @@ export const destructionResultTaskContext: DestructionResultTaskContext = {
   archivaris: ARCHIVARIS,
   startdatum: TAAK_STARTDATUM,
 };
+
+export const destructionResultActions: DestructionResultActionOption[] = [
+  {
+    id: "verklaring-downloaden",
+    title: "Verklaring downloaden",
+    description: "Download de vernietigingsverklaring voor het geselecteerde resultaat.",
+    tone: "primary",
+  },
+  {
+    id: "resultaat-exporteren",
+    title: "Resultaat exporteren",
+    description: "Exporteer de uitvoergegevens van dit resultaat voor verdere verwerking.",
+    tone: "neutral",
+  },
+  {
+    id: "archiveren",
+    title: "Archiveren",
+    description: "Markeer het geselecteerde resultaat als gereed voor archivering.",
+    tone: "warning",
+  },
+];
 
 export const destructionResultContexts: DestructionResultContext[] =
   destructionResultRows.map((row) => ({

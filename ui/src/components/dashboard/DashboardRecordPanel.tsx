@@ -9,10 +9,9 @@ import ContentPanel, {
   ContentPanelEmptyState,
   ContentPanelHeader,
 } from "../ContentPanel";
-import TaskMetaBar from "../TaskMetaBar";
 import RecordCommentsSection from "../../features/task-execution/components/RecordCommentsSection";
 import RecordDetailsSection from "../../features/task-execution/components/RecordDetailsSection";
-import WorkflowBar from "../../features/task-execution/components/WorkflowBar";
+import TaskExecutionContextBar from "../../features/task-execution/components/TaskExecutionContextBar";
 import { dashboardTaskExecutionPanelById } from "../../shared/mocks/dashboardTaskExecutionPanel";
 import type { DashboardTaskRecord } from "../../shared/types/dashboard";
 
@@ -121,15 +120,10 @@ export default function DashboardRecordPanel({
           }
         />
 
-        <section className="rounded-md border border-slate-200 bg-white px-4 py-4 shadow-sm shadow-slate-200/40">
-          <div className="flex flex-col gap-3">
-            <WorkflowBar activeStep={getWorkflowStep(record)} variant="embedded" />
-
-            <div className="border-t border-slate-100 pt-3">
-              <TaskMetaBar items={taskMetaItems} variant="embedded" />
-            </div>
-          </div>
-        </section>
+        <TaskExecutionContextBar
+          activeStep={getWorkflowStep(record)}
+          items={taskMetaItems}
+        />
 
         {panelData && (
           <>

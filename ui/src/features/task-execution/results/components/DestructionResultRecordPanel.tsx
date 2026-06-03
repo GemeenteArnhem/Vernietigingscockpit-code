@@ -1,4 +1,10 @@
-import { ChevronLeft, ChevronRight, FolderArchive, ShieldCheck, TimerReset, Waypoints } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  FolderArchive,
+  TimerReset,
+  Waypoints,
+} from "lucide-react";
 
 import ContentPanel, {
   ContentPanelBody,
@@ -6,12 +12,9 @@ import ContentPanel, {
   ContentPanelHeader,
   ContentPanelSection,
   ContentPanelStat,
-  ContentPanelStatGrid,
 } from "../../../../components/ContentPanel";
 import StatusBadge from "../../../../components/StatusBadge";
-import TaskMetaBar from "../../../../components/TaskMetaBar";
-import WorkflowBar from "../../components/WorkflowBar";
-import RecordCommentsSection from "../../components/RecordCommentsSection";
+import TaskExecutionContextBar from "../../components/TaskExecutionContextBar";
 import type {
   DestructionResultContext,
   DestructionResultRow,
@@ -25,6 +28,26 @@ type Props = {
   onPrevious?: () => void;
   onNext?: () => void;
 };
+
+function formatPlannedDestructionDate(value?: string) {
+  if (!value) {
+    return "-";
+  }
+
+  const match = /^(\d{4})-(\d{2})$/.exec(value);
+
+  if (!match) {
+    return value;
+  }
+
+  const [, year, month] = match;
+  const date = new Date(Number(year), Number(month) - 1, 1);
+
+  return new Intl.DateTimeFormat("nl-NL", {
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
 
 export default function DestructionResultRecordPanel({
   record,
@@ -59,7 +82,7 @@ export default function DestructionResultRecordPanel({
         <ContentPanelHeader
           eyebrow="Taakuitvoering"
           title={record.titel}
-          subtitle="Inzicht in de uitvoerstatus, technische melding en vervolgactie voor dit record."
+          subtitle="Inzicht in de uitvoerstatus en vervolgactie voor dit record."
           aside={
             <div className="flex flex-wrap items-center justify-end gap-3">
               <div className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
@@ -91,107 +114,52 @@ export default function DestructionResultRecordPanel({
           }
         />
 
-        <section className="rounded-md border border-slate-200 bg-white px-4 py-4 shadow-sm shadow-slate-200/40">
-          <div className="flex flex-col gap-3">
-            <WorkflowBar activeStep="RESULTAAT" variant="embedded" />
-
-            <div className="border-t border-slate-100 pt-3">
-              <TaskMetaBar items={taskMetaItems} variant="embedded" />
-            </div>
-          </div>
-        </section>
+        <TaskExecutionContextBar activeStep="RESULTAAT" items={taskMetaItems} />
 
         <ContentPanelSection
           title="Uitkomst"
           description="Samenvatting van de verwerkte actie voor dit record."
         >
-          <ContentPanelStatGrid>
-            <ContentPanelStat
-              label="Status"
-              value={record.vernietigingsstatus}
-              icon={<ShieldCheck size={16} />}
-              hint={context.statusDetail}
-            />
-            <ContentPanelStat
-              label="Stekker"
-              value={record.stekker}
-              icon={<Waypoints size={16} />}
-              hint={context.bronSysteem}
-            />
-            <ContentPanelStat
-              label="Vernietigingsdatum"
-              value={record.vernietigingsdatum ?? "-"}
-              icon={<TimerReset size={16} />}
-              hint="Geplande datum uit de vernietigingslijst."
-            />
-            <ContentPanelStat
-              label="Omvang"
-              value={context.omvangLabel}
-              icon={<FolderArchive size={16} />}
-              hint="Aantal objecten in deze uitvoerregel."
-            />
-          </ContentPanelStatGrid>
-
-          <div className="mt-4 rounded-sm border border-slate-200 bg-slate-50/70 px-4 py-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
-                  Vernietigingsstatus
+          <div className="space-y-3">
+            <div className="rounded-md border border-slate-200 bg-slate-50/80 px-4 py-4">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-slate-900">
+                  Status van vernietiging
                 </div>
-                <div className="mt-2">
-                  <StatusBadge status={record.vernietigingsstatus} size="md" />
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-start">
+                  <div className="shrink-0">
+                    <StatusBadge status={record.vernietigingsstatus} size="md" />
+                  </div>
+                  <p className="max-w-3xl text-sm leading-6 text-slate-600">
+                    {context.statusDetail}
+                  </p>
                 </div>
               </div>
+            </div>
 
-              <div className="max-w-xl text-sm leading-6 text-slate-600">
-                {context.statusDetail}
-              </div>
+            <div className="grid gap-2 md:grid-cols-3">
+              <ContentPanelStat
+                label="Stekker"
+                value={record.stekker}
+                icon={<Waypoints size={16} />}
+                hint="Gebruikte connector in deze uitvoer."
+              />
+              <ContentPanelStat
+                label="Vernietigingsdatum"
+                value={formatPlannedDestructionDate(record.vernietigingsdatum)}
+                icon={<TimerReset size={16} />}
+                hint="Gepland vernietigingsmoment volgens de vernietigingslijst."
+              />
+              <ContentPanelStat
+                label="Documenten"
+                value={`${record.omvang ?? 0} ${record.omvang === 1 ? "document" : "documenten"}`}
+                icon={<FolderArchive size={16} />}
+                hint="Aantal documenten in deze uitvoerregel."
+              />
             </div>
           </div>
         </ContentPanelSection>
-
-        <ContentPanelSection
-          title="Metadata"
-          description="Belangrijkste bron- en classificatiegegevens uit het resultaat."
-        >
-          <div className="grid gap-4 xl:grid-cols-2">
-            <div className="rounded-sm border border-slate-200 bg-slate-50/50 px-4 py-4">
-              <h3 className="text-sm font-semibold text-slate-900">Broninformatie</h3>
-              <dl className="mt-3 grid gap-x-5 gap-y-3 sm:grid-cols-2">
-                <DetailItem label="Bron-ID" value={record.bron_id ?? "-"} />
-                <DetailItem label="Bronsysteem" value={record.bron_systeem ?? "-"} />
-                <DetailItem label="Stekker" value={record.stekker} />
-                <DetailItem label="Code" value={record.code ?? "-"} />
-              </dl>
-            </div>
-
-            <div className="rounded-sm border border-slate-200 bg-slate-50/50 px-4 py-4">
-              <h3 className="text-sm font-semibold text-slate-900">Classificatie</h3>
-              <dl className="mt-3 grid gap-x-5 gap-y-3 sm:grid-cols-2">
-                <DetailItem label="Grondslag" value={record.grondslag ?? "-"} />
-                <DetailItem label="Omvang" value={context.omvangLabel} />
-                <DetailItem label="Vervolgstap" value={context.vervolgstap} />
-                <DetailItem label="Statuslabel" value={record.vernietigingsstatus} />
-              </dl>
-            </div>
-          </div>
-        </ContentPanelSection>
-
-        <RecordCommentsSection
-          comments={context.comments}
-          title="Technische melding"
-          description="Laatste systeemmelding en vastgelegde uitvoercontext voor dit record."
-        />
       </ContentPanelBody>
     </ContentPanel>
-  );
-}
-
-function DetailItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="border-b border-slate-100 pb-2">
-      <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</dt>
-      <dd className="mt-1 text-sm font-medium text-slate-900">{value}</dd>
-    </div>
   );
 }

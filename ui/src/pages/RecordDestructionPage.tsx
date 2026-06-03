@@ -10,7 +10,6 @@ import {
 } from "lucide-react";
 
 import StatusBadge from "../components/StatusBadge";
-import TaskMetaBar from "../components/TaskMetaBar";
 import ActionPanel, {
   ActionPanelButton,
   ActionPanelButtonGroup,
@@ -22,7 +21,7 @@ import ContentPanel, {
   ContentPanelHeader,
   ContentPanelSection,
 } from "../components/ContentPanel";
-import WorkflowBar from "../features/task-execution/components/WorkflowBar";
+import TaskExecutionContextBar from "../features/task-execution/components/TaskExecutionContextBar";
 
 type Connector = {
   id: string;
@@ -203,15 +202,7 @@ export default function RecordDestructionPage() {
                 subtitle="Start de vernietiging taakbreed voor alle gekoppelde stekkers. Kies daarna een stekker om de voortgang of een eventuele herkansing te bekijken."
               />
 
-              <section className="rounded-md border border-slate-200 bg-white px-4 py-4 shadow-sm shadow-slate-200/40">
-                <div className="flex flex-col gap-3">
-                  <WorkflowBar activeStep="UITVOERING" variant="embedded" />
-
-                  <div className="border-t border-slate-100 pt-3">
-                    <TaskMetaBar items={taskMetaItems} variant="embedded" />
-                  </div>
-                </div>
-              </section>
+              <TaskExecutionContextBar activeStep="UITVOERING" items={taskMetaItems} />
 
               <ContentPanelSection
                 title="Stekkers"
