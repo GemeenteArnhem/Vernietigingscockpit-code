@@ -1,572 +1,309 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import {
-  CheckCheck,
-  Clock3,
-  FileX2,
-  SendToBack,
-} from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, FileSearch } from "lucide-react";
 
-import ActionPanel, {
-  ActionPanelButton,
-  ActionPanelButtonGroup,
-  ActionPanelChoice,
-  ActionPanelEmptyState,
-  ActionPanelSection,
-  ActionPanelShortcuts,
-  ActionPanelTextarea,
-} from "../components/ActionPanel";
+import Breadcrumb from "../components/Breadcrumb";
 import ConfirmDialog from "../components/ConfirmDialog";
-import RecordPaneBar, {
-  type RecordPaneBarFilter,
-  type RecordPaneBarFilterSection,
-  type RecordPaneBarItem,
-  type RecordPaneBarTab,
-  type RecordPaneBarTone,
-} from "../components/record-pane/RecordPaneBar";
-import ReviewRecordPanel from "../features/task-execution/review/components/ReviewRecordPanel";
-import { initialReviewDecisions, reviewRecordContexts } from "../shared/mocks/reviewPage";
+import PageHeader from "../components/PageHeader";
+import PageActionBar from "../components/PageActionBar";
+import WorkflowBar from "../features/task-execution/components/WorkflowBar";
 import { reviewRows } from "../shared/mocks/reviewRows";
-import type {
-  ReviewComment,
-  ReviewDecision,
-  ReviewQueueStatus,
-  ReviewRiskLevel,
-} from "../shared/types/review";
+import type { VernietigingsObject } from "../shared/types/destruction";
 
-type ApprovalStatusFilter =
-  | "alle"
-  | "nog-te-beoordelen"
-  | "retour"
-  | "conflict"
-  | "afgerond"
-  | "uitgesteld";
-type ApprovalRiskFilter = "alle" | ReviewRiskLevel;
-type ApprovalAction = ReviewDecision | "uitstellen";
+type ExceptionDecision = "akkoord" | "aanpassen" | "terug";
 
-function getDecisionStatus(decision: ReviewDecision): ReviewQueueStatus {
-  switch (decision) {
-    case "akkoord":
-      return "afgerond";
-    case "uitsluiten":
-      return "conflict";
-    case "retour":
-      return "retour";
-    default:
-      return "nog-te-beoordelen";
-  }
-}
-
-function getQueueStatusTone(status: ReviewQueueStatus): RecordPaneBarTone {
-  switch (status) {
-    case "afgerond":
-      return "success";
-    case "conflict":
-      return "danger";
-    case "retour":
-      return "warning";
-    default:
-      return "info";
-  }
-}
-
-function getRiskLabel(risk: ReviewRiskLevel) {
-  switch (risk) {
-    case "hoog":
-      return "Hoog risico";
-    case "middel":
-      return "Middel risico";
-    default:
-      return "Laag risico";
-  }
-}
-
-function getRiskShortLabel(risk: ReviewRiskLevel) {
-  switch (risk) {
-    case "hoog":
-      return "Hoog";
-    case "middel":
-      return "Middel";
-    default:
-      return "Laag";
-  }
-}
-
-function getStatusFilterLabel(filter: ApprovalStatusFilter) {
-  switch (filter) {
-    case "alle":
-      return "Alle";
-    case "retour":
-      return "Retour";
-    case "conflict":
-      return "Uitgesloten";
-    case "afgerond":
-      return "Geaccordeerd";
-    case "uitgesteld":
-      return "Uitgesteld";
-    default:
-      return "Open";
-  }
-}
-
-const approvalActions = [
-  {
-    id: "akkoord" as const,
-    title: "Akkoord",
-    description: "Record vaststellen voor doorgang naar de archivaris.",
-    icon: <CheckCheck size={18} />,
-    tone: "success" as const,
-  },
-  {
-    id: "uitsluiten" as const,
-    title: "Uitsluiten",
-    description: "Record buiten de vernietigingslijst plaatsen.",
-    icon: <FileX2 size={18} />,
-    tone: "danger" as const,
-  },
-  {
-    id: "retour" as const,
-    title: "Retour sturen",
-    description: "Terugzetten naar de recordmanager voor aanvullende controle.",
-    icon: <SendToBack size={18} />,
-    tone: "warning" as const,
-  },
-  {
-    id: "uitstellen" as const,
-    title: "Uitstellen",
-    description: "Later opnieuw beoordelen binnen deze accorderingsstap.",
-    icon: <Clock3 size={18} />,
-    tone: "neutral" as const,
-  },
-];
+const DECISION_LABELS: Record<ExceptionDecision, string> = {
+  akkoord: "Uitzondering akkoord",
+  aanpassen: "Aanpassen voor archivaris",
+  terug: "Terug naar recordmanager",
+};
 
 export default function ProcessOwnerApprovalPage() {
   const navigate = useNavigate();
   const { taakId, id } = useParams();
-
-  const [search, setSearch] = useState("");
-  const [activeStatusFilter, setActiveStatusFilter] =
-    useState<ApprovalStatusFilter>("alle");
-  const [activeRiskFilter, setActiveRiskFilter] =
-    useState<ApprovalRiskFilter>("alle");
-  const [selectedId, setSelectedId] = useState<string | null>(reviewRows[0]?.id ?? null);
-  const [decisions, setDecisions] =
-    useState<Record<string, ReviewDecision>>(initialReviewDecisions);
-  const [notes, setNotes] = useState<Record<string, string>>({});
-  const [deferredRecords, setDeferredRecords] = useState<Record<string, boolean>>({});
-  const [selectedActions, setSelectedActions] = useState<Record<string, ApprovalAction>>({});
-  const [manualComments, setManualComments] = useState<Record<string, ReviewComment[]>>({});
+  const exceptionRows = reviewRows.filter((row) => row.uitgesloten);
+  const approvedRowsCount = reviewRows.length - exceptionRows.length;
+  const [exceptionDecisions, setExceptionDecisions] = useState<
+    Record<string, ExceptionDecision>
+  >({});
+  const [recordComments, setRecordComments] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      reviewRows
+        .filter((row) => row.proceseigenaarToelichting)
+        .map((row) => [row.id, row.proceseigenaarToelichting || ""])
+    )
+  );
+  const [returnComment, setReturnComment] = useState("");
+  const [commentSectionOpen, setCommentSectionOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const contextById = useMemo(
-    () => Object.fromEntries(reviewRecordContexts.map((context) => [context.recordId, context])),
-    []
-  );
-
-  const queueRows = useMemo(
-    () =>
-      reviewRows.map((row) => {
-        const context = contextById[row.id];
-        const computedStatus = getDecisionStatus(decisions[row.id] ?? "open");
-        const isDeferred = deferredRecords[row.id] === true;
-        const queueStatus = isDeferred
-          ? "uitgesteld"
-          : decisions[row.id] && decisions[row.id] !== "open"
-            ? computedStatus
-            : context?.queueStatus ?? "nog-te-beoordelen";
-        const risk = context?.risiconiveau ?? "laag";
-
-        return {
-          row,
-          context: context
-            ? {
-                ...context,
-                comments: [...context.comments, ...(manualComments[row.id] ?? [])],
-              }
-            : context,
-          queueStatus,
-          risk,
-        };
-      }),
-    [contextById, decisions, deferredRecords, manualComments]
-  );
-
-  const filters = useMemo<RecordPaneBarFilter[]>(
-    () => [],
-    []
-  );
-
-  const tabs = useMemo<RecordPaneBarTab[]>(() => [], []);
-
-  const filterSections = useMemo<RecordPaneBarFilterSection[]>(
-    () => [
-      {
-        key: "status",
-        label: "Status",
-        activeKey: activeStatusFilter,
-        onChange: (key) => setActiveStatusFilter(key as ApprovalStatusFilter),
-        options: [
-          {
-            key: "alle",
-            label: "Alle",
-            count: queueRows.length,
-          },
-          {
-            key: "nog-te-beoordelen",
-            label: "Open",
-            count: queueRows.filter((item) => item.queueStatus === "nog-te-beoordelen").length,
-          },
-          {
-            key: "retour",
-            label: "Retour",
-            count: queueRows.filter((item) => item.queueStatus === "retour").length,
-          },
-          {
-            key: "conflict",
-            label: "Uitgesloten",
-            count: queueRows.filter((item) => item.queueStatus === "conflict").length,
-          },
-          {
-            key: "afgerond",
-            label: "Geaccordeerd",
-            count: queueRows.filter((item) => item.queueStatus === "afgerond").length,
-          },
-          {
-            key: "uitgesteld",
-            label: "Uitgesteld",
-            count: queueRows.filter((item) => item.queueStatus === "uitgesteld").length,
-          },
-        ],
-      },
-      {
-        key: "risico",
-        label: "Risico",
-        activeKey: activeRiskFilter,
-        onChange: (key) => setActiveRiskFilter(key as ApprovalRiskFilter),
-        options: [
-          {
-            key: "alle",
-            label: "Alle",
-            count: queueRows.length,
-          },
-          {
-            key: "laag",
-            label: "Laag risico",
-            count: queueRows.filter((item) => item.risk === "laag").length,
-          },
-          {
-            key: "middel",
-            label: "Midden risico",
-            count: queueRows.filter((item) => item.risk === "middel").length,
-          },
-          {
-            key: "hoog",
-            label: "Hoog risico",
-            count: queueRows.filter((item) => item.risk === "hoog").length,
-          },
-        ],
-      },
-    ],
-    [activeRiskFilter, activeStatusFilter, queueRows]
-  );
-
-  const visibleRows = useMemo(
-    () =>
-      queueRows.filter(({ row, queueStatus, risk }) => {
-        const matchesSearch =
-          row.titel.toLowerCase().includes(search.toLowerCase()) ||
-          row.bron_id?.toLowerCase().includes(search.toLowerCase());
-        const matchesRisk = activeRiskFilter === "alle" ? true : risk === activeRiskFilter;
-        const matchesStatus =
-          activeStatusFilter === "alle" ? true : queueStatus === activeStatusFilter;
-
-        return matchesStatus && matchesSearch && matchesRisk;
-      }),
-    [activeRiskFilter, activeStatusFilter, queueRows, search]
-  );
-
-  useEffect(() => {
-    if (!visibleRows.some((item) => item.row.id === selectedId)) {
-      setSelectedId(visibleRows[0]?.row.id ?? null);
-    }
-  }, [selectedId, visibleRows]);
-
-  const selectedIndex = useMemo(
-    () => visibleRows.findIndex((item) => item.row.id === selectedId),
-    [selectedId, visibleRows]
-  );
-
-  const selectedItem = useMemo(
-    () => visibleRows.find((item) => item.row.id === selectedId) ?? visibleRows[0],
-    [selectedId, visibleRows]
-  );
-
-  const previousRecord = selectedIndex > 0 ? visibleRows[selectedIndex - 1] : undefined;
-  const nextRecord =
-    selectedIndex >= 0 && selectedIndex < visibleRows.length - 1
-      ? visibleRows[selectedIndex + 1]
-      : undefined;
-
-  const paneItems = useMemo<RecordPaneBarItem[]>(
-    () =>
-      visibleRows.map(({ row, queueStatus, risk }) => ({
-        id: row.id,
-        title: row.titel,
-        stepLabel: getRiskShortLabel(risk),
-        stepTone: getQueueStatusTone(queueStatus),
-        status:
-          queueStatus === "afgerond"
-            ? "Geaccordeerd"
-            : queueStatus === "conflict"
-              ? "Uitgesloten"
-            : queueStatus === "retour"
-              ? "Retour"
-              : queueStatus === "uitgesteld"
-                ? "Uitgesteld"
-                : "Open",
-      })),
-    [visibleRows]
-  );
-
-  const committedDecision = selectedItem ? decisions[selectedItem.row.id] ?? "open" : "open";
-  const selectedDecision = selectedItem
-    ? selectedActions[selectedItem.row.id] ?? committedDecision
-    : "open";
-  const selectedNote = selectedItem ? notes[selectedItem.row.id] ?? "" : "";
-  const completedCount = queueRows.filter((item) => {
-    const decision = decisions[item.row.id] ?? "open";
-    return decision !== "open";
-  }).length;
-  const allReviewed = queueRows.length > 0 && completedCount === queueRows.length;
-
-  const executeAction = (action: ApprovalAction) => {
-    if (!selectedItem || action === "open") {
-      return;
-    }
-
-    setDeferredRecords((current) => {
-      const nextState = { ...current };
-
-      if (action === "uitstellen") {
-        nextState[selectedItem.row.id] = true;
-      } else {
-        delete nextState[selectedItem.row.id];
-      }
-
-      return nextState;
-    });
-
-    if (action !== "uitstellen") {
-      setDecisions((current) => ({
-        ...current,
-        [selectedItem.row.id]: action,
-      }));
-    }
-
-    if (selectedNote.trim()) {
-      setManualComments((current) => ({
-        ...current,
-        [selectedItem.row.id]: [
-          ...(current[selectedItem.row.id] ?? []),
-          {
-            author: "Proceseigenaar",
-            role: "Proceseigenaar",
-            message: selectedNote.trim(),
-            timestamp: "2 juni 2026, 14:30",
-          },
-        ],
-      }));
-
-      setNotes((current) => ({
-        ...current,
-        [selectedItem.row.id]: "",
-      }));
-    }
-
-    setSelectedActions((current) => {
-      const nextState = { ...current };
-      delete nextState[selectedItem.row.id];
-      return nextState;
-    });
-
-    if (nextRecord) {
-      setSelectedId(nextRecord.row.id);
-      return;
-    }
-
-    if (allReviewed) {
-      setConfirmOpen(true);
-    }
+  const updateRecordComment = (rowId: string, value: string) => {
+    setRecordComments((currentComments) => ({
+      ...currentComments,
+      [rowId]: value,
+    }));
   };
 
-  const executeSelectedAction = () => {
-    executeAction(selectedDecision);
+  const getRecordComment = (row: VernietigingsObject) =>
+    recordComments[row.id] ?? row.proceseigenaarToelichting ?? "";
+
+  const updateExceptionDecision = (rowId: string, value: ExceptionDecision) => {
+    setExceptionDecisions((currentDecisions) => ({
+      ...currentDecisions,
+      [rowId]: value,
+    }));
   };
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const tagName = target?.tagName ?? "";
-      const isTyping =
-        tagName === "INPUT" || tagName === "TEXTAREA" || target?.isContentEditable;
-
-      if (isTyping || !selectedItem) {
-        return;
-      }
-
-      const key = event.key.toLowerCase();
-
-      if (key === "y") {
-        event.preventDefault();
-        executeAction("akkoord");
-      }
-
-      if (key === "u") {
-        event.preventDefault();
-        executeAction("uitsluiten");
-      }
-
-      if (key === "t") {
-        event.preventDefault();
-        executeAction("retour");
-      }
-
-      if (key === "w" && selectedDecision !== "open") {
-        event.preventDefault();
-        executeSelectedAction();
-      }
-
-      if (key === "a" && previousRecord) {
-        event.preventDefault();
-        setSelectedId(previousRecord.row.id);
-      }
-
-      if (key === "d" && nextRecord) {
-        event.preventDefault();
-        setSelectedId(nextRecord.row.id);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [nextRecord, previousRecord, selectedDecision, selectedItem, selectedNote]);
+  const goToArchivistApproval = () => {
+    setConfirmOpen(true);
+  };
 
   return (
-    <div className="flex flex-1 min-h-0 overflow-hidden">
-      <RecordPaneBar
-        title="Records"
-        searchValue={search}
-        onSearchChange={setSearch}
-        searchPlaceholder="Zoek record..."
-        tabs={tabs}
-        activeTab=""
-        onTabChange={() => undefined}
-        filters={filters}
-        activeFilter=""
-        onFilterChange={() => undefined}
-        filterSections={filterSections}
-        items={paneItems}
-        selectedId={selectedItem?.row.id ?? null}
-        onSelect={setSelectedId}
-        emptyMessage={`Geen records gevonden voor ${getStatusFilterLabel(activeStatusFilter).toLowerCase()}${activeRiskFilter !== "alle" ? ` met ${getRiskLabel(activeRiskFilter).toLowerCase()}` : ""}.`}
-        density="compact"
-        showItemMeta={false}
+    <div className="flex flex-col gap-4">
+      <Breadcrumb
+        items={[
+          { label: "Taken", onClick: () => console.log("Taken") },
+          { label: "Zorgdomein" },
+          { label: "Taakuitvoering" },
+          { label: "Accordering proceseigenaar" },
+        ]}
       />
 
-      <div className="flex min-w-0 flex-1 overflow-hidden">
-        <ReviewRecordPanel
-          record={selectedItem?.row}
-          context={selectedItem?.context}
-          currentIndex={selectedIndex >= 0 ? selectedIndex + 1 : 0}
-          totalCount={visibleRows.length}
-          activeStep="ACCORDERING_PO"
-          onPrevious={previousRecord ? () => setSelectedId(previousRecord.row.id) : undefined}
-          onNext={nextRecord ? () => setSelectedId(nextRecord.row.id) : undefined}
-        />
+      <PageHeader
+        titel="Zorgdomein 2025"
+        subtitel="Beoordeel vooral de uitzonderingen die door de recordmanager zijn gemarkeerd voordat de lijst doorgaat naar de archivaris."
+        badge={{
+          label: "Accordering proceseigenaar",
+          color: "yellow",
+        }}
+        actions={[
+          {
+            label: "Doorzetten naar archivaris",
+            variant: "primary",
+            icon: <ArrowRight className="h-3.5 w-3.5" />,
+            onClick: goToArchivistApproval,
+          },
+        ]}
+      />
 
-        <ActionPanel
-          title="Acties"
-          subtitle="Kies de vervolgstap voor het geselecteerde record en voeg een toelichting toe."
-          footer={
-            selectedItem ? (
-              <div className="space-y-2.5">
-                <ActionPanelButtonGroup>
-                  <ActionPanelButton
-                    label="Actie uitvoeren"
-                    variant="primary"
-                    disabled={!selectedItem || selectedDecision === "open"}
-                    onClick={executeSelectedAction}
-                  />
-                  <ActionPanelButton
-                    label="Door naar archivaris"
-                    variant="secondary"
-                    onClick={() => setConfirmOpen(true)}
-                  />
-                </ActionPanelButtonGroup>
+      <WorkflowBar activeStep="ACCORDERING_PO" />
 
-                <ActionPanelShortcuts
-                  shortcuts={[
-                    { keyLabel: "A", label: "Vorige" },
-                    { keyLabel: "D", label: "Volgende" },
-                    { keyLabel: "W", label: "Actie uitvoeren" },
-                    { keyLabel: "T", label: "Retour" },
-                    { keyLabel: "Y", label: "Akkoord" },
-                    { keyLabel: "U", label: "Uitsluiten" },
-                  ]}
-                />
-              </div>
-            ) : null
-          }
-        >
-          {!selectedItem ? (
-            <ActionPanelEmptyState
-              title="Kies eerst een record"
-              description="Na selectie tonen we hier de aanbevolen vervolgstap, notities en snelle acties."
-            />
-          ) : (
-            <>
-              <ActionPanelSection
-                title="Kies een actie"
-                description="Selecteer eerst de gewenste uitkomst voor dit record."
-              >
-                <div className="space-y-2">
-                  {approvalActions.map((item) => (
-                    <ActionPanelChoice
-                      key={item.id}
-                      title={item.title}
-                      description={item.description}
-                      icon={item.icon}
-                      tone={item.tone}
-                      density="compact"
-                      selected={selectedDecision === item.id}
-                      onClick={() =>
-                        setSelectedActions((current) => ({
-                          ...current,
-                          [selectedItem.row.id]: item.id,
-                        }))
-                      }
-                    />
-                  ))}
+      <section className="grid gap-3 md:grid-cols-3">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-amber-900">
+            <AlertTriangle className="h-4 w-4" />
+            Uitzonderingen
+          </div>
+          <p className="mt-2 text-2xl font-semibold text-amber-950">
+            {exceptionRows.length}
+          </p>
+          <p className="mt-1 text-sm text-amber-800">
+            Records vragen inhoudelijke beoordeling.
+          </p>
+        </div>
+
+        <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+            Zonder uitzondering
+          </div>
+          <p className="mt-2 text-2xl font-semibold text-gray-900">
+            {approvedRowsCount}
+          </p>
+          <p className="mt-1 text-sm text-gray-500">
+            Deze records zijn niet uitgesloten.
+          </p>
+        </div>
+
+        <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+            <FileSearch className="h-4 w-4 text-blue-600" />
+            Beoordeling
+          </div>
+          <p className="mt-2 text-2xl font-semibold text-gray-900">
+            {reviewRows.length}
+          </p>
+          <p className="mt-1 text-sm text-gray-500">
+            Totaal in deze taakuitvoering.
+          </p>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <div className="border-b border-gray-200 px-5 py-4">
+          <h2 className="text-base font-semibold text-gray-900">
+            Uitzonderingen inhoudelijk beoordelen
+          </h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Bekijk per uitzondering de reden, context en broninformatie. Leg daarna je oordeel vast.
+          </p>
+        </div>
+
+        <div className="divide-y divide-gray-200">
+          {exceptionRows.map((row) => {
+            const decision = exceptionDecisions[row.id] ?? "akkoord";
+            const periode =
+              row.startdatum && row.einddatum
+                ? `${row.startdatum} - ${row.einddatum}`
+                : "Onbekende periode";
+
+            return (
+              <article key={row.id} className="px-5 py-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">
+                        Uitzondering
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {row.bron_id ?? "Geen bron-ID"}
+                      </span>
+                    </div>
+
+                    <h3 className="mt-2 text-base font-semibold text-gray-900">
+                      {row.titel}
+                    </h3>
+
+                    <dl className="mt-3 grid gap-3 text-sm md:grid-cols-3">
+                      <div>
+                        <dt className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                          Reden
+                        </dt>
+                        <dd className="mt-1 text-gray-900">
+                          {row.reden || "Geen reden opgegeven"}
+                        </dd>
+                      </div>
+
+                      <div>
+                        <dt className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                          Periode
+                        </dt>
+                        <dd className="mt-1 text-gray-900">{periode}</dd>
+                      </div>
+
+                      <div>
+                        <dt className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                          Bronsysteem
+                        </dt>
+                        <dd className="mt-1 text-gray-900">
+                          {row.bron_systeem || "Onbekend"}
+                        </dd>
+                      </div>
+
+                      <div>
+                        <dt className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                          Vernietigingsdatum
+                        </dt>
+                        <dd className="mt-1 text-gray-900">
+                          {row.vernietigingsdatum}
+                        </dd>
+                      </div>
+
+                      <div>
+                        <dt className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                          Bewaartermijn
+                        </dt>
+                        <dd className="mt-1 text-gray-900">
+                          {row.bewaartermijn} jaar
+                        </dd>
+                      </div>
+
+                      <div>
+                        <dt className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                          Selectielijst
+                        </dt>
+                        <dd className="mt-1 text-gray-900">
+                          {row.selectielijst || "Niet ingevuld"}
+                        </dd>
+                      </div>
+                    </dl>
+
+                    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                      <span className="font-medium">Toelichting recordmanager: </span>
+                      {row.toelichting || "Geen aanvullende toelichting ingevuld."}
+                    </div>
+                  </div>
+
+                  <div className="w-full rounded-lg border border-gray-200 bg-gray-50 p-3 lg:w-[320px]">
+                    <label className="text-sm font-medium text-gray-900">
+                      Beoordeling proceseigenaar
+                      <select
+                        value={decision}
+                        onChange={(event) =>
+                          updateExceptionDecision(
+                            row.id,
+                            event.target.value as ExceptionDecision
+                          )
+                        }
+                        className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                      >
+                        {Object.entries(DECISION_LABELS).map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="mt-3 block text-sm font-medium text-gray-900">
+                      Toelichting
+                      <textarea
+                        value={getRecordComment(row)}
+                        onChange={(event) =>
+                          updateRecordComment(row.id, event.target.value)
+                        }
+                        rows={3}
+                        placeholder="Leg je oordeel over deze uitzondering vast..."
+                        className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                      />
+                    </label>
+                  </div>
                 </div>
-              </ActionPanelSection>
+              </article>
+            );
+          })}
+        </div>
+      </section>
 
-              <div>
-                <ActionPanelTextarea
-                  label="Toelichting"
-                  placeholder="Voeg context toe voor de gekozen of voorgenomen actie..."
-                  value={selectedNote}
-                  onChange={(value) =>
-                    setNotes((current) => ({
-                      ...current,
-                      [selectedItem.row.id]: value,
-                    }))
-                  }
-                />
-              </div>
-            </>
-          )}
-        </ActionPanel>
-      </div>
+      <section className="rounded-2xl border border-gray-200 bg-white">
+        <div className="flex items-center justify-between gap-4 px-5 py-4">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">
+              Algemene beoordeling proceseigenaar
+            </h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Vat je oordeel over de uitzonderingen samen voor de archivaris.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setCommentSectionOpen((current) => !current)}
+            className="rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-700 transition hover:bg-gray-50"
+          >
+            {commentSectionOpen ? "Verbergen" : "Openen"}
+          </button>
+        </div>
+
+        {commentSectionOpen && (
+          <div className="border-t border-gray-200 px-5 py-4">
+            <textarea
+              value={returnComment}
+              onChange={(event) => setReturnComment(event.target.value)}
+              rows={3}
+              placeholder="Bijvoorbeeld: uitzonderingen akkoord, aanvullende controle nodig, of terug naar recordmanager..."
+              className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+            />
+          </div>
+        )}
+      </section>
+
+      <PageActionBar
+        nextLabel="Doorzetten naar archivaris"
+        backLabel="Terug naar recordmanager"
+        onNext={goToArchivistApproval}
+        onBack={() => navigate(-1)}
+      />
 
       <ConfirmDialog
         open={confirmOpen}

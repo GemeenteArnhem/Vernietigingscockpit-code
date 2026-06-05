@@ -6,6 +6,8 @@ import {
 } from "react-router-dom";
 
 import AppShell from "./layouts/AppShell";
+import AppShellWithTaskSidebarAndContextSidebar from "./layouts/AppShellWithContextSidebar";
+import AppShellWithTaskSidebar from "./layouts/AppShellWithTaskSidebar";
 
 import DashboardPage from "./pages/DashboardPage";
 import DestructionResultPage from "./pages/DestructionResultPage";
@@ -40,34 +42,44 @@ export default function App() {
             path="/dashboard"
             element={<DashboardPage />}
           />
+        </Route>
+
+        {/* WITH TASK SIDEBAR */}
+        <Route
+          element={
+            <AppShellWithTaskSidebar />
+          }
+        >
           <Route
             path="/taak/:id"
             element={
               <TaskDefinitionDetailPage />
             }
           />
-        <Route
-          path="/taak/:taakId/taakuitvoering/:id/selectie"
-          element={
-            <RecordSelectionPage />
-          }
-        />
-        <Route
-          path="/taak/:taakId/taakuitvoering/:id/beoordeling"
-          element={
-            <RecordReviewPage />
-          }
-        />
-      </Route>
+        </Route>
 
-      {/* TAAKUITVOERING MET RECHTERSIDEBAR */}
-      <Route
-        element={<AppShell />}
-      >
+        {/* TAAKUITVOERING MET RECHTERSIDEBAR */}
         <Route
-          path="/taak/:taakId/taakuitvoering/:id/accordering/proceseigenaar"
           element={
-            <ProcessOwnerApprovalPage />
+            <AppShellWithTaskSidebarAndContextSidebar />
+          }
+        >
+          <Route
+            path="/taak/:taakId/taakuitvoering/:id/selectie"
+            element={
+              <RecordSelectionPage />
+            }
+          />
+          <Route
+            path="/taak/:taakId/taakuitvoering/:id/beoordeling"
+            element={
+              <RecordReviewPage />
+            }
+          />
+          <Route
+            path="/taak/:taakId/taakuitvoering/:id/accordering/proceseigenaar"
+            element={
+              <ProcessOwnerApprovalPage />
             }
           />
           <Route

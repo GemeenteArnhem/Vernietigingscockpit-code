@@ -15,9 +15,13 @@ export type TaskFilter =
 
 export type TaskSidebarItem = {
   id: string;
+
   naam: string;
+
   frequentie: string;
+
   status: TaskStatus;
+
   subtitle: string;
 };
 
@@ -128,7 +132,7 @@ export default function TaskSidebar({
   return (
     <aside
       className="
-        w-[370px]
+        w-[320px]
         bg-white
         border-r
         border-gray-200
@@ -140,7 +144,7 @@ export default function TaskSidebar({
       {/* HEADER */}
       <div
         className="
-          px-3
+          px-4
           pt-4
           pb-3
           border-b

@@ -16,6 +16,16 @@ type Props = {
     TaskDefinitionConfigurationData;
 
   stekkers: Connector[];
+
+  onOpenConnector?: (
+    connectorId: string
+  ) => void;
+
+  onEditGeneral?: () => void;
+
+  onEditRoles?: () => void;
+
+  onAddConnector?: () => void;
 };
 
 type FieldProps = {
@@ -28,11 +38,12 @@ function Field({
   value,
 }: FieldProps) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-gray-100 pb-2 last:border-0 last:pb-0">
+    <div>
       <div
         className="
           text-sm
           text-gray-500
+          mb-1
         "
       >
         {label}
@@ -41,7 +52,6 @@ function Field({
       <div
         className="
           text-[15px]
-          text-right
           font-medium
           text-gray-900
         "
@@ -54,9 +64,11 @@ function Field({
 
 function SectionCard({
   title,
+  onEdit,
   children,
 }: {
   title: string;
+  onEdit?: () => void;
   children: React.ReactNode;
 }) {
   return (
@@ -65,15 +77,18 @@ function SectionCard({
         bg-white
         border
         border-gray-200
-        rounded-md
+        rounded-2xl
         overflow-hidden
       "
     >
       {/* HEADER */}
       <div
         className="
+          flex
+          items-center
+          justify-between
           px-5
-          py-3
+          py-4
           border-b
           border-gray-200
           bg-white
@@ -88,6 +103,30 @@ function SectionCard({
         >
           {title}
         </h3>
+
+        {onEdit && (
+          <button
+            onClick={onEdit}
+            className="
+              inline-flex
+              items-center
+              justify-center
+              h-10
+              px-4
+              text-sm
+              font-medium
+              text-gray-700
+              bg-white
+              border
+              border-gray-300
+              rounded-lg
+              hover:bg-gray-50
+              transition-colors
+            "
+          >
+            Bewerken
+          </button>
+        )}
       </div>
 
       {/* CONTENT */}
@@ -109,6 +148,10 @@ function SectionCard({
 export default function TaskDefinitionConfiguration({
   configuratie,
   stekkers,
+  onOpenConnector,
+  onEditGeneral,
+  onEditRoles,
+  onAddConnector,
 }: Props) {
   return (
     <div className="flex flex-col gap-5">
@@ -122,7 +165,12 @@ export default function TaskDefinitionConfiguration({
         "
       >
         {/* ALGEMEEN */}
-        <SectionCard title="Algemeen">
+        <SectionCard
+          title="Algemeen"
+          onEdit={
+            onEditGeneral
+          }
+        >
           <Field
             label="Taaknaam"
             value={
@@ -139,7 +187,12 @@ export default function TaskDefinitionConfiguration({
         </SectionCard>
 
         {/* VERANTWOORDELIJKEN */}
-        <SectionCard title="Verantwoordelijken">
+        <SectionCard
+          title="Verantwoordelijken"
+          onEdit={
+            onEditRoles
+          }
+        >
           <Field
             label="Proceseigenaar"
             value={
@@ -159,6 +212,12 @@ export default function TaskDefinitionConfiguration({
       {/* STEKKERS */}
       <ConnectorTable
         connectors={stekkers}
+        onOpen={
+          onOpenConnector
+        }
+        onAdd={
+          onAddConnector
+        }
       />
     </div>
   );

@@ -8,8 +8,6 @@ export type VernietigingsObject = {
   id: string;
   titel: string;
   omvang: number;
-  omvangDocumenten: number;
-  omvangClienten: number;
 
   bewaartermijn: number;
   vernietigingsdatum: string;
