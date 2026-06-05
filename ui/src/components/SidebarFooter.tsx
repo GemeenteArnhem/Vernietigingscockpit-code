@@ -81,9 +81,7 @@ function SidebarFooterItem({
         expanded ? "gap-3 px-2" : "justify-start px-4"
       }`}
     >
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center text-gray-500">
-        {icon}
-      </span>
+      <span className="shrink-0 text-gray-500">{icon}</span>
       <span
         className={`overflow-hidden whitespace-nowrap text-sm transition-all duration-150 ${
           expanded ? "max-w-[140px] opacity-100" : "max-w-0 opacity-0"

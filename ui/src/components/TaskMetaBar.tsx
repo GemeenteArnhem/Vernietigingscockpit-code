@@ -1,39 +1,44 @@
-type TaskMetaItem = {
+type Item = {
   label: string;
   value: string;
 };
 
-type TaskMetaBarProps = {
-  items: TaskMetaItem[];
-  variant?: "default" | "embedded";
-};
+const items: Item[] = [
+  { label: "Recordmanager", value: "Jan de Vries" },
+  { label: "Periode", value: "01-01-2019 t/m 31-12-2020" },
+  { label: "Selectiedatum", value: "15-05-2025" },
+  { label: "Startdatum", value: "15-05-2025" },
+];
 
-export default function TaskMetaBar({
-  items,
-  variant = "default",
-}: TaskMetaBarProps) {
+export default function TaskMetaBar() {
   return (
-    <section
-      className={
-        variant === "embedded"
-          ? "px-0 py-0"
-          : "rounded-md border border-slate-200 bg-white px-4 py-4 shadow-sm shadow-slate-200/40"
-      }
-    >
-      <dl className="grid gap-x-8 gap-y-4 md:grid-cols-2 xl:grid-cols-4">
+    <div className="border border-gray-200 rounded-xl px-4 py-2.5 mb-2">
+      <div className="flex items-center">
         {items.map((item, index) => {
+          const isLast = index === items.length - 1;
+
           return (
-            <div key={`${item.label}-${index}`}>
-              <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
-                {item.label}
-              </dt>
-              <dd className="mt-1 text-sm font-medium text-slate-900">
-                {item.value}
-              </dd>
+            <div key={index} className="flex items-center flex-1">
+              
+              {/* content */}
+              <div className="flex flex-col">
+                <span className="text-xs text-gray-400">
+                  {item.label}
+                </span>
+
+                <span className="text-sm font-medium text-gray-900 mt-1">
+                  {item.value}
+                </span>
+              </div>
+
+              {/* divider */}
+              {!isLast && (
+                <div className="w-px h-8 bg-gray-200 mx-6" />
+              )}
             </div>
           );
         })}
-      </dl>
-    </section>
+      </div>
+    </div>
   );
 }

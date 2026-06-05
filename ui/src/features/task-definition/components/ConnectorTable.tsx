@@ -11,16 +11,23 @@ export type Connector = {
     | "ACTIEF_CONNECTOR"
     | "INACTIEF"
     | "FOUT"
-    | "WAARSCHUWING"
-    | "SUCCES";
+    | "WAARSCHUWING";
 };
 
 type Props = {
   connectors: Connector[];
+
+  onOpen?: (
+    connectorId: string
+  ) => void;
+
+  onAdd?: () => void;
 };
 
 export default function ConnectorTable({
   connectors,
+  onOpen,
+  onAdd,
 }: Props) {
   return (
     <div
@@ -28,15 +35,18 @@ export default function ConnectorTable({
         bg-white
         border
         border-gray-200
-        rounded-md
+        rounded-2xl
         overflow-hidden
       "
     >
       {/* HEADER */}
       <div
         className="
+          flex
+          items-center
+          justify-between
           px-5
-          py-3
+          py-4
           border-b
           border-gray-200
           bg-white
@@ -64,6 +74,30 @@ export default function ConnectorTable({
             voor deze taak
           </p>
         </div>
+
+        {onAdd && (
+          <button
+            onClick={onAdd}
+            className="
+              inline-flex
+              items-center
+              justify-center
+              h-10
+              px-4
+              text-sm
+              font-medium
+              text-gray-700
+              bg-white
+              border
+              border-gray-300
+              rounded-lg
+              hover:bg-gray-50
+              transition-colors
+            "
+          >
+            + Toevoegen
+          </button>
+        )}
       </div>
 
       {/* TABLE */}
@@ -137,6 +171,21 @@ export default function ConnectorTable({
               Status
             </th>
 
+            <th
+              className="
+                text-right
+                px-5
+                py-3
+                text-xs
+                uppercase
+                tracking-wide
+                text-gray-500
+                font-semibold
+                w-[140px]
+              "
+            >
+              Actie
+            </th>
           </tr>
         </thead>
 
@@ -217,6 +266,41 @@ export default function ConnectorTable({
                   />
                 </td>
 
+                {/* actie */}
+                <td
+                  className="
+                    px-5
+                    py-4
+                    text-right
+                  "
+                >
+                  <button
+                    onClick={() =>
+                      connector.id &&
+                      onOpen?.(
+                        connector.id
+                      )
+                    }
+                    className="
+                      inline-flex
+                      items-center
+                      justify-center
+                      h-10
+                      px-4
+                      text-sm
+                      font-medium
+                      text-gray-700
+                      bg-white
+                      border
+                      border-gray-300
+                      rounded-lg
+                      hover:bg-gray-50
+                      transition-colors
+                    "
+                  >
+                    Open
+                  </button>
+                </td>
               </tr>
             )
           )}

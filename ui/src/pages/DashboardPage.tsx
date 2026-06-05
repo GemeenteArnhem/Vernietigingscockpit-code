@@ -1,605 +1,379 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import {
-  CheckCircle2,
-  Clock3,
-  FolderOpen,
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import 
+{ 
+    Search,
+    Funnel
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import RecordPaneBar, {
-  type RecordPaneBarFilter,
-  type RecordPaneBarItem,
-  type RecordPaneBarTab,
-} from "../components/record-pane/RecordPaneBar";
-import DashboardRecordPanel from "../components/dashboard/DashboardRecordPanel";
-import ActionPanel, {
-  ActionPanelButton,
-  ActionPanelButtonGroup,
-  ActionPanelChoice,
-  ActionPanelEmptyState,
-  ActionPanelSection,
-  ActionPanelShortcuts,
-} from "../components/ActionPanel";
-import type { DashboardTaskRecord } from "../shared/types/dashboard";
 
-type WorkloadScope = "mijn" | "alle";
-type WorkloadFilter = "alle" | "actie" | "lopend" | "gepland";
+import PageHeader from "../components/PageHeader";
+import TaskProgress from "../components/TaskProgress";
+import StatusBadge from "../components/StatusBadge";
 
-const mockRows: DashboardTaskRecord[] = [
+type TaskExecutionStatus =
+  | "VERTRAAGD"
+  | "LOPEND"
+  | "GEPLAND";
+
+type TaskExecutionRow = {
+  id: string;
+  taskId: string;
+  naam: string;
+  subtitle: string;
+  taskLabel: string;
+  recordmanager: string;
+  status: TaskExecutionStatus;
+  stap: string;
+  voortgang: number;
+  dagenInStap: number;
+  frequentie: string;
+  highlighted?: boolean;
+  vertraagd?: boolean;
+};
+
+const mockRows: TaskExecutionRow[] = [
   {
-    id: "1",
+    id: "TI-102",
+    taskId: "1",
     naam: "HR dossiers kwartaal",
     subtitle: "Gestart 4 mei 2026",
+    taskLabel: "Taak: Personeelsvernietiging",
+    recordmanager: "S. Janssen",
     status: "VERTRAAGD",
-    eigenaar: "mijn",
     stap: "Accordering PO",
     voortgang: 70,
     dagenInStap: 10,
-    recordmanager: "S. Janssen",
     frequentie: "Kwartaal",
-    dossierTelling: 124,
+    vertraagd: true,
   },
   {
-    id: "2",
+    id: "TI-100",
+    taskId: "2",
     naam: "Zorgdomein jaarlijks",
     subtitle: "Gestart 10 mei 2026",
+    taskLabel: "Taak: Zorgdomein jaarlijks",
+    recordmanager: "Jan de Vries",
     status: "LOPEND",
-    eigenaar: "mijn",
-    stap: "Selectiecontrole",
+    stap: "Beoordeling",
     voortgang: 40,
     dagenInStap: 4,
-    recordmanager: "Jan de Vries",
     frequentie: "Jaarlijks",
-    dossierTelling: 86,
+    highlighted: true,
   },
   {
-    id: "3",
-    naam: "Facilitair archief voorjaar",
-    subtitle: "Start gepland op 6 juni 2026",
+    id: "TI-103",
+    taskId: "3",
+    naam: "IT projecten 2021",
+    subtitle: "Gestart 12 mei 2026",
+    taskLabel: "Taak: Projectarchief",
+    recordmanager: "K. Bakker",
+    status: "LOPEND",
+    stap: "Uitvoering",
+    voortgang: 65,
+    dagenInStap: 2,
+    frequentie: "Jaarlijks",
+  },
+  {
+    id: "TI-104",
+    taskId: "2",
+    naam: "Finance jaarrekening",
+    subtitle: "Volgende instantie - 1 januari 2027",
+    taskLabel: "Taak: Financiele administratie",
+    recordmanager: "P. Smit",
     status: "GEPLAND",
-    eigenaar: "mijn",
-    stap: "Wachten op startmoment",
+    stap: "Selectie",
     voortgang: 0,
     dagenInStap: 0,
-    recordmanager: "M. Blom",
-    frequentie: "Halfjaarlijks",
-    dossierTelling: 42,
+    frequentie: "Jaarlijks",
   },
   {
-    id: "4",
-    naam: "Projectdossiers sociaal domein",
-    subtitle: "Gestart 18 mei 2026",
-    status: "LOPEND",
-    eigenaar: "team",
-    stap: "Controle metagegevens",
-    voortgang: 55,
-    dagenInStap: 3,
-    recordmanager: "F. van Dijk",
-    frequentie: "Maandelijks",
-    dossierTelling: 213,
-  },
-  {
-    id: "5",
-    naam: "Subsidiearchief 2015-2018",
-    subtitle: "Gestart 12 mei 2026",
-    status: "VERTRAAGD",
-    eigenaar: "team",
-    stap: "Akkoord proceseigenaar",
-    voortgang: 80,
-    dagenInStap: 8,
-    recordmanager: "R. Bakker",
-    frequentie: "Eenmalig",
-    dossierTelling: 59,
+    id: "TI-105",
+    taskId: "4",
+    naam: "Marketing campagnes Q2",
+    subtitle: "Volgende instantie - 1 augustus 2026",
+    taskLabel: "Taak: Marketingvernietiging",
+    recordmanager: "L. van Hoeven",
+    status: "GEPLAND",
+    stap: "Selectie",
+    voortgang: 0,
+    dagenInStap: 0,
+    frequentie: "Kwartaal",
   },
 ];
 
-type DashboardDecisionId =
-  | "openen"
-  | "herinneren"
-  | "starten"
-  | "herplannen";
+const STATUS_FILTERS: Array<{
+  label: string;
+  value: TaskExecutionStatus | null;
+}> = [
+  { label: "Alle resultaten", value: null },
+  { label: "Vertraagd", value: "VERTRAAGD" },
+  { label: "Lopend", value: "LOPEND" },
+  { label: "Gepland", value: "GEPLAND" },
+];
 
-type DashboardDecision = {
-  id: DashboardDecisionId;
-  title: string;
-  description?: string;
-  icon: ReactNode;
-  tone: "primary" | "success" | "warning";
+const STATUS_PRIORITY: Record<TaskExecutionStatus, number> = {
+  VERTRAAGD: 0,
+  LOPEND: 1,
+  GEPLAND: 2,
 };
 
-function getReminderLabel(
-  record: DashboardTaskRecord
-) {
-  const step = record.stap.toLowerCase();
-
-  if (
-    step.includes("archivaris")
-  ) {
-    return "Herinner archivaris";
+function getActionLabel(status: TaskExecutionStatus) {
+  if (status === "GEPLAND") {
+    return "Starten";
   }
 
-  if (
-    step.includes("proceseigenaar") ||
-    step.includes("po")
-  ) {
-    return "Herinner proceseigenaar";
-  }
-
-  return "Stuur herinnering";
+  return "Open";
 }
 
-function getDashboardDecisions(
-  record: DashboardTaskRecord
-): DashboardDecision[] {
-  if (record.status === "VERTRAAGD") {
-    return [
-      {
-        id: "openen",
-        title: "Open taak",
-        icon: <FolderOpen size={18} />,
-        tone: "primary",
-      },
-      {
-        id: "herinneren",
-        title: getReminderLabel(
-          record
-        ),
-        icon: <CheckCircle2 size={18} />,
-        tone: "success",
-      },
-    ];
-  }
+function useDropdown() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
 
-  if (record.status === "GEPLAND") {
-    return [
-      {
-        id: "starten",
-        title: "Taak starten",
-        icon: <FolderOpen size={18} />,
-        tone: "primary",
-      },
-      {
-        id: "herplannen",
-        title: "Start herplannen",
-        icon: <Clock3 size={18} />,
-        tone: "warning",
-      },
-    ];
-  }
+  useEffect(() => {
+    const handler = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
 
-  return [
-    {
-      id: "openen",
-      title: "Open taak",
-      icon: <FolderOpen size={18} />,
-      tone: "primary",
-    },
-  ];
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  return { open, setOpen, ref };
 }
 
 export default function DashboardPage() {
+  const location = useLocation();
   const navigate = useNavigate();
-  const [search, setSearch] =
-    useState("");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] =
+    useState<TaskExecutionStatus | null>(null);
+  const status = useDropdown();
+  const isTaskOverview = location.pathname.startsWith("/taken");
+  const pageTitle = isTaskOverview ? "Taken" : "Dashboard";
+  const pageSubtitle = isTaskOverview
+    ? "Taakuitvoeringen over alle taken, zonder voltooide uitvoeringen."
+    : "Taakuitvoeringen die aandacht vragen, over alle taken heen.";
+  const activeStatusLabel =
+    STATUS_FILTERS.find((filter) => filter.value === statusFilter)?.label ??
+    "Status filter";
 
-  const [scope, setScope] =
-    useState<WorkloadScope>("mijn");
+  const filteredRows = mockRows
+    .filter((row) => {
+      if (statusFilter && row.status !== statusFilter) {
+        return false;
+      }
 
-  const [filter, setFilter] =
-    useState<WorkloadFilter>("alle");
+      if (!search.trim()) {
+        return true;
+      }
 
-  const [selectedId, setSelectedId] =
-    useState<string | null>(
-      mockRows[0]?.id ?? null
-    );
-
-  const [panelState, setPanelState] =
-    useState<{
-      recordId: string | null;
-      decision: DashboardDecisionId;
-    }>({
-      recordId: mockRows[0]?.id ?? null,
-      decision: "openen",
-    });
-
-  const tabs = useMemo<
-    RecordPaneBarTab[]
-  >(
-    () => [
-      {
-        key: "mijn",
-        label: "Mijn werkvoorraad",
-        count: mockRows.filter(
-          (row) =>
-            row.eigenaar === "mijn"
-        ).length,
-      },
-      {
-        key: "alle",
-        label: "Alle",
-        count: mockRows.length,
-      },
-    ],
-    []
-  );
-
-  const filters = useMemo<
-    RecordPaneBarFilter[]
-  >(
-    () => [
-      {
-        key: "alle",
-        label: "Alle",
-      },
-      {
-        key: "actie",
-        label: "Actie",
-      },
-      {
-        key: "lopend",
-        label: "Lopend",
-      },
-      {
-        key: "gepland",
-        label: "Gepland",
-      },
-    ],
-    []
-  );
-
-  const visibleRows = useMemo(() => {
-    return mockRows.filter((row) => {
-      const matchesScope =
-        scope === "alle" ||
-        row.eigenaar === "mijn";
-
-      const matchesFilter =
-        filter === "alle" ||
-        (filter === "actie" &&
-          row.status ===
-            "VERTRAAGD") ||
-        (filter === "lopend" &&
-          row.status === "LOPEND") ||
-        (filter === "gepland" &&
-          row.status ===
-            "GEPLAND");
-
-      const matchesSearch =
-        row.naam
-          .toLowerCase()
-          .includes(
-            search.toLowerCase()
-          );
+      const query = search.trim().toLowerCase();
 
       return (
-        matchesScope &&
-        matchesFilter &&
-        matchesSearch
+        row.naam.toLowerCase().includes(query) ||
+        row.recordmanager.toLowerCase().includes(query) ||
+        row.taskLabel.toLowerCase().includes(query)
       );
+    })
+    .sort((a, b) => {
+      const byStatus =
+        STATUS_PRIORITY[a.status] - STATUS_PRIORITY[b.status];
+
+      if (byStatus !== 0) {
+        return byStatus;
+      }
+
+      return a.naam.localeCompare(b.naam);
     });
-  }, [filter, scope, search]);
-
-  const paneItems = useMemo<
-    RecordPaneBarItem[]
-  >(
-    () =>
-      visibleRows.map((row) => ({
-        id: row.id,
-        title: row.naam,
-        stepLabel: row.stap,
-        stepTone:
-          row.status ===
-          "VERTRAAGD"
-            ? "danger"
-            : row.status ===
-                "LOPEND"
-              ? "info"
-              : "warning",
-        status: row.status,
-      })),
-    [visibleRows]
-  );
-
-  const effectiveSelectedId =
-    paneItems.some(
-      (item) => item.id === selectedId
-    )
-      ? selectedId
-      : paneItems[0]?.id ?? null;
-
-  const selectedRecord = useMemo(() => {
-    return visibleRows.find(
-      (r) =>
-        r.id ===
-        effectiveSelectedId
-    );
-  }, [
-    effectiveSelectedId,
-    visibleRows,
-  ]);
-
-  const decisions = useMemo(
-    () =>
-      selectedRecord
-        ? getDashboardDecisions(
-            selectedRecord
-        )
-        : [],
-    [selectedRecord]
-  );
-
-  const selectedIndex = useMemo(
-    () =>
-      visibleRows.findIndex(
-        (row) =>
-          row.id ===
-          effectiveSelectedId
-      ),
-    [
-      effectiveSelectedId,
-      visibleRows,
-    ]
-  );
-
-  const previousRecord =
-    selectedIndex > 0
-      ? visibleRows[
-          selectedIndex - 1
-        ]
-      : undefined;
-
-  const nextRecord =
-    selectedIndex >= 0 &&
-    selectedIndex <
-      visibleRows.length - 1
-      ? visibleRows[
-          selectedIndex + 1
-        ]
-      : undefined;
-
-  const activeRecordId =
-    selectedRecord?.id ?? null;
-
-  const activeDecision =
-    panelState.recordId === activeRecordId
-      ? panelState.decision
-      : "openen";
-
-  function handlePrimaryAction() {
-    if (!selectedRecord) {
-      return;
-    }
-
-    if (activeDecision === "herinneren" || activeDecision === "herplannen") {
-      console.info("Actie uitgevoerd", activeDecision, selectedRecord.id);
-      return;
-    }
-
-    navigate(`/taak/${selectedRecord.id}/taakuitvoering/${selectedRecord.id}`);
-  }
-
-  function handleSecondaryAction() {
-    if (!selectedRecord) {
-      return;
-    }
-
-    navigate(`/taak/${selectedRecord.id}/taakuitvoering/${selectedRecord.id}`);
-  }
-
-  useEffect(() => {
-    const handleKeyDown = (
-      event: KeyboardEvent
-    ) => {
-      const target =
-        event.target as
-          | HTMLElement
-          | null;
-
-      const tagName =
-        target?.tagName ?? "";
-      const isTyping =
-        tagName === "INPUT" ||
-        tagName === "TEXTAREA" ||
-        target?.isContentEditable;
-
-      if (isTyping) {
-        return;
-      }
-
-      const key =
-        event.key.toLowerCase();
-
-      if (
-        key === "a" &&
-        previousRecord
-      ) {
-        event.preventDefault();
-        setSelectedId(
-          previousRecord.id
-        );
-      }
-
-      if (
-        key === "d" &&
-        nextRecord
-      ) {
-        event.preventDefault();
-        setSelectedId(nextRecord.id);
-      }
-
-      if (key === "w") {
-        event.preventDefault();
-        handlePrimaryAction();
-      }
-
-      if (key === "o" && selectedRecord) {
-        event.preventDefault();
-        handleSecondaryAction();
-      }
-    };
-
-    window.addEventListener(
-      "keydown",
-      handleKeyDown
-    );
-
-    return () => {
-      window.removeEventListener(
-        "keydown",
-        handleKeyDown
-      );
-    };
-  }, [
-    nextRecord,
-    previousRecord,
-    selectedRecord,
-  ]);
 
   return (
-    <div className="flex flex-1 min-h-0 overflow-hidden">
-
-      {/* RB */}
-      <RecordPaneBar
-        title="Taken"
-        searchValue={search}
-        onSearchChange={setSearch}
-        searchPlaceholder="Zoek taak..."
-        tabs={tabs}
-        activeTab={scope}
-        onTabChange={(key) =>
-          setScope(
-            key as WorkloadScope
-          )
-        }
-        filters={filters}
-        activeFilter={filter}
-        onFilterChange={(key) =>
-          setFilter(
-            key as WorkloadFilter
-          )
-        }
-        items={paneItems}
-        selectedId={
-          effectiveSelectedId
-        }
-        onSelect={setSelectedId}
-        emptyMessage="Geen taken gevonden binnen deze selectie."
+    <div className="flex flex-col gap-4 pt-4">
+      <PageHeader
+        titel={pageTitle}
+        subtitel={pageSubtitle}
+        actions={[]}
       />
 
-      {/* CONTENT */}
-      <DashboardRecordPanel
-        record={selectedRecord}
-        currentIndex={
-          selectedIndex >= 0
-            ? selectedIndex + 1
-            : 0
-        }
-        totalCount={
-          visibleRows.length
-        }
-        onPrevious={
-          previousRecord
-            ? () =>
-                setSelectedId(
-                  previousRecord.id
-                )
-            : undefined
-        }
-        onNext={
-          nextRecord
-            ? () =>
-                setSelectedId(
-                  nextRecord.id
-                )
-            : undefined
-        }
-      />
+      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+        <div className="border-b border-gray-200 px-5 py-4">
+          <h2 className="text-base font-semibold text-gray-900">
+            Taakuitvoering
+          </h2>
+          <p className="mt-0.5 text-sm text-gray-500">
+            Vertraagde, lopende en geplande uitvoeringen in werkvolgorde.
+          </p>
+        </div>
 
-      {/* ACTION */}
-      <ActionPanel
-        title="Acties"
-        subtitle="Snelle vervolgstappen voor de geselecteerde taak."
-        footer={
-          selectedRecord ? (
-            <div className="space-y-2.5">
-              <ActionPanelButtonGroup>
-                <ActionPanelButton
-                  label="Actie uitvoeren"
-                  variant="primary"
-                  onClick={handlePrimaryAction}
-                />
-                <ActionPanelButton
-                  label="Taak openen"
-                  variant="secondary"
-                  onClick={handleSecondaryAction}
-                />
-              </ActionPanelButtonGroup>
-
-              <ActionPanelShortcuts
-                shortcuts={[
-                  {
-                    keyLabel: "A",
-                    label: "Vorige",
-                  },
-                  {
-                    keyLabel: "D",
-                    label: "Volgende",
-                  },
-                    {
-                      keyLabel: "W",
-                      label: "Actie uitvoeren",
-                    },
-                    {
-                      keyLabel: "O",
-                      label: "Taak openen",
-                    },
-                ]}
+        <div className="flex flex-wrap items-center gap-3 border-b border-gray-100 px-4 py-3">
+          <div className="relative">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400">
+              <Search
+                size={15}
+                className="
+                  absolute
+                  left-0
+                  top-1/2
+                  -translate-y-1/2
+                  text-gray-400
+                "
               />
-            </div>
-          ) : null
-        }
-      >
-        {!selectedRecord ? (
-          <ActionPanelEmptyState
-            title="Kies eerst een taak"
-            description="Na selectie tonen we hier de aanbevolen vervolgstap, notities en snelle acties."
-          />
-        ) : (
-          <>
-            <ActionPanelSection
-              title="Kies een actie"
-              description="De details staan links. Kies hier alleen de vervolgstap."
+            </span>
+            <input
+              type="text"
+              placeholder="Zoek op uitvoering, taak of recordmanager..."
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="w-72 rounded-md border border-gray-200 py-1.5 pl-7 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-blue-300"
+            />
+          </div>
+
+          <div className="relative" ref={status.ref}>
+            <button
+              type="button"
+              onClick={() => status.setOpen((current) => !current)}
+              className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors hover:bg-gray-50 ${
+                status.open || statusFilter !== null
+                  ? "border-blue-500 bg-blue-50 text-blue-600"
+                  : "border-gray-200 text-blue-600"
+              }`}
             >
-              <div className="space-y-3">
-                {decisions.map((item) => (
-                  <ActionPanelChoice
-                    key={item.id}
-                    title={item.title}
-                    description={
-                      item.description ??
-                      ""
-                    }
-                    icon={item.icon}
-                    tone={item.tone}
-                    density="compact"
-                    selected={
-                      activeDecision ===
-                      item.id
-                    }
-                    onClick={() =>
-                      setPanelState({
-                        recordId:
-                          activeRecordId,
-                        decision: item.id,
-                      })
-                    }
-                  />
+              <Funnel className="w-4 h-4" />
+              {activeStatusLabel}
+            </button>
+
+            {status.open && (
+              <div className="absolute left-0 top-full z-20 mt-1 min-w-[190px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                {STATUS_FILTERS.map((filter) => (
+                  <button
+                    key={String(filter.value)}
+                    type="button"
+                    onClick={() => {
+                      setStatusFilter(filter.value);
+                      status.setOpen(false);
+                    }}
+                    className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-gray-50 ${
+                      statusFilter === filter.value
+                        ? "font-medium text-blue-600"
+                        : "text-gray-700"
+                    }`}
+                  >
+                    {filter.label}
+                    {statusFilter === filter.value && (
+                      <span className="text-xs text-blue-600">OK</span>
+                    )}
+                  </button>
                 ))}
               </div>
-            </ActionPanelSection>
-          </>
-        )}
-      </ActionPanel>
+            )}
+          </div>
+        </div>
 
+        <div className="overflow-auto">
+          <table className="w-full min-w-[1180px] text-sm">
+            <thead className="border-b border-gray-200 bg-gray-50">
+              <tr className="h-12 text-xs uppercase text-gray-500">
+                <th className="w-[340px] px-6 text-left">
+                  Taakuitvoering
+                </th>
+                <th className="w-[180px] px-4 text-left">
+                  Recordmanager
+                </th>
+                <th className="w-[120px] px-4 text-left">
+                  Frequentie
+                </th>
+                <th className="w-[160px] px-4 text-left">
+                  Status
+                </th>
+                <th className="w-[320px] px-4 text-left">
+                  Voortgang
+                </th>
+                <th className="w-[180px] px-4 text-center">
+                  Actie
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {filteredRows.map((row) => (
+                <tr
+                  key={row.id}
+                  className={`h-[84px] border-b border-gray-100 transition-colors hover:bg-gray-50 ${
+                    row.highlighted ? "bg-blue-50" : ""
+                  }`}
+                >
+                  <td className="px-6">
+                    <div className="flex flex-col">
+                      <span className="font-medium text-gray-900">
+                        {row.naam}
+                      </span>
+                      <span className="mt-1 text-xs text-gray-500">
+                        {row.subtitle}
+                      </span>
+                      <span className="mt-1 text-xs text-gray-400">
+                        {row.taskLabel}
+                      </span>
+                    </div>
+                  </td>
+
+                  <td className="px-4 text-gray-700">
+                    {row.recordmanager}
+                  </td>
+
+                  <td className="px-4 text-gray-700">
+                    {row.frequentie}
+                  </td>
+
+                  <td className="px-4">
+                    <StatusBadge status={row.status} />
+                  </td>
+
+                  <td className="px-4">
+                    {row.status === "GEPLAND" ? (
+                      <span className="text-sm text-gray-400">
+                        Start bij stap {row.stap}
+                      </span>
+                    ) : (
+                      <TaskProgress
+                        percentage={row.voortgang}
+                        stap={row.stap}
+                        dagen={row.dagenInStap}
+                        vertraagd={row.vertraagd}
+                      />
+                    )}
+                  </td>
+
+                  <td className="px-4 text-center">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        navigate(
+                          `/taak/${row.taskId}/taakuitvoering/2/selectie`
+                        )
+                      }
+                      className="inline-flex h-10 w-[170px] items-center justify-center rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                    >
+                      {getActionLabel(row.status)}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+
+              {filteredRows.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-4 py-8 text-center text-sm text-gray-400"
+                  >
+                    Geen taakuitvoeringen gevonden
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
