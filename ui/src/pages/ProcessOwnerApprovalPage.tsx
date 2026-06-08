@@ -338,6 +338,15 @@ export default function ProcessOwnerApprovalPage() {
     return decision !== "open";
   }).length;
   const allReviewed = queueRows.length > 0 && completedCount === queueRows.length;
+  const summaryStats = useMemo(
+    () => ({
+      teBeoordelen: queueRows.filter((item) => item.queueStatus === "nog-te-beoordelen").length,
+      akkoord: queueRows.filter((item) => item.queueStatus === "afgerond").length,
+      retour: queueRows.filter((item) => item.queueStatus === "retour").length,
+      uitgesloten: queueRows.filter((item) => item.queueStatus === "conflict").length,
+    }),
+    [queueRows]
+  );
 
   const executeAction = (action: ApprovalAction) => {
     if (!selectedItem || action === "open") {
@@ -480,6 +489,7 @@ export default function ProcessOwnerApprovalPage() {
           currentIndex={selectedIndex >= 0 ? selectedIndex + 1 : 0}
           totalCount={visibleRows.length}
           activeStep="ACCORDERING_PO"
+          summaryStats={summaryStats}
           onPrevious={previousRecord ? () => setSelectedId(previousRecord.row.id) : undefined}
           onNext={nextRecord ? () => setSelectedId(nextRecord.row.id) : undefined}
         />

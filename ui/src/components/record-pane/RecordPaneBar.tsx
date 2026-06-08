@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useState } from "react";
 import {
   ChevronDown,
@@ -70,6 +71,10 @@ type Props = {
   widthClassName?: string;
   density?: "default" | "compact";
   showItemMeta?: boolean;
+  panelContent?: ReactNode;
+  hideHeader?: boolean;
+  hideList?: boolean;
+  flush?: boolean;
 };
 
 const toneStyles: Record<
@@ -120,6 +125,10 @@ export default function RecordPaneBar({
   widthClassName = "w-[380px]",
   density = "default",
   showItemMeta = true,
+  panelContent,
+  hideHeader = false,
+  hideList = false,
+  flush = false,
 }: Props) {
   const isCompact = density === "compact";
   const [openSecondaryFilterKey, setOpenSecondaryFilterKey] = useState<string | null>(null);
@@ -128,9 +137,16 @@ export default function RecordPaneBar({
   );
 
   return (
-    <aside className={`${widthClassName} border-r border-slate-200 bg-slate-50/60 p-4`}>
-      <div className="flex h-full flex-col overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm shadow-slate-200/40">
-        <div className="border-b border-slate-100 px-4 pb-4 pt-4">
+    <aside className={`${widthClassName} border-r border-slate-200 ${flush ? "bg-white" : "bg-slate-50/60 p-4"}`}>
+      <div
+        className={`flex h-full flex-col overflow-hidden ${
+          flush
+            ? "bg-white"
+            : "rounded-md border border-slate-200 bg-white shadow-sm shadow-slate-200/40"
+        }`}
+      >
+        {!hideHeader && (
+          <div className="border-b border-slate-100 px-4 pb-4 pt-4">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">
               {title}
@@ -294,10 +310,17 @@ export default function RecordPaneBar({
               })}
             </div>
           )}
-        </div>
+          </div>
+        )}
 
-        <div className="flex-1 overflow-y-auto px-4 py-4">
-          {items.length === 0 ? (
+        <div className={`flex-1 overflow-y-auto ${flush ? "px-0 py-0" : "px-4 py-4"}`}>
+          {panelContent && (
+            <div className={hideList ? "" : "mb-4"}>
+              {panelContent}
+            </div>
+          )}
+
+          {!hideList && (items.length === 0 ? (
             <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
               {emptyMessage}
             </div>
@@ -486,7 +509,7 @@ export default function RecordPaneBar({
                 );
               })}
             </div>
-          )}
+          ))}
         </div>
       </div>
     </aside>
