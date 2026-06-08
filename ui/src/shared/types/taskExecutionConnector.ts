@@ -8,6 +8,12 @@ export type TaskExecutionConnectorSelectionStatus =
   | "VOLTOOID"
   | "GEDEELTELIJK_VOLTOOID";
 
+export type TaskExecutionConnectorDestructionStatus =
+  | "NIET_GESTART"
+  | "BEZIG"
+  | "VOLTOOID"
+  | "GEDEELTELIJK_VOLTOOID";
+
 export type TaskExecutionConnector = {
   id: string;
   naam: string;
@@ -19,4 +25,11 @@ export type TaskExecutionConnector = {
   aantalObjecten: string;
   melding: string;
   icon: ReactNode;
+};
+
+export type TaskExecutionDestructionConnector = Omit<
+  TaskExecutionConnector,
+  "selectieStatus"
+> & {
+  vernietigingsStatus: TaskExecutionConnectorDestructionStatus;
 };

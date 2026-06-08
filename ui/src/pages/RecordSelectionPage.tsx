@@ -16,9 +16,7 @@ import ActionPanel, {
   ActionPanelSection,
   ActionPanelShortcuts,
 } from "../components/ActionPanel";
-import ContentPanel, {
-  ContentPanelSection,
-} from "../components/ContentPanel";
+import ContentPanel from "../components/ContentPanel";
 import RecordDetailsPanel from "../features/task-execution/components/RecordDetailsPanel";
 import TaskExecutionHeader from "../features/task-execution/components/TaskExecutionHeader";
 import {
@@ -78,16 +76,7 @@ function getConnectorStatusBadgeClasses(connector: TaskExecutionConnector) {
     return "border-rose-200 bg-rose-50 text-rose-700";
   }
 
-  switch (connector.selectieStatus) {
-    case "VOLTOOID":
-      return "border-emerald-200 bg-emerald-50 text-emerald-700";
-    case "GEDEELTELIJK_VOLTOOID":
-      return "border-amber-200 bg-amber-50 text-amber-700";
-    case "BEZIG":
-      return "border-sky-200 bg-sky-50 text-sky-700";
-    default:
-      return "border-slate-200 bg-slate-100 text-slate-700";
-  }
+  return "border-emerald-200 bg-emerald-50 text-emerald-700";
 }
 
 export default function RecordSelectionPage() {
@@ -227,79 +216,87 @@ export default function RecordSelectionPage() {
               metaItems={taskMetaItems}
             />
 
-            <div className="flex min-w-0 w-full flex-col gap-4 p-4">
-              <ContentPanelSection
-                title="Stekkers"
-                description="Kies een stekker om links de detailinformatie en rechts de passende actie te bekijken."
-              >
-                <div className="space-y-3">
-                  {selectionConnectors.map((connector) => {
-                    const selected = connector.id === selectedConnector.id;
-
-                    return (
-                      <button
-                        key={connector.id}
-                        type="button"
-                        onClick={() => setSelectedConnectorId(connector.id)}
-                        className={`w-full rounded-md border px-4 py-3 text-left transition-all ${
-                          selected
-                            ? "border-blue-200 bg-blue-50/60 shadow-sm shadow-blue-100/60"
-                            : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/70"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex min-w-0 items-start gap-3">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-600">
-                              {connector.icon}
-                            </div>
-
-                            <div className="min-w-0">
-                              <div className="truncate text-sm font-semibold text-slate-900">
-                                {connector.naam}
-                              </div>
-                              <div className="mt-1 text-xs text-slate-500">
-                                {getConnectorStageCopy(connector.selectieStatus)}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="flex shrink-0 items-center gap-2">
-                            <StatusBadge
-                              status={
-                                connector.stekkerStatus === "SUCCES"
-                                  ? "GEKOPPELD"
-                                  : "FOUT"
-                              }
-                            />
-                            <StatusBadge status={connector.selectieStatus} />
-                          </div>
-                        </div>
-
-                        <div className="mt-3">
-                          <div className="flex items-center justify-between gap-3 text-xs font-medium text-slate-500">
-                            <span>{connector.aantalObjecten}</span>
-                            <span>{connector.voortgang}%</span>
-                          </div>
-
-                          <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
-                            <div
-                              className={`h-full rounded-full ${getVoortgangskleur(
-                                connector.selectieStatus
-                              )}`}
-                              style={{
-                                width: `${Math.max(
-                                  0,
-                                  Math.min(100, connector.voortgang)
-                                )}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
+            <div className="flex min-w-0 w-full flex-col p-4">
+              <section className="-m-4 bg-white px-4 py-4">
+                <div>
+                  <h2 className="text-base font-semibold text-slate-900">
+                    Stekkers
+                  </h2>
+                  <p className="mt-1 text-sm leading-5 text-slate-500">
+                    Kies een stekker om links de detailinformatie en rechts de passende actie te bekijken.
+                  </p>
                 </div>
-              </ContentPanelSection>
+
+                <div className="mt-3">
+                  <div className="space-y-3">
+                    {selectionConnectors.map((connector) => {
+                      const selected = connector.id === selectedConnector.id;
+
+                      return (
+                        <button
+                          key={connector.id}
+                          type="button"
+                          onClick={() => setSelectedConnectorId(connector.id)}
+                          className={`w-full rounded-md border px-4 py-3 text-left transition-all ${
+                            selected
+                              ? "border-blue-200 bg-blue-50/60 shadow-sm shadow-blue-100/60"
+                              : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/70"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex min-w-0 items-start gap-3">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-600">
+                                {connector.icon}
+                              </div>
+
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-semibold text-slate-900">
+                                  {connector.naam}
+                                </div>
+                                <div className="mt-1 text-xs text-slate-500">
+                                  {getConnectorStageCopy(connector.selectieStatus)}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex shrink-0 items-center gap-2">
+                              <StatusBadge
+                                status={
+                                  connector.stekkerStatus === "SUCCES"
+                                    ? "GEKOPPELD"
+                                    : "FOUT"
+                                }
+                              />
+                              <StatusBadge status={connector.selectieStatus} />
+                            </div>
+                          </div>
+
+                          <div className="mt-3">
+                            <div className="flex items-center justify-between gap-3 text-xs font-medium text-slate-500">
+                              <span>{connector.aantalObjecten}</span>
+                              <span>{connector.voortgang}%</span>
+                            </div>
+
+                            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                              <div
+                                className={`h-full rounded-full ${getVoortgangskleur(
+                                  connector.selectieStatus
+                                )}`}
+                                style={{
+                                  width: `${Math.max(
+                                    0,
+                                    Math.min(100, connector.voortgang)
+                                  )}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </section>
             </div>
           </div>
         </ContentPanel>

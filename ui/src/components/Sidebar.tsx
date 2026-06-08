@@ -41,6 +41,7 @@ function shouldAutoCollapse(pathname: string) {
     pathname.includes("/selectie") ||
     pathname.includes("/beoordeling") ||
     pathname.includes("/resultaat") ||
+    pathname.includes("/uitvoering") ||
     pathname.includes("/accordering")
   );
 }

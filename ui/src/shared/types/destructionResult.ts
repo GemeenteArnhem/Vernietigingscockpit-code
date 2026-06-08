@@ -30,6 +30,42 @@ export type DestructionResultRow = {
   melding?: string;
 };
 
+export type DestructionResultColumnKey =
+  | "omvang"
+  | "vernietigingsdatum"
+  | "bron_id"
+  | "code"
+  | "grondslag"
+  | "bron_systeem"
+  | "melding";
+
+export const DESTRUCTION_RESULT_COLUMN_LABELS: Record<
+  DestructionResultColumnKey,
+  string
+> = {
+  omvang: "Omvang",
+  vernietigingsdatum: "Vernietigingsdatum",
+  bron_id: "Bron-ID",
+  code: "Code",
+  grondslag: "Grondslag",
+  bron_systeem: "Bronsysteem",
+  melding: "Melding",
+};
+
+export const DESTRUCTION_RESULT_COLUMN_GROUPS: {
+  label: string;
+  keys: DestructionResultColumnKey[];
+}[] = [
+  {
+    label: "Recordgegevens",
+    keys: ["omvang", "vernietigingsdatum", "bron_id"],
+  },
+  {
+    label: "Context",
+    keys: ["code", "grondslag", "bron_systeem", "melding"],
+  },
+];
+
 export type DestructionResultTaskContext = {
   procesnaam: string;
   recordmanager: string;

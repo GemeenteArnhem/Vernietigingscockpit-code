@@ -24,6 +24,7 @@ import RecordPaneBar, {
   type RecordPaneBarTab,
   type RecordPaneBarTone,
 } from "../components/record-pane/RecordPaneBar";
+import RecordDetailsPanel from "../features/task-execution/components/RecordDetailsPanel";
 import ReviewRecordPanel from "../features/task-execution/review/components/ReviewRecordPanel";
 import { initialReviewDecisions, reviewRecordContexts } from "../shared/mocks/reviewPage";
 import { reviewRows } from "../shared/mocks/reviewRows";
@@ -101,11 +102,41 @@ function getStatusFilterLabel(filter: ApprovalStatusFilter) {
     case "conflict":
       return "Uitgesloten";
     case "afgerond":
-      return "Geaccordeerd";
+      return "Beoordeeld";
     case "uitgesteld":
       return "Uitgesteld";
     default:
       return "Open";
+  }
+}
+
+function getQueueStatusLabel(status: ReviewQueueStatus) {
+  switch (status) {
+    case "afgerond":
+      return "Succes";
+    case "conflict":
+      return "Uitgesloten";
+    case "retour":
+      return "Retour";
+    case "uitgesteld":
+      return "Uitgesteld";
+    default:
+      return "Open";
+  }
+}
+
+function getQueueStatusBadgeClasses(status: ReviewQueueStatus) {
+  switch (status) {
+    case "afgerond":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "conflict":
+      return "border-rose-200 bg-rose-50 text-rose-700";
+    case "retour":
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    case "uitgesteld":
+      return "border-slate-200 bg-slate-100 text-slate-700";
+    default:
+      return "border-sky-200 bg-sky-50 text-sky-700";
   }
 }
 
@@ -144,7 +175,7 @@ export default function ArchivistApprovalPage() {
   const navigate = useNavigate();
   const { taakId, id } = useParams();
 
-  const [search, setSearch] = useState("");
+  const [search] = useState("");
   const [activeStatusFilter, setActiveStatusFilter] =
     useState<ApprovalStatusFilter>("alle");
   const [activeRiskFilter, setActiveRiskFilter] =
@@ -157,6 +188,7 @@ export default function ArchivistApprovalPage() {
   const [selectedActions, setSelectedActions] = useState<Record<string, ApprovalAction>>({});
   const [manualComments, setManualComments] = useState<Record<string, ReviewComment[]>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [selectedTableIds, setSelectedTableIds] = useState<string[]>([]);
 
   const contextById = useMemo(
     () => Object.fromEntries(reviewRecordContexts.map((context) => [context.recordId, context])),
@@ -228,7 +260,7 @@ export default function ArchivistApprovalPage() {
           },
           {
             key: "afgerond",
-            label: "Geaccordeerd",
+            label: "Beoordeeld",
             count: queueRows.filter((item) => item.queueStatus === "afgerond").length,
           },
           {
@@ -316,11 +348,11 @@ export default function ArchivistApprovalPage() {
         stepTone: getQueueStatusTone(queueStatus),
         status:
           queueStatus === "afgerond"
-            ? "Geaccordeerd"
+            ? "Beoordeeld"
             : queueStatus === "conflict"
               ? "Uitgesloten"
             : queueStatus === "retour"
-              ? "Retour"
+                ? "Retour"
               : queueStatus === "uitgesteld"
                 ? "Uitgesteld"
                 : "Open",
@@ -346,6 +378,19 @@ export default function ArchivistApprovalPage() {
       uitgesloten: queueRows.filter((item) => item.queueStatus === "conflict").length,
     }),
     [queueRows]
+  );
+  const reviewTableRows = useMemo(
+    () =>
+      visibleRows.map((item) => ({
+        id: item.row.id,
+        title: item.row.titel,
+        queueStatus: item.queueStatus,
+        selectieregel: item.row.code ?? "-",
+        bewaartermijn: `${item.row.bewaartermijn} jaar`,
+        vernietigingsdatum: item.row.vernietigingsdatum ?? "-",
+        hasComments: item.context?.comments.length > 0,
+      })),
+    [visibleRows]
   );
 
   const executeAction = (action: ApprovalAction) => {
@@ -458,15 +503,12 @@ export default function ArchivistApprovalPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [nextRecord, previousRecord, selectedDecision, selectedItem, selectedNote]);
+  }, [allReviewed, nextRecord, previousRecord, selectedItem, selectedNote]);
 
   return (
     <div className="flex flex-1 min-h-0 overflow-hidden">
       <RecordPaneBar
         title="Records"
-        searchValue={search}
-        onSearchChange={setSearch}
-        searchPlaceholder="Zoek record..."
         tabs={tabs}
         activeTab=""
         onTabChange={() => undefined}
@@ -480,6 +522,47 @@ export default function ArchivistApprovalPage() {
         emptyMessage={`Geen records gevonden voor ${getStatusFilterLabel(activeStatusFilter).toLowerCase()}${activeRiskFilter !== "alle" ? ` met ${getRiskLabel(activeRiskFilter).toLowerCase()}` : ""}.`}
         density="compact"
         showItemMeta={false}
+        widthClassName="w-[340px]"
+        hideHeader
+        hideList
+        flush
+        panelContent={
+          selectedItem ? (
+            <RecordDetailsPanel
+              record={selectedItem.row}
+              comments={selectedItem.context?.comments ?? []}
+              currentIndex={selectedIndex >= 0 ? selectedIndex + 1 : 0}
+              totalCount={visibleRows.length}
+              onPrevious={previousRecord ? () => setSelectedId(previousRecord.row.id) : undefined}
+              onNext={nextRecord ? () => setSelectedId(nextRecord.row.id) : undefined}
+              details={[
+                { label: "Bron-ID", value: selectedItem.row.bron_id ?? "-" },
+                { label: "Stekker", value: selectedItem.row.bron_systeem ?? "-" },
+                { label: "Code", value: selectedItem.row.code ?? "-" },
+                { label: "Grondslag", value: selectedItem.row.grondslag ?? "-" },
+                {
+                  label: "Omvang documenten",
+                  value: `${selectedItem.row.omvangDocumenten} document${selectedItem.row.omvangDocumenten === 1 ? "" : "en"}`,
+                },
+                {
+                  label: "Omvang clienten",
+                  value: `${selectedItem.row.omvangClienten} client${selectedItem.row.omvangClienten === 1 ? "" : "en"}`,
+                },
+                { label: "Bewaartermijn", value: `${selectedItem.row.bewaartermijn} jaar` },
+                { label: "Vernietigingsdatum", value: selectedItem.row.vernietigingsdatum ?? "-" },
+                { label: "Startdatum record", value: selectedItem.row.startdatum ?? "-" },
+                { label: "Einddatum record", value: selectedItem.row.einddatum ?? "-" },
+                { label: "Uitsluiten", value: selectedItem.row.uitgesloten ? "Ja" : "Nee" },
+                { label: "Selectielijst", value: selectedItem.row.selectielijst ?? "-" },
+                {
+                  label: "Status",
+                  value: getQueueStatusLabel(selectedItem.queueStatus),
+                  badgeClassName: getQueueStatusBadgeClasses(selectedItem.queueStatus),
+                },
+              ]}
+            />
+          ) : null
+        }
       />
 
       <div className="flex min-w-0 flex-1 overflow-hidden">
@@ -489,7 +572,13 @@ export default function ArchivistApprovalPage() {
           currentIndex={selectedIndex >= 0 ? selectedIndex + 1 : 0}
           totalCount={visibleRows.length}
           activeStep="ACCORDERING_ARCH"
+          showRecordSections={false}
           summaryStats={summaryStats}
+          reviewTableRows={reviewTableRows}
+          selectedTableIds={selectedTableIds}
+          onSelectedTableIdsChange={setSelectedTableIds}
+          activeRecordId={selectedItem?.row.id ?? null}
+          onActiveRecordChange={setSelectedId}
           onPrevious={previousRecord ? () => setSelectedId(previousRecord.row.id) : undefined}
           onNext={nextRecord ? () => setSelectedId(nextRecord.row.id) : undefined}
         />
@@ -499,32 +588,32 @@ export default function ArchivistApprovalPage() {
           subtitle="Kies de vervolgstap voor het geselecteerde record en voeg een toelichting toe."
           footer={
             selectedItem ? (
-              <div className="space-y-2.5">
-                <ActionPanelButtonGroup>
-                  <ActionPanelButton
-                    label="Actie uitvoeren"
-                    variant="primary"
-                    disabled={!selectedItem || selectedDecision === "open"}
-                    onClick={executeSelectedAction}
-                  />
-                  <ActionPanelButton
-                    label="Door naar uitvoering"
-                    variant="secondary"
-                    onClick={() => setConfirmOpen(true)}
-                  />
-                </ActionPanelButtonGroup>
-
-                <ActionPanelShortcuts
-                  shortcuts={[
-                    { keyLabel: "A", label: "Vorige" },
-                    { keyLabel: "D", label: "Volgende" },
-                    { keyLabel: "W", label: "Actie uitvoeren" },
-                    { keyLabel: "T", label: "Retour" },
-                    { keyLabel: "Y", label: "Akkoord" },
-                    { keyLabel: "U", label: "Uitsluiten" },
-                  ]}
+            <div className="space-y-2.5">
+              <ActionPanelButtonGroup>
+                <ActionPanelButton
+                  label="Actie uitvoeren"
+                  variant="primary"
+                  disabled={!selectedItem || selectedDecision === "open"}
+                  onClick={executeSelectedAction}
                 />
-              </div>
+                <ActionPanelButton
+                  label="Door naar uitvoering"
+                  variant="secondary"
+                  onClick={() => setConfirmOpen(true)}
+                />
+              </ActionPanelButtonGroup>
+
+              <ActionPanelShortcuts
+                shortcuts={[
+                  { keyLabel: "A", label: "Vorige" },
+                  { keyLabel: "D", label: "Volgende" },
+                  { keyLabel: "W", label: "Actie uitvoeren" },
+                  { keyLabel: "T", label: "Retour" },
+                  { keyLabel: "Y", label: "Akkoord" },
+                  { keyLabel: "U", label: "Uitsluiten" },
+                ]}
+              />
+            </div>
             ) : null
           }
         >

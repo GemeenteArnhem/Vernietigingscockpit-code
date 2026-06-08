@@ -1,13 +1,6 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import {
-  ArrowRight,
-  Database,
-  FileStack,
-  FolderKanban,
-  Mail,
-  RotateCcw,
-} from "lucide-react";
+import { ArrowRight, RotateCcw } from "lucide-react";
 
 import StatusBadge from "../components/StatusBadge";
 import ActionPanel, {
@@ -17,90 +10,24 @@ import ActionPanel, {
   ActionPanelSection,
   ActionPanelShortcuts,
 } from "../components/ActionPanel";
-import ContentPanel, {
-  ContentPanelHeader,
-  ContentPanelSection,
-} from "../components/ContentPanel";
-import TaskExecutionContextBar from "../features/task-execution/components/TaskExecutionContextBar";
-
-type Connector = {
-  id: string;
-  naam: string;
-  versie: string;
-  stekkerStatus: "SUCCES" | "FOUT";
-  vernietigingsStatus:
-    | "NIET_GESTART"
-    | "BEZIG"
-    | "VOLTOOID"
-    | "GEDEELTELIJK_VOLTOOID";
-  voortgang: number;
-  laatsteRun: string;
-  aantalObjecten: string;
-  melding: string;
-  icon: ReactNode;
-};
+import ContentPanel from "../components/ContentPanel";
+import RecordDetailsPanel from "../features/task-execution/components/RecordDetailsPanel";
+import TaskExecutionHeader from "../features/task-execution/components/TaskExecutionHeader";
+import {
+  destructionConnectors,
+  destructionSummaryStats,
+  destructionTaskMetaItems,
+} from "../shared/mocks/recordDestructionPage";
+import type {
+  TaskExecutionConnectorDestructionStatus,
+  TaskExecutionDestructionConnector,
+} from "../shared/types/taskExecutionConnector";
 
 type DestructionActionId = "vernietiging-uitvoeren" | "herkansen";
 
-const connectors: Connector[] = [
-  {
-    id: "suite4sociaaldomein",
-    naam: "Suite4sociaaldomein",
-    versie: "1.0",
-    stekkerStatus: "SUCCES",
-    vernietigingsStatus: "NIET_GESTART",
-    voortgang: 0,
-    laatsteRun: "Nog niet uitgevoerd",
-    aantalObjecten: "-",
-    melding: "De vernietiging is nog niet gestart voor deze stekker.",
-    icon: <FolderKanban className="h-4 w-4" />,
-  },
-  {
-    id: "djuma",
-    naam: "Djuma",
-    versie: "1.0",
-    stekkerStatus: "SUCCES",
-    vernietigingsStatus: "BEZIG",
-    voortgang: 42,
-    laatsteRun: "31 mei 2026, 09:14",
-    aantalObjecten: "1.284 objecten",
-    melding: "De vernietiging loopt. De geselecteerde objecten worden momenteel verwerkt.",
-    icon: <FileStack className="h-4 w-4" />,
-  },
-  {
-    id: "join",
-    naam: "Join",
-    versie: "1.0",
-    stekkerStatus: "FOUT",
-    vernietigingsStatus: "GEDEELTELIJK_VOLTOOID",
-    voortgang: 20,
-    laatsteRun: "31 mei 2026, 09:08",
-    aantalObjecten: "312 objecten",
-    melding: "De vernietiging is deels gelukt. Herkansen is nodig voor objecten die nog niet verwerkt zijn.",
-    icon: <Database className="h-4 w-4" />,
-  },
-  {
-    id: "onegov",
-    naam: "Onegov",
-    versie: "1.0",
-    stekkerStatus: "SUCCES",
-    vernietigingsStatus: "VOLTOOID",
-    voortgang: 100,
-    laatsteRun: "31 mei 2026, 09:02",
-    aantalObjecten: "842 objecten",
-    melding: "De vernietiging is volledig afgerond voor deze stekker.",
-    icon: <Mail className="h-4 w-4" />,
-  },
-];
-
-const taskMetaItems = [
-  { label: "Recordmanager", value: "S. Janssen" },
-  { label: "Proceseigenaar", value: "Jan de Vries" },
-  { label: "Archivaris", value: "M. Blom" },
-  { label: "Startdatum", value: "31 mei 2026" },
-];
-
-function getVernietigingsStatusLabel(status: Connector["vernietigingsStatus"]) {
+function getVernietigingsStatusLabel(
+  status: TaskExecutionConnectorDestructionStatus
+) {
   switch (status) {
     case "NIET_GESTART":
       return "Niet gestart";
@@ -113,7 +40,7 @@ function getVernietigingsStatusLabel(status: Connector["vernietigingsStatus"]) {
   }
 }
 
-function getVoortgangskleur(status: Connector["vernietigingsStatus"]) {
+function getVoortgangskleur(status: TaskExecutionConnectorDestructionStatus) {
   switch (status) {
     case "VOLTOOID":
       return "bg-green-500";
@@ -126,7 +53,7 @@ function getVoortgangskleur(status: Connector["vernietigingsStatus"]) {
   }
 }
 
-function getConnectorStageCopy(status: Connector["vernietigingsStatus"]) {
+function getConnectorStageCopy(status: TaskExecutionConnectorDestructionStatus) {
   switch (status) {
     case "VOLTOOID":
       return "Vernietiging afgerond";
@@ -139,19 +66,48 @@ function getConnectorStageCopy(status: Connector["vernietigingsStatus"]) {
   }
 }
 
+function getConnectorStatusBadgeClasses(
+  connector: TaskExecutionDestructionConnector
+) {
+  if (connector.stekkerStatus === "FOUT") {
+    return "border-rose-200 bg-rose-50 text-rose-700";
+  }
+
+  return "border-emerald-200 bg-emerald-50 text-emerald-700";
+}
+
 export default function RecordDestructionPage() {
   const navigate = useNavigate();
   const { taakId, id } = useParams();
   const [selectedConnectorId, setSelectedConnectorId] = useState(
-    connectors[0]?.id ?? null
+    destructionConnectors[0]?.id ?? null
   );
   const [selectedAction, setSelectedAction] = useState<DestructionActionId>(
     "vernietiging-uitvoeren"
   );
 
   const selectedConnector =
-    connectors.find((connector) => connector.id === selectedConnectorId) ??
-    connectors[0];
+    destructionConnectors.find(
+      (connector) => connector.id === selectedConnectorId
+    ) ?? destructionConnectors[0];
+
+  const selectedConnectorIndex = useMemo(
+    () =>
+      destructionConnectors.findIndex(
+        (connector) => connector.id === selectedConnector.id
+      ),
+    [selectedConnector]
+  );
+
+  const previousConnector =
+    selectedConnectorIndex > 0
+      ? destructionConnectors[selectedConnectorIndex - 1]
+      : undefined;
+  const nextConnector =
+    selectedConnectorIndex >= 0 &&
+    selectedConnectorIndex < destructionConnectors.length - 1
+      ? destructionConnectors[selectedConnectorIndex + 1]
+      : undefined;
 
   const selectedConnectorNeedsRetry =
     selectedConnector.vernietigingsStatus === "GEDEELTELIJK_VOLTOOID" ||
@@ -182,35 +138,86 @@ export default function RecordDestructionPage() {
 
       if (event.key.toLowerCase() === "w") {
         event.preventDefault();
-        handlePrimaryAction();
+
+        if (selectedAction === "herkansen" && selectedConnectorNeedsRetry) {
+          return;
+        }
+
+        navigate(`/taak/${taakId}/taakuitvoering/${id}/resultaat`);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedAction, selectedConnectorNeedsRetry]);
+  }, [id, navigate, selectedAction, selectedConnectorNeedsRetry, taakId]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+    <div className="flex min-h-0 flex-1 overflow-hidden">
+      <aside className="w-[340px] shrink-0 border-r border-slate-200 bg-white">
+        <RecordDetailsPanel
+          heading="Stekkerdetails"
+          record={{ titel: selectedConnector.naam }}
+          comments={[]}
+          currentIndex={selectedConnectorIndex >= 0 ? selectedConnectorIndex + 1 : 0}
+          totalCount={destructionConnectors.length}
+          onPrevious={
+            previousConnector
+              ? () => setSelectedConnectorId(previousConnector.id)
+              : undefined
+          }
+          onNext={
+            nextConnector ? () => setSelectedConnectorId(nextConnector.id) : undefined
+          }
+          details={[
+            {
+              label: "Stekkerstatus",
+              value: selectedConnector.stekkerStatus === "SUCCES" ? "Gekoppeld" : "Fout",
+              badgeClassName: getConnectorStatusBadgeClasses(selectedConnector),
+            },
+            {
+              label: "Vernietigingsstatus",
+              value: getVernietigingsStatusLabel(selectedConnector.vernietigingsStatus),
+            },
+            { label: "Versie", value: selectedConnector.versie },
+            { label: "Laatste run", value: selectedConnector.laatsteRun },
+            { label: "Geselecteerde objecten", value: selectedConnector.aantalObjecten },
+            { label: "Voortgang", value: `${selectedConnector.voortgang}%` },
+            {
+              label: "Volgende stap",
+              value: selectedConnectorNeedsRetry
+                ? "Herkansen of foutanalyse"
+                : "Wachten op afronding van alle stekkers",
+            },
+            {
+              label: "Statusbeeld",
+              value: getConnectorStageCopy(selectedConnector.vernietigingsStatus),
+            },
+            { label: "Melding", value: selectedConnector.melding },
+          ]}
+        />
+      </aside>
+
+      <div className="flex min-w-0 flex-1 overflow-hidden">
         <ContentPanel>
-          <div className="flex-1 overflow-y-auto p-4">
-            <div className="flex min-w-0 w-full flex-col gap-4">
-              <ContentPanelHeader
-                eyebrow="Taakuitvoering"
-                title="Vernietiging"
-                subtitle="Start de vernietiging taakbreed voor alle gekoppelde stekkers. Kies daarna een stekker om de voortgang of een eventuele herkansing te bekijken."
-              />
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+            <TaskExecutionHeader
+              activeStep="UITVOERING"
+              summaryStats={destructionSummaryStats}
+              metaItems={destructionTaskMetaItems}
+            />
 
-              <TaskExecutionContextBar activeStep="UITVOERING" items={taskMetaItems} />
+            <div className="flex min-w-0 w-full flex-col p-4">
+              <section className="-m-4 bg-white px-4 py-4">
+                <div>
+                  <h2 className="text-base font-semibold text-slate-900">Stekkers</h2>
+                  <p className="mt-1 text-sm leading-5 text-slate-500">
+                    Kies een stekker om links de detailinformatie en rechts de passende actie te bekijken.
+                  </p>
+                </div>
 
-              <ContentPanelSection
-                title="Stekkers"
-                description="Kies een stekker om de detailinformatie en eventuele herstelactie te bekijken."
-              >
-                <div className="grid gap-4 xl:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.4fr)]">
+                <div className="mt-3">
                   <div className="space-y-3">
-                    {connectors.map((connector) => {
+                    {destructionConnectors.map((connector) => {
                       const selected = connector.id === selectedConnector.id;
 
                       return (
@@ -218,41 +225,43 @@ export default function RecordDestructionPage() {
                           key={connector.id}
                           type="button"
                           onClick={() => setSelectedConnectorId(connector.id)}
-                          className={`w-full rounded-md border px-3 py-3 text-left transition-all ${
+                          className={`w-full rounded-md border px-4 py-3 text-left transition-all ${
                             selected
                               ? "border-blue-200 bg-blue-50/60 shadow-sm shadow-blue-100/60"
                               : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/70"
                           }`}
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex min-w-0 items-center gap-3">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex min-w-0 items-start gap-3">
                               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-600">
                                 {connector.icon}
                               </div>
 
                               <div className="min-w-0">
-                                <div className="text-sm font-semibold text-slate-900">
+                                <div className="truncate text-sm font-semibold text-slate-900">
                                   {connector.naam}
+                                </div>
+                                <div className="mt-1 text-xs text-slate-500">
+                                  {getConnectorStageCopy(connector.vernietigingsStatus)}
                                 </div>
                               </div>
                             </div>
 
-                            <StatusBadge
-                              status={
-                                connector.stekkerStatus === "SUCCES"
-                                  ? "GEKOPPELD"
-                                  : "FOUT"
-                              }
-                            />
+                            <div className="flex shrink-0 items-center gap-2">
+                              <StatusBadge
+                                status={
+                                  connector.stekkerStatus === "SUCCES"
+                                    ? "GEKOPPELD"
+                                    : "FOUT"
+                                }
+                              />
+                              <StatusBadge status={connector.vernietigingsStatus} />
+                            </div>
                           </div>
 
                           <div className="mt-3">
                             <div className="flex items-center justify-between gap-3 text-xs font-medium text-slate-500">
-                              <span>
-                                {getVernietigingsStatusLabel(
-                                  connector.vernietigingsStatus
-                                )}
-                              </span>
+                              <span>{connector.aantalObjecten}</span>
                               <span>{connector.voortgang}%</span>
                             </div>
 
@@ -274,107 +283,8 @@ export default function RecordDestructionPage() {
                       );
                     })}
                   </div>
-
-                  <div className="rounded-md border border-slate-200 bg-white px-4 py-4 shadow-sm shadow-slate-200/40">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <div className="text-base font-semibold text-slate-900">
-                          {selectedConnector.naam}
-                        </div>
-                        <div className="mt-1 text-sm text-slate-500">
-                          Details van de geselecteerde stekker binnen deze taakuitvoering.
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-2">
-                        <StatusBadge
-                          status={
-                            selectedConnector.stekkerStatus === "SUCCES"
-                              ? "GEKOPPELD"
-                              : "FOUT"
-                          }
-                        />
-                        <StatusBadge status={selectedConnector.vernietigingsStatus} />
-                      </div>
-                    </div>
-
-                    <div className="mt-5 rounded-md border border-slate-200 bg-slate-50/70 px-4 py-4">
-                      <div className="text-sm font-semibold text-slate-900">
-                        {getVernietigingsStatusLabel(
-                          selectedConnector.vernietigingsStatus
-                        )}
-                      </div>
-                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
-                        <div
-                          className={`h-full rounded-full ${getVoortgangskleur(
-                            selectedConnector.vernietigingsStatus
-                          )}`}
-                          style={{
-                            width: `${Math.max(
-                              0,
-                              Math.min(100, selectedConnector.voortgang)
-                            )}%`,
-                          }}
-                        />
-                      </div>
-                      <div className="mt-2 text-xs text-slate-500">
-                        {selectedConnector.voortgang}% voortgang
-                      </div>
-
-                      <p className="mt-4 text-sm leading-6 text-slate-600">
-                        {selectedConnector.melding}
-                      </p>
-                    </div>
-
-                    <dl className="mt-4 grid gap-4 sm:grid-cols-2">
-                      <div className="border-b border-slate-100 pb-3">
-                        <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
-                          Versie
-                        </dt>
-                        <dd className="mt-1 text-sm font-medium text-slate-900">
-                          {selectedConnector.versie}
-                        </dd>
-                      </div>
-                      <div className="border-b border-slate-100 pb-3">
-                        <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
-                          Laatste run
-                        </dt>
-                        <dd className="mt-1 text-sm font-medium text-slate-900">
-                          {selectedConnector.laatsteRun}
-                        </dd>
-                      </div>
-                      <div className="border-b border-slate-100 pb-3">
-                        <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
-                          Geselecteerde objecten
-                        </dt>
-                        <dd className="mt-1 text-sm font-medium text-slate-900">
-                          {selectedConnector.aantalObjecten}
-                        </dd>
-                      </div>
-                      <div className="border-b border-slate-100 pb-3">
-                        <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
-                          Volgende stap
-                        </dt>
-                        <dd className="mt-1 text-sm font-medium text-slate-900">
-                          {selectedConnectorNeedsRetry
-                            ? "Herkansen of foutanalyse"
-                            : "Wachten op afronding van alle stekkers"}
-                        </dd>
-                      </div>
-                      <div className="border-b border-slate-100 pb-3">
-                        <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
-                          Statusbeeld
-                        </dt>
-                        <dd className="mt-1 text-sm font-medium text-slate-900">
-                          {getConnectorStageCopy(
-                            selectedConnector.vernietigingsStatus
-                          )}
-                        </dd>
-                      </div>
-                    </dl>
-                  </div>
                 </div>
-              </ContentPanelSection>
+              </section>
             </div>
           </div>
         </ContentPanel>
