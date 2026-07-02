@@ -22,9 +22,14 @@ export type DestructionResultRow = {
   stekker: string;
   vernietigingsstatus: DestructionResultStatus;
   omvang?: number;
+  omvangClienten?: number;
+  bewaartermijn?: number;
   vernietigingsdatum?: string;
   bron_id?: string;
   code?: string;
+  startdatum?: string;
+  einddatum?: string;
+  selectielijst?: string;
   grondslag?: string;
   bron_systeem?: string;
   melding?: string;

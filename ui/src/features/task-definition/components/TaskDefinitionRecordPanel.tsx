@@ -1,6 +1,7 @@
 import {
+  Cable,
   ChevronsUpDown,
-  FolderArchive,
+  FolderKanban,
   ListFilter,
   Search,
   X,
@@ -9,31 +10,27 @@ import { useMemo, useState } from "react";
 
 import ContentPanel, {
   ContentPanelEmptyState,
-} from "../ContentPanel";
+} from "../../../components/ContentPanel";
 import type {
   RecordPaneBarFilter,
   RecordPaneBarTab,
-} from "../record-pane/RecordPaneBar";
-import { reviewSummaryStatusStyles } from "../../shared/ui/reviewStatusStyles";
-import type {
-  DashboardWorkflowStepId,
-  TaskExecutionStatus,
-} from "../../shared/types/dashboard";
+} from "../../../components/record-pane/RecordPaneBar";
 
-type DashboardTableRow = {
+type TaskDefinitionTableRow = {
   id: string;
-  taakuitvoering: string;
-  stapId: DashboardWorkflowStepId;
-  status: TaskExecutionStatus;
-  voortgangLabel: string;
-  progress: number;
+  taakdefinitie: string;
+  categorie: string;
+  stap: string;
   recordmanager: string;
-  startdatum: string;
+  proceseigenaar: string;
+  frequentie: string;
+  uitvoeringen: number;
+  stekkers: number;
 };
 
 type Props = {
   recordId?: string | null;
-  rows?: DashboardTableRow[];
+  rows?: TaskDefinitionTableRow[];
   onSelect?: (id: string) => void;
   searchValue: string;
   onSearchChange: (value: string) => void;
@@ -45,84 +42,7 @@ type Props = {
   onFilterChange: (key: string) => void;
 };
 
-const DASHBOARD_STEPS: DashboardWorkflowStepId[] = [
-  "SELECTIE",
-  "BEOORDELING",
-  "ACCORDERING_PO",
-  "ACCORDERING_ARCH",
-  "UITVOERING",
-  "RESULTAAT",
-];
-
-function DashboardProgressStepper({
-  stepId,
-  status,
-}: {
-  stepId: DashboardWorkflowStepId;
-  status: TaskExecutionStatus;
-}) {
-  const activeIndex = DASHBOARD_STEPS.findIndex((step) => step === stepId);
-  const isDelayed = status === "VERTRAAGD";
-  const isPlanned = status === "GEPLAND";
-  const completeDotClass =
-    reviewSummaryStatusStyles.akkoord.dot;
-  const activeDotClass = isDelayed
-    ? reviewSummaryStatusStyles.retour.dot
-    : isPlanned
-      ? reviewSummaryStatusStyles.uitgesteld.dot
-      : reviewSummaryStatusStyles.teBeoordelen.dot;
-  const activeBorderClass = isDelayed
-    ? "border-amber-300 ring-amber-100"
-    : isPlanned
-      ? "border-slate-300 ring-slate-100"
-      : "border-sky-300 ring-sky-100";
-  const pendingDotClass =
-    isPlanned
-      ? "border-slate-300 bg-slate-100"
-      : "border-slate-300 bg-white";
-  const completeLineClass =
-    reviewSummaryStatusStyles.akkoord.progress;
-  const pendingLineClass =
-    isPlanned ? "bg-slate-200" : "bg-slate-300";
-
-  return (
-    <div
-      className="flex items-center"
-      aria-label={`Workflow stap ${activeIndex + 1} van ${DASHBOARD_STEPS.length}`}
-    >
-      {DASHBOARD_STEPS.map((step, index) => {
-        const isComplete = index < activeIndex;
-        const isActive = index === activeIndex;
-        const isLast = index === DASHBOARD_STEPS.length - 1;
-
-        return (
-          <div key={step} className="flex min-w-0 flex-1 items-center">
-            <div
-              className={`h-3.5 w-3.5 shrink-0 rounded-full border-2 shadow-sm ${
-                isComplete
-                  ? `${completeDotClass} border-emerald-200 shadow-emerald-100`
-                  : isActive
-                    ? `${activeDotClass} bg-white ring-2 ${activeBorderClass} shadow-slate-100`
-                    : pendingDotClass
-              }`}
-            />
-            {!isLast ? (
-              <div
-                className={`mx-1 h-px min-w-2 flex-1 ${
-                  isComplete
-                    ? completeLineClass
-                    : pendingLineClass
-                }`}
-              />
-            ) : null}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-export default function DashboardRecordPanel({
+export default function TaskDefinitionRecordPanel({
   recordId = null,
   rows = [],
   onSelect,
@@ -138,20 +58,21 @@ export default function DashboardRecordPanel({
   const [tabMenuOpen, setTabMenuOpen] = useState(false);
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const activeTabLabel =
-    tabs.find((tab) => tab.key === activeTab)?.label ?? "Werkvoorraad";
+    tabs.find((tab) => tab.key === activeTab)?.label ?? "Taakdefinities";
   const activeFilterLabel =
     filters.find((filter) => filter.key === activeFilter)?.label ?? "Alle";
   const activeTabCount =
     tabs.find((tab) => tab.key === activeTab)?.count;
+
   const activeChips = useMemo(
     () =>
       [
-        activeTab !== "mijn"
+        activeTab !== "alle"
           ? {
               key: "tab",
-              label: "Werkvoorraad",
+              label: "Weergave",
               value: activeTabLabel,
-              onClear: () => onTabChange("mijn"),
+              onClear: () => onTabChange("alle"),
             }
           : null,
         activeFilter !== "alle"
@@ -175,9 +96,8 @@ export default function DashboardRecordPanel({
     return (
       <ContentPanel>
         <ContentPanelEmptyState
-          icon={<FolderArchive size={24} />}
-          title="Geen taken binnen deze selectie"
-          description="Pas je zoekopdracht of filters aan om taakuitvoeringen te tonen."
+          title="Geen taakdefinities binnen deze selectie"
+          description="Pas je zoekopdracht of filters aan om taakdefinities te tonen."
         />
       </ContentPanel>
     );
@@ -201,7 +121,7 @@ export default function DashboardRecordPanel({
                       event.target.value
                     )
                   }
-                  placeholder="Zoek op titel, stap of startdatum..."
+                  placeholder="Zoek op naam, categorie of frequentie..."
                   className="h-11 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-500"
                 />
               </label>
@@ -315,17 +235,27 @@ export default function DashboardRecordPanel({
           <table className="w-full table-fixed text-sm">
             <thead className="bg-white">
               <tr className="border-b border-slate-200">
-                <th className="w-[34%] bg-white px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  Taakuitvoering
+                <th className="w-[30%] px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Taakdefinitie
                 </th>
-                <th className="w-[30%] bg-white px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  Voortgang
-                </th>
-                <th className="w-[18%] bg-white px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                <th className="w-[18%] px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                   Recordmanager
                 </th>
-                <th className="w-[18%] bg-white px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  Startdatum
+                <th className="w-[18%] px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Proceseigenaar
+                </th>
+                <th className="w-[14%] px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Frequentie
+                </th>
+                <th className="w-[10%] px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  <span className="inline-flex items-center justify-end">
+                    <FolderKanban size={14} />
+                  </span>
+                </th>
+                <th className="w-[10%] px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  <span className="inline-flex items-center justify-end">
+                    <Cable size={14} />
+                  </span>
                 </th>
               </tr>
             </thead>
@@ -344,32 +274,28 @@ export default function DashboardRecordPanel({
                   >
                     <td className="px-4 py-3 align-middle">
                       <div className="truncate font-medium text-slate-900">
-                        {row.taakuitvoering}
+                        {row.taakdefinitie}
                       </div>
-                    </td>
-                    <td className="px-4 py-3 align-middle">
-                      <div className="min-w-0">
-                        <div className="truncate font-medium text-slate-900">
-                        {row.voortgangLabel}
-                      </div>
-                        <div className="mt-2 flex items-center gap-3">
-                          <div className="min-w-0 flex-1">
-                            <DashboardProgressStepper
-                              stepId={row.stapId}
-                              status={row.status}
-                            />
-                          </div>
-                          <span className="shrink-0 text-[11px] font-medium text-slate-500">
-                            {row.progress}%
-                          </span>
-                        </div>
+                      <div className="mt-1 truncate text-xs text-slate-500">
+                        {row.categorie}
+                        <span className="px-1.5 text-slate-300">/</span>
+                        {row.stap}
                       </div>
                     </td>
                     <td className="px-4 py-3 align-middle text-slate-700">
                       {row.recordmanager}
                     </td>
                     <td className="px-4 py-3 align-middle text-slate-700">
-                      {row.startdatum}
+                      {row.proceseigenaar}
+                    </td>
+                    <td className="px-4 py-3 align-middle text-slate-700">
+                      {row.frequentie}
+                    </td>
+                    <td className="px-4 py-3 text-right align-middle font-semibold text-slate-900">
+                      {row.uitvoeringen}
+                    </td>
+                    <td className="px-4 py-3 text-right align-middle font-semibold text-slate-900">
+                      {row.stekkers}
                     </td>
                   </tr>
                 );
@@ -379,7 +305,7 @@ export default function DashboardRecordPanel({
         </div>
 
         <div className="border-t border-slate-200 px-4 py-3 text-sm text-slate-500">
-          {rows.length.toLocaleString("nl-NL")} taken geladen
+          {rows.length.toLocaleString("nl-NL")} taakdefinities geladen
         </div>
       </section>
     </ContentPanel>

@@ -20,7 +20,7 @@ const steps: Step[] = [
   { id: "BEOORDELING", label: "Beoordeling" },
   { id: "ACCORDERING_PO", label: "Accordering", sublabel: "Proceseigenaar" },
   { id: "ACCORDERING_ARCH", label: "Accordering", sublabel: "Archivaris" },
-  { id: "UITVOERING", label: "Uitvoering" },
+  { id: "UITVOERING", label: "Vernietigen" },
   { id: "RESULTAAT", label: "Resultaat" },
 ];
 

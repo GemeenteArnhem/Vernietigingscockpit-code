@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   CheckCheck,
   Clock3,
   FileX2,
-  SendToBack,
 } from "lucide-react";
 
 import ActionPanel, {
@@ -13,21 +12,20 @@ import ActionPanel, {
   ActionPanelChoice,
   ActionPanelEmptyState,
   ActionPanelSection,
-  ActionPanelShortcuts,
   ActionPanelTextarea,
 } from "../components/ActionPanel";
+import ShortcutPane from "../components/ShortcutPane";
 import ConfirmDialog from "../components/ConfirmDialog";
-import RecordPaneBar, {
-  type RecordPaneBarFilter,
-  type RecordPaneBarFilterSection,
-  type RecordPaneBarItem,
-  type RecordPaneBarTab,
-  type RecordPaneBarTone,
-} from "../components/record-pane/RecordPaneBar";
 import RecordDetailsPanel from "../features/task-execution/components/RecordDetailsPanel";
 import ReviewRecordPanel from "../features/task-execution/review/components/ReviewRecordPanel";
+import type {
+  ReviewRecordSortDirection,
+  ReviewRecordSortKey,
+} from "../features/task-execution/review/components/ReviewRecordPanel";
+import { AppShellPortal } from "../layouts/AppShellPortalContext";
 import { initialReviewDecisions, reviewRecordContexts } from "../shared/mocks/reviewPage";
 import { reviewRows } from "../shared/mocks/reviewRows";
+import { getReviewQueueStatusStyle } from "../shared/ui/reviewStatusStyles";
 import type {
   ReviewComment,
   ReviewDecision,
@@ -45,6 +43,8 @@ type ReviewStatusFilter =
 type ReviewRiskFilter = "alle" | ReviewRiskLevel;
 type ReviewAction = ReviewDecision | "uitstellen";
 
+const BULK_SELECTION_KEY = "__bulk__";
+
 function getDecisionStatus(decision: ReviewDecision): ReviewQueueStatus {
   switch (decision) {
     case "akkoord":
@@ -58,62 +58,10 @@ function getDecisionStatus(decision: ReviewDecision): ReviewQueueStatus {
   }
 }
 
-function getQueueStatusTone(status: ReviewQueueStatus): RecordPaneBarTone {
-  switch (status) {
-    case "afgerond":
-      return "success";
-    case "conflict":
-      return "danger";
-    case "retour":
-      return "warning";
-    default:
-      return "info";
-  }
-}
-
-function getRiskLabel(risk: ReviewRiskLevel) {
-  switch (risk) {
-    case "hoog":
-      return "Hoog risico";
-    case "middel":
-      return "Middel risico";
-    default:
-      return "Laag risico";
-  }
-}
-
-function getRiskShortLabel(risk: ReviewRiskLevel) {
-  switch (risk) {
-    case "hoog":
-      return "Hoog";
-    case "middel":
-      return "Middel";
-    default:
-      return "Laag";
-  }
-}
-
-function getStatusFilterLabel(filter: ReviewStatusFilter) {
-  switch (filter) {
-    case "alle":
-      return "Alle";
-    case "retour":
-      return "Retour";
-    case "conflict":
-      return "Uitgesloten";
-    case "afgerond":
-      return "Beoordeeld";
-    case "uitgesteld":
-      return "Uitgesteld";
-    default:
-      return "Open";
-  }
-}
-
 function getQueueStatusLabel(status: ReviewQueueStatus) {
   switch (status) {
     case "afgerond":
-      return "Succes";
+      return "Akkoord";
     case "conflict":
       return "Uitgesloten";
     case "retour":
@@ -126,46 +74,35 @@ function getQueueStatusLabel(status: ReviewQueueStatus) {
 }
 
 function getQueueStatusBadgeClasses(status: ReviewQueueStatus) {
-  switch (status) {
-    case "afgerond":
-      return "border-emerald-200 bg-emerald-50 text-emerald-700";
-    case "conflict":
-      return "border-rose-200 bg-rose-50 text-rose-700";
-    case "retour":
-      return "border-amber-200 bg-amber-50 text-amber-700";
-    case "uitgesteld":
-      return "border-slate-200 bg-slate-100 text-slate-700";
-    default:
-      return "border-sky-200 bg-sky-50 text-sky-700";
+  return getReviewQueueStatusStyle(status).badge;
+}
+
+function getSharedValue(values: string[], multipleLabel = "Meerdere") {
+  const normalizedValues = Array.from(new Set(values.filter(Boolean)));
+
+  if (normalizedValues.length === 0) {
+    return "-";
   }
+
+  return normalizedValues.length === 1 ? normalizedValues[0] : multipleLabel;
 }
 
 const reviewActions = [
   {
     id: "akkoord" as const,
     title: "Akkoord",
-    description: "Record markeren als inhoudelijk beoordeeld.",
     icon: <CheckCheck size={18} />,
     tone: "success" as const,
   },
   {
     id: "uitsluiten" as const,
     title: "Uitsluiten",
-    description: "Record buiten de vernietigingslijst plaatsen.",
     icon: <FileX2 size={18} />,
     tone: "danger" as const,
   },
   {
-    id: "retour" as const,
-    title: "Retour sturen",
-    description: "Terugzetten voor aanvullende controle of toelichting.",
-    icon: <SendToBack size={18} />,
-    tone: "warning" as const,
-  },
-  {
     id: "uitstellen" as const,
     title: "Uitstellen",
-    description: "Later opnieuw beoordelen binnen deze taak.",
     icon: <Clock3 size={18} />,
     tone: "neutral" as const,
   },
@@ -176,9 +113,9 @@ export default function RecordReviewPage() {
   const { taakId, id } = useParams();
 
   const [search] = useState("");
-  const [activeStatusFilter, setActiveStatusFilter] =
+  const [activeStatusFilter] =
     useState<ReviewStatusFilter>("alle");
-  const [activeRiskFilter, setActiveRiskFilter] = useState<ReviewRiskFilter>("alle");
+  const [activeRiskFilter] = useState<ReviewRiskFilter>("alle");
   const [selectedId, setSelectedId] = useState<string | null>(reviewRows[0]?.id ?? null);
   const [decisions, setDecisions] =
     useState<Record<string, ReviewDecision>>(initialReviewDecisions);
@@ -188,6 +125,13 @@ export default function RecordReviewPage() {
   const [manualComments, setManualComments] = useState<Record<string, ReviewComment[]>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [selectedTableIds, setSelectedTableIds] = useState<string[]>([]);
+  const [sortKey, setSortKey] = useState<ReviewRecordSortKey>("vernietigingsdatum");
+  const [sortDirection, setSortDirection] =
+    useState<ReviewRecordSortDirection>("asc");
+  const collator = useMemo(
+    () => new Intl.Collator("nl", { numeric: true, sensitivity: "base" }),
+    []
+  );
 
   const contextById = useMemo(
     () => Object.fromEntries(reviewRecordContexts.map((context) => [context.recordId, context])),
@@ -222,88 +166,10 @@ export default function RecordReviewPage() {
     [contextById, decisions, deferredRecords, manualComments]
   );
 
-  const filters = useMemo<RecordPaneBarFilter[]>(
-    () => [],
-    []
-  );
-
-  const tabs = useMemo<RecordPaneBarTab[]>(() => [], []);
-
-  const filterSections = useMemo<RecordPaneBarFilterSection[]>(
-    () => [
-      {
-        key: "status",
-        label: "Status",
-        activeKey: activeStatusFilter,
-        onChange: (key) => setActiveStatusFilter(key as ReviewStatusFilter),
-        options: [
-          {
-            key: "alle",
-            label: "Alle",
-            count: queueRows.length,
-          },
-          {
-            key: "nog-te-beoordelen",
-            label: "Open",
-            count: queueRows.filter((item) => item.queueStatus === "nog-te-beoordelen").length,
-          },
-          {
-            key: "retour",
-            label: "Retour",
-            count: queueRows.filter((item) => item.queueStatus === "retour").length,
-          },
-          {
-            key: "conflict",
-            label: "Uitgesloten",
-            count: queueRows.filter((item) => item.queueStatus === "conflict").length,
-          },
-          {
-            key: "afgerond",
-            label: "Beoordeeld",
-            count: queueRows.filter((item) => item.queueStatus === "afgerond").length,
-          },
-          {
-            key: "uitgesteld",
-            label: "Uitgesteld",
-            count: queueRows.filter((item) => item.queueStatus === "uitgesteld").length,
-          },
-        ],
-      },
-      {
-        key: "risico",
-        label: "Risico",
-        activeKey: activeRiskFilter,
-        onChange: (key) => setActiveRiskFilter(key as ReviewRiskFilter),
-        options: [
-          {
-            key: "alle",
-            label: "Alle",
-            count: queueRows.length,
-          },
-          {
-            key: "laag",
-            label: "Laag risico",
-            count: queueRows.filter((item) => item.risk === "laag").length,
-          },
-          {
-            key: "middel",
-            label: "Midden risico",
-            count: queueRows.filter((item) => item.risk === "middel").length,
-          },
-          {
-            key: "hoog",
-            label: "Hoog risico",
-            count: queueRows.filter((item) => item.risk === "hoog").length,
-          },
-        ],
-      },
-    ],
-    [activeRiskFilter, activeStatusFilter, queueRows]
-  );
-
   const visibleRows = useMemo(
     () =>
-      queueRows.filter(({ row, queueStatus, risk }) => {
+      queueRows
+        .filter(({ row, queueStatus, risk }) => {
         const matchesSearch =
           row.titel.toLowerCase().includes(search.toLowerCase()) ||
           row.bron_id?.toLowerCase().includes(search.toLowerCase());
@@ -312,8 +178,74 @@ export default function RecordReviewPage() {
           activeStatusFilter === "alle" ? true : queueStatus === activeStatusFilter;
 
         return matchesStatus && matchesSearch && matchesRisk;
-      }),
-    [activeRiskFilter, activeStatusFilter, queueRows, search]
+        })
+        .sort((left, right) => {
+          const leftValue =
+            sortKey === "omschrijving"
+              ? left.row.titel
+              : sortKey === "status"
+                ? getQueueStatusLabel(left.queueStatus)
+                : sortKey === "volgnummer"
+                  ? Number(left.row.id)
+                  : sortKey === "code"
+                    ? left.row.code ?? ""
+                    : sortKey === "selectielijst"
+                      ? left.row.selectielijst ?? ""
+                      : sortKey === "grondslag"
+                        ? left.row.grondslag ?? ""
+                        : sortKey === "bewaartermijn"
+                          ? left.row.bewaartermijn
+                          : sortKey === "vernietigingsdatum"
+                            ? left.row.vernietigingsdatum ?? ""
+                            : sortKey === "opmerking"
+                              ? left.context?.comments.length ?? 0
+                              : sortKey === "omvangObjecten"
+                                ? left.row.omvangDocumenten
+                                : sortKey === "omvangClienten"
+                                  ? left.row.omvangClienten
+                                  : sortKey === "periode"
+                                    ? `${left.row.startdatum ?? ""} / ${left.row.einddatum ?? ""}`
+                                    : sortKey === "stekker"
+                                      ? left.row.bron_systeem ?? ""
+                                      : left.row.bron_id ?? "";
+
+          const rightValue =
+            sortKey === "omschrijving"
+              ? right.row.titel
+              : sortKey === "status"
+                ? getQueueStatusLabel(right.queueStatus)
+                : sortKey === "volgnummer"
+                  ? Number(right.row.id)
+                  : sortKey === "code"
+                    ? right.row.code ?? ""
+                    : sortKey === "selectielijst"
+                      ? right.row.selectielijst ?? ""
+                      : sortKey === "grondslag"
+                        ? right.row.grondslag ?? ""
+                        : sortKey === "bewaartermijn"
+                          ? right.row.bewaartermijn
+                          : sortKey === "vernietigingsdatum"
+                            ? right.row.vernietigingsdatum ?? ""
+                            : sortKey === "opmerking"
+                              ? right.context?.comments.length ?? 0
+                              : sortKey === "omvangObjecten"
+                                ? right.row.omvangDocumenten
+                                : sortKey === "omvangClienten"
+                                  ? right.row.omvangClienten
+                                  : sortKey === "periode"
+                                    ? `${right.row.startdatum ?? ""} / ${right.row.einddatum ?? ""}`
+                                    : sortKey === "stekker"
+                                      ? right.row.bron_systeem ?? ""
+                                      : right.row.bron_id ?? "";
+
+          const comparison =
+            typeof leftValue === "number" && typeof rightValue === "number"
+              ? leftValue - rightValue
+              : collator.compare(String(leftValue), String(rightValue));
+
+          return sortDirection === "asc" ? comparison : -comparison;
+        }),
+    [activeRiskFilter, activeStatusFilter, collator, queueRows, search, sortDirection, sortKey]
   );
 
   useEffect(() => {
@@ -337,33 +269,155 @@ export default function RecordReviewPage() {
     selectedIndex >= 0 && selectedIndex < visibleRows.length - 1
       ? visibleRows[selectedIndex + 1]
       : undefined;
-
-  const paneItems = useMemo<RecordPaneBarItem[]>(
+  const isBulkMode = selectedTableIds.length > 1;
+  const selectedBulkItems = isBulkMode
+    ? visibleRows.filter((item) => selectedTableIds.includes(item.row.id))
+    : [];
+  const actionTargetIds = isBulkMode
+    ? selectedTableIds
+    : selectedItem
+      ? [selectedItem.row.id]
+      : [];
+  const bulkComments = useMemo(
     () =>
-      visibleRows.map(({ row, queueStatus, risk }) => ({
-        id: row.id,
-        title: row.titel,
-        stepLabel: getRiskShortLabel(risk),
-        stepTone: getQueueStatusTone(queueStatus),
-        status:
-          queueStatus === "afgerond"
-            ? "Beoordeeld"
-            : queueStatus === "conflict"
-              ? "Uitgesloten"
-            : queueStatus === "retour"
-                ? "Retour"
-              : queueStatus === "uitgesteld"
-                ? "Uitgesteld"
-                : "Open",
-      })),
-    [visibleRows]
+      selectedBulkItems.flatMap((item) =>
+        (item.context?.comments ?? []).map((comment) => ({
+          ...comment,
+          role: `${comment.role} · ${item.row.titel}`,
+        }))
+      ),
+    [selectedBulkItems]
   );
+  const bulkStatusLabels = Array.from(
+    new Set(selectedBulkItems.map((item) => getQueueStatusLabel(item.queueStatus)))
+  );
+  const bulkVolgnummers = selectedBulkItems
+    .map((item) => visibleRows.findIndex((row) => row.row.id === item.row.id) + 1)
+    .filter((index) => index > 0);
+  const bulkDetails = isBulkMode
+    ? [
+        {
+          label: "Omschrijving",
+          labelTitle: "Titel vernietigen informatieobjecten binnen de taak",
+          value: `${selectedBulkItems.length} geselecteerde records`,
+          stacked: true,
+        },
+        {
+          label: "Code",
+          labelTitle:
+            "De VNG code of BAC van de te vernietigen informatieobjecten binnen de taak. Voor selectielijst vanaf 2017, Zaaktype gebruiken.",
+          value: getSharedValue(selectedBulkItems.map((item) => item.row.code ?? "-"), "Meerdere codes"),
+        },
+        {
+          label: "Selectielijst",
+          labelTitle:
+            "Selectielijst die van toepassing is, betreft jaartal van de selectielijst.",
+          value: getSharedValue(
+            selectedBulkItems.map((item) => item.row.selectielijst ?? "-"),
+            "Meerdere selectielijsten"
+          ),
+        },
+        {
+          label: "Grondslag",
+          labelTitle:
+            "De categorie/grondslag uit de vignerende selectielijst op basis waarvan de informatieobjecten vernietigd dienen te worden",
+          value: getSharedValue(
+            selectedBulkItems.map((item) => item.row.grondslag ?? "-"),
+            "Meerdere grondslagen"
+          ),
+        },
+        {
+          label: "Bewaartermijn",
+          labelTitle:
+            "De periode dat de informatieobjecten moeten worden bewaard conform de vigerende selectielijst",
+          value: getSharedValue(
+            selectedBulkItems.map((item) => `${item.row.bewaartermijn} jaar`),
+            "Meerdere termijnen"
+          ),
+        },
+        {
+          label: "Vernietigingsdatum",
+          labelTitle:
+            "Jaar en maand waarin het dossier/informatieobject vernietigd moet worden. Format: jjjj-mm",
+          value:
+            selectedBulkItems.length > 0
+              ? `${selectedBulkItems[0]?.row.vernietigingsdatum ?? "-"} t/m ${
+                  selectedBulkItems[selectedBulkItems.length - 1]?.row.vernietigingsdatum ?? "-"
+                }`
+              : "-",
+        },
+        {
+          label: "Periode",
+          labelTitle:
+            "Gehele periode waar de stukken binnen deze taak in vallen. Format jjjj-mm / jjjj-mm",
+          value: getSharedValue(
+            selectedBulkItems.map(
+              (item) => `${item.row.startdatum ?? "-"} / ${item.row.einddatum ?? "-"}`
+            ),
+            "Meerdere periodes"
+          ),
+        },
+        {
+          label: "Status",
+          labelTitle:
+            "Status van beoordeling: Akkoord, Retour, Uitgesloten, Uitgesteld",
+          value: bulkStatusLabels.join(", "),
+        },
+        {
+          label: "Omvang objecten",
+          labelTitle: "Aantal informatieobject",
+          value: selectedBulkItems
+            .reduce((total, item) => total + item.row.omvangDocumenten, 0)
+            .toLocaleString("nl-NL"),
+        },
+        {
+          label: "Omvang clienten",
+          labelTitle: "Aantal clienten behorende de informatieobjecten treft",
+          value: selectedBulkItems
+            .reduce((total, item) => total + item.row.omvangClienten, 0)
+            .toLocaleString("nl-NL"),
+        },
+        {
+          label: "Stekker",
+          labelTitle: "Naam van de stekker waar de informatieobjecten uit komt.",
+          value: getSharedValue(
+            selectedBulkItems.map((item) => item.row.bron_systeem ?? "-"),
+            "Meerdere stekkers"
+          ),
+        },
+        {
+          label: "Bron-ID",
+          labelTitle: "Identificatie van het informatieobject uit de stekker",
+          value: `${selectedBulkItems.length} records`,
+        },
+        {
+          label: "ID",
+          labelTitle: "Cockpit identicatienummer.",
+          value: "Meerdere records",
+        },
+        {
+          label: "Volgnummer",
+          labelTitle:
+            "Een nummer binnen de taak die voor vernietiging in aanmerking komen",
+          value:
+            bulkVolgnummers.length > 0
+              ? `${Math.min(...bulkVolgnummers)} t/m ${Math.max(...bulkVolgnummers)}`
+              : "-",
+        },
+      ]
+    : [];
 
   const committedDecision = selectedItem ? decisions[selectedItem.row.id] ?? "open" : "open";
-  const selectedDecision = selectedItem
-    ? selectedActions[selectedItem.row.id] ?? committedDecision
-    : "open";
-  const selectedNote = selectedItem ? notes[selectedItem.row.id] ?? "" : "";
+  const selectedDecision = isBulkMode
+    ? selectedActions[BULK_SELECTION_KEY] ?? "open"
+    : selectedItem
+      ? selectedActions[selectedItem.row.id] ?? committedDecision
+      : "open";
+  const selectedNote = isBulkMode
+    ? notes[BULK_SELECTION_KEY] ?? ""
+    : selectedItem
+      ? notes[selectedItem.row.id] ?? ""
+      : "";
   const completedCount = queueRows.filter((item) => {
     const decision = decisions[item.row.id] ?? "open";
     return decision !== "open";
@@ -382,65 +436,95 @@ export default function RecordReviewPage() {
     () =>
       visibleRows.map((item) => ({
         id: item.row.id,
-        title: item.row.titel,
+        omschrijving: item.row.titel,
         queueStatus: item.queueStatus,
-        selectieregel: item.row.code ?? "-",
+        volgnummer: Number(item.row.id),
+        code: item.row.code ?? "-",
+        selectielijst: item.row.selectielijst ?? "-",
+        grondslag: item.row.grondslag ?? "-",
         bewaartermijn: `${item.row.bewaartermijn} jaar`,
         vernietigingsdatum: item.row.vernietigingsdatum ?? "-",
-        hasComments: item.context?.comments.length > 0,
+        opmerkingenCount: item.context?.comments.length ?? 0,
+        omvangObjecten: item.row.omvangDocumenten.toLocaleString("nl-NL"),
+        omvangClienten: item.row.omvangClienten.toLocaleString("nl-NL"),
+        periode: `${item.row.startdatum ?? "-"} / ${item.row.einddatum ?? "-"}`,
+        stekker: item.row.bron_systeem ?? "-",
+        bronId: item.row.bron_id ?? "-",
       })),
     [visibleRows]
   );
 
   const executeAction = (action: ReviewAction) => {
-    if (!selectedItem || action === "open") {
+    if (action === "open" || actionTargetIds.length === 0) {
       return;
     }
 
     setDeferredRecords((current) => {
       const nextState = { ...current };
 
-      if (action === "uitstellen") {
-        nextState[selectedItem.row.id] = true;
-      } else {
-        delete nextState[selectedItem.row.id];
-      }
+      actionTargetIds.forEach((id) => {
+        if (action === "uitstellen") {
+          nextState[id] = true;
+        } else {
+          delete nextState[id];
+        }
+      });
 
       return nextState;
     });
 
     if (action !== "uitstellen") {
-      setDecisions((current) => ({
-        ...current,
-        [selectedItem.row.id]: action,
-      }));
+      setDecisions((current) => {
+        const nextState = { ...current };
+        actionTargetIds.forEach((id) => {
+          nextState[id] = action;
+        });
+        return nextState;
+      });
     }
 
     if (selectedNote.trim()) {
-      setManualComments((current) => ({
-        ...current,
-        [selectedItem.row.id]: [
-          ...(current[selectedItem.row.id] ?? []),
-          {
-            author: "Proceseigenaar",
-            role: "Proceseigenaar",
-            message: selectedNote.trim(),
-            timestamp: "1 juni 2026, 14:30",
-          },
-        ],
-      }));
+      setManualComments((current) => {
+        const nextState = { ...current };
+        actionTargetIds.forEach((id) => {
+          nextState[id] = [
+            ...(nextState[id] ?? []),
+            {
+              author: "Proceseigenaar",
+              role: "Proceseigenaar",
+              message: selectedNote.trim(),
+              timestamp: "1 juni 2026, 14:30",
+            },
+          ];
+        });
+        return nextState;
+      });
 
-      setNotes((current) => ({
-        ...current,
-        [selectedItem.row.id]: "",
-      }));
+      setNotes((current) => {
+        const nextState = { ...current };
+        if (isBulkMode) {
+          delete nextState[BULK_SELECTION_KEY];
+        } else if (selectedItem) {
+          nextState[selectedItem.row.id] = "";
+        }
+        return nextState;
+      });
     }
 
     setSelectedActions((current) => {
       const nextState = { ...current };
-      delete nextState[selectedItem.row.id];
+      if (isBulkMode) {
+        delete nextState[BULK_SELECTION_KEY];
+      } else if (selectedItem) {
+        delete nextState[selectedItem.row.id];
+      }
       return nextState;
     });
+
+    if (isBulkMode) {
+      setSelectedTableIds([]);
+      return;
+    }
 
     if (nextRecord) {
       setSelectedId(nextRecord.row.id);
@@ -452,14 +536,18 @@ export default function RecordReviewPage() {
     }
   };
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
+  const handleKeyDown = useEffectEvent((event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const tagName = target?.tagName ?? "";
+      const inputType =
+        target instanceof HTMLInputElement ? target.type.toLowerCase() : "";
       const isTyping =
-        tagName === "INPUT" || tagName === "TEXTAREA" || target?.isContentEditable;
+        tagName === "TEXTAREA" ||
+        (tagName === "INPUT" &&
+          !["checkbox", "radio", "button", "submit"].includes(inputType)) ||
+        target?.isContentEditable;
 
-      if (isTyping || !selectedItem) {
+      if (isTyping || (!selectedItem && !isBulkMode)) {
         return;
       }
 
@@ -473,11 +561,6 @@ export default function RecordReviewPage() {
       if (key === "u") {
         event.preventDefault();
         executeAction("uitsluiten");
-      }
-
-      if (key === "t") {
-        event.preventDefault();
-        executeAction("retour");
       }
 
       if (key === "w" && selectedDecision !== "open") {
@@ -494,99 +577,137 @@ export default function RecordReviewPage() {
         event.preventDefault();
         setSelectedId(nextRecord.row.id);
       }
-    };
+    });
 
+  useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [allReviewed, nextRecord, previousRecord, selectedItem, selectedNote]);
+  }, [handleKeyDown]);
 
   const executeSelectedAction = () => {
     executeAction(selectedDecision);
   };
 
   return (
-    <div className="flex flex-1 min-h-0 overflow-hidden">
-      <RecordPaneBar
-        title="Records"
-        tabs={tabs}
-        activeTab=""
-        onTabChange={() => undefined}
-        filters={filters}
-        activeFilter=""
-        onFilterChange={() => undefined}
-        filterSections={filterSections}
-        items={paneItems}
-        selectedId={selectedItem?.row.id ?? null}
-        onSelect={setSelectedId}
-        emptyMessage={`Geen records gevonden voor ${getStatusFilterLabel(activeStatusFilter).toLowerCase()}${activeRiskFilter !== "alle" ? ` met ${getRiskLabel(activeRiskFilter).toLowerCase()}` : ""}.`}
-        density="compact"
-        showItemMeta={false}
-        widthClassName="w-[340px]"
-        hideHeader
-        hideList
-        flush
-        panelContent={
-          selectedItem ? (
-            <RecordDetailsPanel
-              record={selectedItem.row}
-              comments={selectedItem.context?.comments ?? []}
-              currentIndex={selectedIndex >= 0 ? selectedIndex + 1 : 0}
-              totalCount={visibleRows.length}
-              onPrevious={previousRecord ? () => setSelectedId(previousRecord.row.id) : undefined}
-              onNext={nextRecord ? () => setSelectedId(nextRecord.row.id) : undefined}
-              details={[
-                { label: "Bron-ID", value: selectedItem.row.bron_id ?? "-" },
-                { label: "Stekker", value: selectedItem.row.bron_systeem ?? "-" },
-                { label: "Code", value: selectedItem.row.code ?? "-" },
-                { label: "Grondslag", value: selectedItem.row.grondslag ?? "-" },
-                {
-                  label: "Omvang documenten",
-                  value: `${selectedItem.row.omvangDocumenten} document${selectedItem.row.omvangDocumenten === 1 ? "" : "en"}`,
-                },
-                {
-                  label: "Omvang clienten",
-                  value: `${selectedItem.row.omvangClienten} client${selectedItem.row.omvangClienten === 1 ? "" : "en"}`,
-                },
-                { label: "Bewaartermijn", value: `${selectedItem.row.bewaartermijn} jaar` },
-                { label: "Vernietigingsdatum", value: selectedItem.row.vernietigingsdatum ?? "-" },
-                { label: "Startdatum record", value: selectedItem.row.startdatum ?? "-" },
-                { label: "Einddatum record", value: selectedItem.row.einddatum ?? "-" },
-                { label: "Uitsluiten", value: selectedItem.row.uitgesloten ? "Ja" : "Nee" },
-                { label: "Selectielijst", value: selectedItem.row.selectielijst ?? "-" },
-                {
-                  label: "Status",
-                  value: getQueueStatusLabel(selectedItem.queueStatus),
-                  badgeClassName: getQueueStatusBadgeClasses(selectedItem.queueStatus),
-                },
-              ]}
-            />
-          ) : null
-        }
-      />
+    <>
+      <AppShellPortal slot="detail">
+        {selectedItem ? (
+          <RecordDetailsPanel
+            record={isBulkMode ? { titel: `Selectie van ${selectedBulkItems.length} records` } : selectedItem.row}
+            comments={isBulkMode ? bulkComments : selectedItem.context?.comments ?? []}
+            currentIndex={isBulkMode ? 0 : selectedIndex >= 0 ? selectedIndex + 1 : 0}
+            totalCount={isBulkMode ? 0 : visibleRows.length}
+            onPrevious={isBulkMode ? undefined : previousRecord ? () => setSelectedId(previousRecord.row.id) : undefined}
+            onNext={isBulkMode ? undefined : nextRecord ? () => setSelectedId(nextRecord.row.id) : undefined}
+            heading={isBulkMode ? "Selectie" : "Record"}
+            showTabs
+            counterLabel={isBulkMode ? `${selectedBulkItems.length} geselecteerd` : undefined}
+            detailsNotice={
+              isBulkMode
+                ? "Je hebt meerdere records geselecteerd. Hieronder staat een samenvatting van de selectie. Waar waarden verschillen, tonen we dit expliciet."
+                : undefined
+            }
+            emptyCommentsMessage={
+              isBulkMode
+                ? "Er zijn nog geen opmerkingen binnen deze selectie."
+                : undefined
+            }
+            details={isBulkMode ? bulkDetails : [
+              {
+                label: "Omschrijving",
+                labelTitle: "Titel vernietigen informatieobjecten binnen de taak",
+                value: selectedItem.row.titel,
+                stacked: true,
+              },
+              {
+                label: "Code",
+                labelTitle:
+                  "De VNG code of BAC van de te vernietigen informatieobjecten binnen de taak. Voor selectielijst vanaf 2017, Zaaktype gebruiken.",
+                value: selectedItem.row.code ?? "-",
+              },
+              {
+                label: "Selectielijst",
+                labelTitle:
+                  "Selectielijst die van toepassing is, betreft jaartal van de selectielijst.",
+                value: selectedItem.row.selectielijst ?? "-",
+              },
+              {
+                label: "Grondslag",
+                labelTitle:
+                  "De categorie/grondslag uit de vignerende selectielijst op basis waarvan de informatieobjecten vernietigd dienen te worden",
+                value: selectedItem.row.grondslag ?? "-",
+              },
+              {
+                label: "Bewaartermijn",
+                labelTitle:
+                  "De periode dat de informatieobjecten moeten worden bewaard conform de vigerende selectielijst",
+                value: `${selectedItem.row.bewaartermijn} jaar`,
+              },
+              {
+                label: "Vernietigingsdatum",
+                labelTitle:
+                  "Jaar en maand waarin het dossier/informatieobject vernietigd moet worden. Format: jjjj-mm",
+                value: selectedItem.row.vernietigingsdatum ?? "-",
+              },
+              {
+                label: "Periode",
+                labelTitle:
+                  "Gehele periode waar de stukken binnen deze taak in vallen. Format jjjj-mm / jjjj-mm",
+                value: `${selectedItem.row.startdatum ?? "-"} / ${selectedItem.row.einddatum ?? "-"}`,
+              },
+              {
+                label: "Status",
+                labelTitle:
+                  "Status van beoordeling: Akkoord, Retour, Uitgesloten, Uitgesteld",
+                value: getQueueStatusLabel(selectedItem.queueStatus),
+                badgeClassName: getQueueStatusBadgeClasses(selectedItem.queueStatus),
+              },
+              {
+                label: "Omvang objecten",
+                labelTitle: "Aantal informatieobject",
+                value: `${selectedItem.row.omvangDocumenten}`,
+              },
+              {
+                label: "Omvang clienten",
+                labelTitle: "Aantal clienten behorende de informatieobjecten treft",
+                value: `${selectedItem.row.omvangClienten}`,
+              },
+              {
+                label: "Stekker",
+                labelTitle: "Naam van de stekker waar de informatieobjecten uit komt.",
+                value: selectedItem.row.bron_systeem ?? "-",
+              },
+              {
+                label: "Bron-ID",
+                labelTitle: "Identificatie van het informatieobject uit de stekker",
+                value: selectedItem.row.bron_id ?? "-",
+              },
+              {
+                label: "ID",
+                labelTitle: "Cockpit identicatienummer.",
+                value: selectedItem.row.id,
+              },
+              {
+                label: "Volgnummer",
+                labelTitle:
+                  "Een nummer binnen de taak die voor vernietiging in aanmerking komen",
+                value: selectedItem.row.id,
+              },
+            ]}
+          />
+        ) : null}
+      </AppShellPortal>
 
-      <div className="flex min-w-0 flex-1 overflow-hidden">
-        <ReviewRecordPanel
-          record={selectedItem?.row}
-          context={selectedItem?.context}
-          currentIndex={selectedIndex >= 0 ? selectedIndex + 1 : 0}
-          totalCount={visibleRows.length}
-          showRecordSections={false}
-          summaryStats={summaryStats}
-          reviewTableRows={reviewTableRows}
-          selectedTableIds={selectedTableIds}
-          onSelectedTableIdsChange={setSelectedTableIds}
-          activeRecordId={selectedItem?.row.id ?? null}
-          onActiveRecordChange={setSelectedId}
-          onPrevious={previousRecord ? () => setSelectedId(previousRecord.row.id) : undefined}
-          onNext={nextRecord ? () => setSelectedId(nextRecord.row.id) : undefined}
-        />
-
+      <AppShellPortal slot="action">
         <ActionPanel
-          title="Acties"
-          subtitle="Kies de vervolgstap voor het geselecteerde record en voeg een toelichting toe."
+          embedded
+          title="Actie"
+          titleClassName="text-sm"
+          hideHeaderBorder
+          hideFooterBorder
+          bodyPaddingYClass="py-0"
           footer={
             selectedItem ? (
-            <div className="space-y-2.5">
               <ActionPanelButtonGroup>
                 <ActionPanelButton
                   label="Actie uitvoeren"
@@ -600,18 +721,6 @@ export default function RecordReviewPage() {
                   onClick={() => setConfirmOpen(true)}
                 />
               </ActionPanelButtonGroup>
-
-              <ActionPanelShortcuts
-                shortcuts={[
-                  { keyLabel: "A", label: "Vorige" },
-                  { keyLabel: "D", label: "Volgende" },
-                  { keyLabel: "W", label: "Actie uitvoeren" },
-                  { keyLabel: "T", label: "Retour" },
-                  { keyLabel: "Y", label: "Akkoord" },
-                  { keyLabel: "U", label: "Uitsluiten" },
-                ]}
-              />
-            </div>
             ) : null
           }
         >
@@ -622,16 +731,17 @@ export default function RecordReviewPage() {
             />
           ) : (
             <>
-              <ActionPanelSection
-                title="Kies een actie"
-                description="Selecteer eerst de gewenste uitkomst voor dit record."
-              >
+              <ActionPanelSection title="">
+                {isBulkMode ? (
+                  <p className="mb-3 text-sm leading-5 text-slate-500">
+                    Je voert deze actie uit op {selectedTableIds.length} geselecteerde records.
+                  </p>
+                ) : null}
                 <div className="space-y-2">
                   {reviewActions.map((item) => (
                     <ActionPanelChoice
                       key={item.id}
                       title={item.title}
-                      description={item.description}
                       icon={item.icon}
                       tone={item.tone}
                       density="compact"
@@ -639,7 +749,7 @@ export default function RecordReviewPage() {
                       onClick={() =>
                         setSelectedActions((current) => ({
                           ...current,
-                          [selectedItem.row.id]: item.id,
+                          [isBulkMode ? BULK_SELECTION_KEY : selectedItem.row.id]: item.id,
                         }))
                       }
                     />
@@ -649,13 +759,17 @@ export default function RecordReviewPage() {
 
               <div>
                 <ActionPanelTextarea
-                  label="Toelichting"
-                  placeholder="Voeg context toe voor de gekozen of voorgenomen actie..."
+                  label={isBulkMode ? "Opmerking voor selectie" : "Opmerking"}
+                  placeholder={
+                    isBulkMode
+                      ? "Voeg context toe die bij alle geselecteerde records wordt geplaatst..."
+                      : "Voeg context toe voor de gekozen of voorgenomen actie..."
+                  }
                   value={selectedNote}
                   onChange={(value) =>
                     setNotes((current) => ({
                       ...current,
-                      [selectedItem.row.id]: value,
+                      [isBulkMode ? BULK_SELECTION_KEY : selectedItem.row.id]: value,
                     }))
                   }
                 />
@@ -663,7 +777,42 @@ export default function RecordReviewPage() {
             </>
           )}
         </ActionPanel>
-      </div>
+      </AppShellPortal>
+
+      <AppShellPortal slot="shortcut">
+        <ShortcutPane
+          shortcuts={[
+            { keyLabel: "A", label: "Vorige" },
+            { keyLabel: "D", label: "Volgende" },
+            { keyLabel: "W", label: "Actie uitvoeren" },
+            { keyLabel: "Y", label: "Akkoord" },
+            { keyLabel: "U", label: "Uitsluiten" },
+          ]}
+        />
+      </AppShellPortal>
+
+      <ReviewRecordPanel
+        record={selectedItem?.row}
+        context={selectedItem?.context}
+        currentIndex={selectedIndex >= 0 ? selectedIndex + 1 : 0}
+        totalCount={visibleRows.length}
+        showRecordSections={false}
+        summaryStats={summaryStats}
+        reviewTableRows={reviewTableRows}
+        selectedTableIds={selectedTableIds}
+        onSelectedTableIdsChange={setSelectedTableIds}
+        activeRecordId={selectedItem?.row.id ?? null}
+        onActiveRecordChange={setSelectedId}
+        sortKey={sortKey}
+        sortDirection={sortDirection}
+        onSortChange={(key, direction) => {
+          setSortKey(key);
+          setSortDirection(direction);
+        }}
+        enableCrossPageBulkSelection
+        onPrevious={previousRecord ? () => setSelectedId(previousRecord.row.id) : undefined}
+        onNext={nextRecord ? () => setSelectedId(nextRecord.row.id) : undefined}
+      />
 
       <ConfirmDialog
         open={confirmOpen}
@@ -676,6 +825,6 @@ export default function RecordReviewPage() {
           navigate(`/taak/${taakId}/taakuitvoering/${id}/accordering/proceseigenaar`);
         }}
       />
-    </div>
+    </>
   );
 }

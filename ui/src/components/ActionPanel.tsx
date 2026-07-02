@@ -7,6 +7,12 @@ type ActionPanelProps = {
   children: ReactNode;
   footer?: ReactNode;
   className?: string;
+  embedded?: boolean;
+  titleClassName?: string;
+  hideHeaderBorder?: boolean;
+  hideFooterBorder?: boolean;
+  bodyClassName?: string;
+  bodyPaddingYClass?: string;
 };
 
 type ActionPanelSectionProps = {
@@ -17,7 +23,7 @@ type ActionPanelSectionProps = {
 
 type ActionPanelChoiceProps = {
   title: string;
-  description: string;
+  description?: string;
   icon?: ReactNode;
   tone?: "primary" | "success" | "warning" | "danger" | "neutral";
   density?: "default" | "compact";
@@ -46,7 +52,7 @@ type ActionPanelButtonProps = {
   disabled?: boolean;
 };
 
-type ActionPanelShortcutProps = {
+export type ActionPanelShortcutProps = {
   keyLabel: string;
   label: string;
 };
@@ -54,35 +60,35 @@ type ActionPanelShortcutProps = {
 const choiceToneStyles = {
   primary: {
     selected:
-      "border-blue-400 bg-blue-50 shadow-[0_0_0_1px_rgba(59,130,246,0.2)]",
-    iconWrap: "bg-blue-100 text-blue-700",
-    radio: "border-blue-500 bg-blue-500 shadow-[inset_0_0_0_3px_white]",
-    rowSelected: "border-blue-200 bg-blue-50/70",
-    rowIcon: "text-blue-600",
+      "border-sky-200 bg-sky-50 shadow-[0_0_0_1px_rgba(14,165,233,0.12)]",
+    iconWrap: "bg-sky-50 text-sky-800",
+    radio: "border-sky-600 bg-sky-600 shadow-[inset_0_0_0_3px_white]",
+    rowSelected: "border-sky-200 bg-sky-50/80",
+    rowIcon: "text-sky-700",
   },
   success: {
     selected:
-      "border-emerald-300 bg-emerald-50 shadow-[0_0_0_1px_rgba(16,185,129,0.16)]",
-    iconWrap: "bg-emerald-100 text-emerald-700",
-    radio: "border-emerald-500 bg-emerald-500 shadow-[inset_0_0_0_3px_white]",
-    rowSelected: "border-emerald-200 bg-emerald-50/70",
-    rowIcon: "text-emerald-600",
+      "border-emerald-200 bg-emerald-50 shadow-[0_0_0_1px_rgba(16,185,129,0.12)]",
+    iconWrap: "bg-emerald-50 text-emerald-800",
+    radio: "border-emerald-600 bg-emerald-600 shadow-[inset_0_0_0_3px_white]",
+    rowSelected: "border-emerald-200 bg-emerald-50/80",
+    rowIcon: "text-emerald-700",
   },
   warning: {
     selected:
-      "border-amber-300 bg-amber-50 shadow-[0_0_0_1px_rgba(245,158,11,0.16)]",
-    iconWrap: "bg-amber-100 text-amber-700",
-    radio: "border-amber-500 bg-amber-500 shadow-[inset_0_0_0_3px_white]",
-    rowSelected: "border-amber-200 bg-amber-50/70",
-    rowIcon: "text-amber-600",
+      "border-amber-200 bg-amber-50 shadow-[0_0_0_1px_rgba(245,158,11,0.12)]",
+    iconWrap: "bg-amber-50 text-amber-800",
+    radio: "border-amber-600 bg-amber-600 shadow-[inset_0_0_0_3px_white]",
+    rowSelected: "border-amber-200 bg-amber-50/80",
+    rowIcon: "text-amber-700",
   },
   danger: {
     selected:
-      "border-rose-300 bg-rose-50 shadow-[0_0_0_1px_rgba(244,63,94,0.16)]",
-    iconWrap: "bg-rose-100 text-rose-700",
-    radio: "border-rose-500 bg-rose-500 shadow-[inset_0_0_0_3px_white]",
-    rowSelected: "border-rose-200 bg-rose-50/70",
-    rowIcon: "text-rose-600",
+      "border-rose-200 bg-rose-50 shadow-[0_0_0_1px_rgba(244,63,94,0.12)]",
+    iconWrap: "bg-rose-50 text-rose-800",
+    radio: "border-rose-600 bg-rose-600 shadow-[inset_0_0_0_3px_white]",
+    rowSelected: "border-rose-200 bg-rose-50/80",
+    rowIcon: "text-rose-700",
   },
   neutral: {
     selected:
@@ -100,13 +106,23 @@ export default function ActionPanel({
   children,
   footer,
   className = "",
+  embedded = false,
+  titleClassName = "",
+  hideHeaderBorder = false,
+  hideFooterBorder = false,
+  bodyClassName = "",
+  bodyPaddingYClass = "py-4",
 }: ActionPanelProps) {
   return (
     <aside
-      className={`flex w-[340px] shrink-0 flex-col border-l border-slate-200 bg-white ${className}`.trim()}
+      className={`flex min-h-0 flex-col bg-white ${
+        embedded
+          ? "w-full shrink-0"
+          : "w-[340px] shrink-0 border-l border-slate-200"
+      } ${className}`.trim()}
     >
-      <div className="border-b border-slate-200 px-5 py-4">
-        <h2 className="text-base font-semibold text-slate-950">
+      <div className={`${hideHeaderBorder ? "" : "border-b border-slate-200"} px-5 py-4`}>
+        <h2 className={`text-base font-semibold text-slate-950 ${titleClassName}`.trim()}>
           {title}
         </h2>
         {subtitle && (
@@ -116,12 +132,14 @@ export default function ActionPanel({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 py-4">
+      <div
+        className={`min-h-0 flex-1 overflow-y-auto px-5 ${bodyPaddingYClass} ${bodyClassName}`.trim()}
+      >
         <div className="space-y-5">{children}</div>
       </div>
 
       {footer && (
-        <div className="border-t border-slate-200 px-5 py-4">
+        <div className={`${hideFooterBorder ? "" : "border-t border-slate-200"} bg-white px-5 py-4`}>
           {footer}
         </div>
       )}
@@ -134,16 +152,20 @@ export function ActionPanelSection({
   description,
   children,
 }: ActionPanelSectionProps) {
+  const hasHeading = Boolean(title || description);
+
   return (
     <section>
-      <div className="flex flex-col gap-1">
-        <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
-        {description && (
-          <p className="text-sm leading-5 text-slate-500">{description}</p>
-        )}
-      </div>
+      {hasHeading ? (
+        <div className="flex flex-col gap-1">
+          {title ? <h3 className="text-sm font-semibold text-slate-900">{title}</h3> : null}
+          {description && (
+            <p className="text-sm leading-5 text-slate-500">{description}</p>
+          )}
+        </div>
+      ) : null}
 
-      <div className="mt-3">{children}</div>
+      <div className={hasHeading ? "mt-3" : ""}>{children}</div>
     </section>
   );
 }
@@ -225,17 +247,19 @@ export function ActionPanelTextarea({
 
   return (
     <label className="block">
-      <div className="text-sm font-semibold text-slate-900">{label}</div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-sm font-semibold text-slate-900">{label}</div>
+        <div className="text-xs text-slate-400">
+          {value.length}/{maxLength}
+        </div>
+      </div>
       <textarea
         value={value}
         onChange={handleChange}
         maxLength={maxLength}
         placeholder={placeholder}
-        className="mt-2 min-h-24 w-full resize-none rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-3 text-sm leading-5 text-slate-700 outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100"
+        className="mt-2 min-h-12 w-full resize-none rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-3 text-sm leading-5 text-slate-700 outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100"
       />
-      <div className="mt-2 text-right text-xs text-slate-400">
-        {value.length}/{maxLength}
-      </div>
     </label>
   );
 }

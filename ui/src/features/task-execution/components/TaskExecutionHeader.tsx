@@ -1,8 +1,15 @@
-import type { ReactNode } from "react";
 import {
-  CheckCheck,
-  CircleDotDashed,
+  BriefcaseBusiness,
+  CalendarDays,
+  ChevronUp,
+  ClipboardCheck,
+  User,
 } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
+import { useParams } from "react-router-dom";
+
+import { reviewRows } from "../../../shared/mocks/reviewRows";
+import { reviewSummaryStatusStyles } from "../../../shared/ui/reviewStatusStyles";
 
 type TaskExecutionHeaderMetaItem = {
   label: string;
@@ -17,63 +24,12 @@ type TaskExecutionHeaderSummaryStats = {
   uitgesloten: number;
 };
 
-type TaskExecutionHeaderStep = {
-  id: string;
-  label: string;
-};
-
-const workflowSteps: TaskExecutionHeaderStep[] = [
-  { id: "SELECTIE", label: "Selectie" },
-  { id: "BEOORDELING", label: "Beoordeling" },
-  { id: "ACCORDERING_PO", label: "Accordering" },
-  { id: "ACCORDERING_ARCH", label: "Accordering" },
-  { id: "UITVOERING", label: "Uitvoering" },
-  { id: "RESULTAAT", label: "Resultaat" },
-];
-
-function getWorkflowStepState(
-  index: number,
-  activeIndex: number
-): "done" | "active" | "todo" {
-  if (index < activeIndex) {
-    return "done";
-  }
-
-  if (index === activeIndex) {
-    return "active";
-  }
-
-  return "todo";
-}
-
-function getWorkflowStepStyles(state: "done" | "active" | "todo") {
-  if (state === "done") {
-    return {
-      icon: "border-slate-200 bg-white text-slate-500",
-      label: "text-slate-700",
-      line: "bg-slate-200",
-    };
-  }
-
-  if (state === "active") {
-    return {
-      icon: "border-blue-600 bg-blue-50 text-blue-700",
-      label: "text-blue-700",
-      line: "bg-slate-200",
-    };
-  }
-
-  return {
-    icon: "border-slate-200 bg-white text-slate-400",
-    label: "text-slate-500",
-    line: "bg-slate-200",
-  };
-}
-
 type Props = {
-  activeStep: string;
+  title?: string;
+  activeStep?: string;
   summaryStats: TaskExecutionHeaderSummaryStats;
   metaItems: TaskExecutionHeaderMetaItem[];
+  showStatusOverview?: boolean;
 };
 
 export type {
@@ -81,99 +37,208 @@ export type {
   TaskExecutionHeaderSummaryStats,
 };
 
+const STAT_ITEMS = [
+  { key: "teBeoordelen", label: "Te beoordelen", style: reviewSummaryStatusStyles.teBeoordelen },
+  { key: "akkoord", label: "Akkoord", style: reviewSummaryStatusStyles.akkoord },
+  { key: "retour", label: "Retour", style: reviewSummaryStatusStyles.retour },
+  { key: "uitgesloten", label: "Uitgesloten", style: reviewSummaryStatusStyles.uitgesloten },
+] as const;
+
+const TASK_EXECUTION_STEPS = [
+  { id: "SELECTIE", position: 1, label: "Selectie" },
+  { id: "BEOORDELING", position: 2, label: "Beoordeling" },
+  { id: "ACCORDERING_PO", position: 3, label: "Accordering proceseigenaar" },
+  { id: "ACCORDERING_ARCH", position: 4, label: "Accordering archivaris" },
+  { id: "UITVOERING", position: 5, label: "Vernietigen" },
+  { id: "RESULTAAT", position: 6, label: "Resultaat" },
+] as const;
+
+function getMetaIcon(label: string) {
+  if (label === "Startdatum") {
+    return <CalendarDays size={20} strokeWidth={1.8} />;
+  }
+
+  if (label === "Archivaris") {
+    return <BriefcaseBusiness size={20} strokeWidth={1.8} />;
+  }
+
+  return <User size={20} strokeWidth={1.8} />;
+}
+
 export default function TaskExecutionHeader({
+  title,
   activeStep,
   summaryStats,
   metaItems,
+  showStatusOverview = true,
 }: Props) {
-  const activeIndex = workflowSteps.findIndex((step) => step.id === activeStep);
+  const { id } = useParams();
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
+  const taskTitle = useMemo(
+    () => title ?? reviewRows.find((row) => row.id === id)?.titel ?? "Taakuitvoering",
+    [id, title]
+  );
+  const activeStepMeta =
+    TASK_EXECUTION_STEPS.find((step) => step.id === activeStep) ??
+    TASK_EXECUTION_STEPS[1];
+  const totalCount =
+    summaryStats.teBeoordelen +
+    summaryStats.akkoord +
+    summaryStats.retour +
+    summaryStats.uitgesloten;
+
+  const statusItems = [
+    { label: "Te beoordelen", count: summaryStats.teBeoordelen, style: reviewSummaryStatusStyles.teBeoordelen },
+    { label: "Akkoord", count: summaryStats.akkoord, style: reviewSummaryStatusStyles.akkoord },
+    { label: "Retour", count: summaryStats.retour, style: reviewSummaryStatusStyles.retour },
+    { label: "Uitgesloten", count: summaryStats.uitgesloten, style: reviewSummaryStatusStyles.uitgesloten },
+  ];
 
   return (
-    <section className="border-b border-slate-200 bg-white">
-      <div className="border-b border-slate-200 px-3 py-2.5">
-        <div className="flex flex-col gap-2 xl:flex-row xl:items-stretch xl:justify-between">
-          <div className="min-w-0 flex-1 overflow-x-auto xl:overflow-visible">
-            <div className="flex min-w-max items-start gap-1.5 pb-0.5 xl:min-w-0 xl:w-full xl:gap-2">
-              {workflowSteps.map((step, index) => {
-                const isLast = index === workflowSteps.length - 1;
-                const state = getWorkflowStepState(index, activeIndex);
-                const styles = getWorkflowStepStyles(state);
-
-                return (
-                  <div
-                    key={step.id}
-                    className="flex min-w-[62px] items-start xl:min-w-0 xl:flex-1"
-                  >
-                    <div className="flex min-w-0 flex-col items-center text-center xl:w-full">
-                      <div
-                        className={`flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-semibold ${styles.icon}`}
-                        aria-hidden="true"
-                      >
-                        {state === "done" ? (
-                          <CheckCheck size={10} strokeWidth={2.2} />
-                        ) : state === "active" ? (
-                          <CircleDotDashed size={10} strokeWidth={2.2} />
-                        ) : (
-                          <span>{index + 1}</span>
-                        )}
-                      </div>
-                      <div className={`mt-1.5 text-[10px] font-medium leading-4 whitespace-nowrap ${styles.label}`}>
-                        {step.label}
-                      </div>
-                    </div>
-
-                    {!isLast && (
-                      <div className={`mt-2.5 h-px min-w-4 flex-1 xl:min-w-2 ${styles.line}`} />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+    <section className="relative border-b border-slate-200 bg-white">
+      <div className="bg-white">
+        <div className="flex h-[69px] items-center gap-5 px-5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-700">
+            <ClipboardCheck size={24} strokeWidth={1.8} />
           </div>
 
-          <div className="grid grid-cols-2 border-slate-200 sm:grid-cols-4 xl:min-w-[332px] xl:border-l">
-            {[
-              { label: "Te beoordelen", value: summaryStats.teBeoordelen, tone: "text-blue-700" },
-              { label: "Akkoord", value: summaryStats.akkoord, tone: "text-emerald-600" },
-              { label: "Retour", value: summaryStats.retour, tone: "text-amber-600" },
-              { label: "Uitgesloten", value: summaryStats.uitgesloten, tone: "text-rose-600" },
-            ].map((item, index) => (
-              <div
-                key={item.label}
-                className={`px-3 py-0.5 sm:px-3.5 ${
-                  index > 0 ? "sm:border-l sm:border-slate-200" : ""
-                } ${index % 2 === 1 ? "border-l border-slate-200 sm:border-l" : ""}`}
-              >
-                <div className="text-[10px] font-medium text-slate-600 sm:text-[11px]">{item.label}:</div>
-                <div className={`mt-1 text-lg font-semibold leading-none sm:text-[1.05rem] ${item.tone}`}>
-                  {item.value}
-                </div>
-              </div>
-            ))}
+          <div className="min-w-0 shrink-0">
+            <h1 className="truncate text-[18px] font-semibold tracking-tight text-slate-950">
+              {taskTitle}
+            </h1>
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <nav className="truncate text-sm leading-5 text-slate-500">
+              <span>Home</span>
+              <span className="px-2">/</span>
+              <span>Taken</span>
+              <span className="px-2">/</span>
+              <span>Taakuitvoering</span>
+              <span className="px-2">/</span>
+              <span className="text-slate-600">{taskTitle}</span>
+            </nav>
+            <p className="truncate text-[12.5px] font-medium leading-4 text-slate-500">
+              Stap {activeStepMeta.position}/6
+              <span className="px-1.5 text-slate-400">-</span>
+              <span className="text-slate-700">{activeStepMeta.label}</span>
+            </p>
+          </div>
+
+          <div className="ml-auto flex shrink-0 items-center gap-5">
+            {showStatusOverview
+              ? STAT_ITEMS.map((item) => (
+                  <div key={item.key} className={`flex items-center gap-2.5 ${item.style.text}`}>
+                    <span className={`h-2.5 w-2.5 rounded-full ${item.style.dot}`} />
+                    <span className="text-[14px] font-semibold leading-none">
+                      {summaryStats[item.key]}
+                    </span>
+                  </div>
+                ))
+              : null}
+
+            <button
+              type="button"
+              onClick={() => setDetailsOpen((current) => !current)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
+              aria-expanded={detailsOpen}
+              aria-label="Taakdetails tonen of verbergen"
+            >
+              <ChevronUp
+                size={16}
+                className={`transition-transform ${detailsOpen ? "" : "rotate-180"}`}
+              />
+            </button>
           </div>
         </div>
       </div>
 
-      <div className="grid gap-0 md:grid-cols-2 xl:grid-cols-4">
-        {metaItems.map((item, index) => (
-          <div
-            key={item.label}
-            className={`flex items-center gap-2.5 px-5 py-2.5 ${
-              index > 0 ? "border-t border-slate-100 md:border-t-0" : ""
-            } ${index > 0 ? "xl:border-l xl:border-slate-200" : ""} ${
-              index === 1 ? "md:border-l md:border-slate-200 xl:border-l" : ""
-            } ${index === 3 ? "md:border-l md:border-slate-200" : ""}`}
-          >
-            <div className="shrink-0 text-slate-500">{item.icon}</div>
-            <div className="min-w-0">
-              <div className="text-[11px] font-medium leading-4 text-slate-500">{item.label}:</div>
-              <div className="mt-0.5 truncate text-sm font-semibold leading-5 text-slate-900">
-                {item.value}
+      {detailsOpen ? (
+        <div
+          className={`absolute right-0 top-[calc(100%-1px)] z-20 overflow-hidden rounded-b-2xl border border-slate-200 border-t-0 bg-white shadow-xl shadow-slate-200/80 ${
+            showStatusOverview ? "w-[636px]" : "w-[320px]"
+          }`}
+        >
+          <div className={showStatusOverview ? "grid grid-cols-[1fr_1.08fr]" : ""}>
+            <div className={`${showStatusOverview ? "border-r border-slate-200" : ""} px-6 py-6`}>
+              <h2 className="text-[18px] font-semibold tracking-tight text-slate-950">
+                Taakdetails
+              </h2>
+
+              <div className="mt-5 space-y-0">
+                {metaItems.map((item) => (
+                  <div
+                    key={item.label}
+                    className="flex items-start gap-4 border-b border-slate-100 py-5 last:border-b-0 last:pb-0 first:pt-0"
+                  >
+                    <div className="shrink-0 pt-0.5 text-slate-700">
+                      {getMetaIcon(item.label)}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[14px] font-medium text-slate-600">{item.label}</div>
+                      <div className="mt-1 text-[15px] font-semibold text-slate-950">
+                        {item.value}
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
+
+            {showStatusOverview ? (
+              <div className="px-6 py-6">
+                <h2 className="text-[18px] font-semibold tracking-tight text-slate-950">
+                  Status overzicht
+                </h2>
+                <p className="mt-4 max-w-[250px] text-[15px] leading-7 text-slate-600">
+                  Overzicht van de status van alle taken in dit contractdossier.
+                </p>
+
+                <div className="mt-6 space-y-0">
+                  {statusItems.map((item) => {
+                    const percentage = totalCount > 0 ? Math.round((item.count / totalCount) * 100) : 0;
+
+                    return (
+                      <div
+                        key={item.label}
+                        className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-slate-100 py-5"
+                      >
+                        <div className={`flex items-center gap-3 ${item.style.text}`}>
+                          <span className={`h-3.5 w-3.5 rounded-full ${item.style.dot}`} />
+                          <span className="text-[15px] font-medium">{item.label}</span>
+                        </div>
+                        <span className="text-[15px] font-medium text-slate-900">{item.count}</span>
+                        <span className="text-[15px] font-medium text-slate-500">{percentage}%</span>
+                      </div>
+                    );
+                  })}
+
+                  <div className="grid grid-cols-[1fr_auto_auto] items-center gap-4 py-5">
+                    <span className="text-[15px] font-semibold text-slate-950">Totaal</span>
+                    <span className="text-[15px] font-semibold text-slate-950">{totalCount}</span>
+                    <span className="text-[15px] font-semibold text-slate-950">100%</span>
+                  </div>
+                </div>
+
+                <div className="mt-2 flex h-3 overflow-hidden rounded-full bg-slate-100">
+                  {statusItems.map((item) => {
+                    const width = totalCount > 0 ? (item.count / totalCount) * 100 : 0;
+
+                    return (
+                      <div
+                        key={`bar-${item.label}`}
+                        className={`${item.style.progress} h-full first:rounded-l-full last:rounded-r-full`}
+                        style={{ width: `${width}%` }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
           </div>
-        ))}
-      </div>
+        </div>
+      ) : null}
     </section>
   );
 }

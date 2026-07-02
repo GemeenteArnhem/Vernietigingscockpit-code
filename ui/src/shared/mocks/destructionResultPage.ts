@@ -1,5 +1,9 @@
 import { destructionResultRows } from "./destructionResultRows";
 import type {
+  TaskExecutionHeaderMetaItem,
+  TaskExecutionHeaderSummaryStats,
+} from "../../features/task-execution/components/TaskExecutionHeader";
+import type {
   DestructionResultActionOption,
   DestructionResultContext,
   DestructionResultStatus,
@@ -43,6 +47,28 @@ export const destructionResultTaskContext: DestructionResultTaskContext = {
   proceseigenaar: PROCESEIGENAAR,
   archivaris: ARCHIVARIS,
   startdatum: TAAK_STARTDATUM,
+};
+
+export const resultTaskMetaItems: TaskExecutionHeaderMetaItem[] = [
+  { label: "Recordmanager", value: RECORDMANAGER },
+  { label: "Proceseigenaar", value: PROCESEIGENAAR },
+  { label: "Archivaris", value: ARCHIVARIS },
+  { label: "Startdatum", value: TAAK_STARTDATUM },
+];
+
+export const resultSummaryStats: TaskExecutionHeaderSummaryStats = {
+  teBeoordelen: destructionResultRows.filter(
+    (row) => row.vernietigingsstatus === "FOUT"
+  ).length,
+  akkoord: destructionResultRows.filter(
+    (row) => row.vernietigingsstatus === "SUCCES"
+  ).length,
+  retour: destructionResultRows.filter(
+    (row) => row.vernietigingsstatus === "NIET_GEVONDEN"
+  ).length,
+  uitgesloten: destructionResultRows.filter(
+    (row) => row.vernietigingsstatus === "OVERIG"
+  ).length,
 };
 
 export const destructionResultActions: DestructionResultActionOption[] = [

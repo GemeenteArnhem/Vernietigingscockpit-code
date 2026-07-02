@@ -1,6 +1,6 @@
 import ConnectorTable, {
-  type Connector,
 } from "./ConnectorTable";
+import type { TaskDefinitionConnector } from "../../../shared/types/taskDefinition";
 
 export type TaskDefinitionConfigurationData =
   {
@@ -15,7 +15,7 @@ type Props = {
   configuratie:
     TaskDefinitionConfigurationData;
 
-  stekkers: Connector[];
+  stekkers: TaskDefinitionConnector[];
 };
 
 type FieldProps = {

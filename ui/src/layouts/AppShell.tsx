@@ -1,15 +1,38 @@
+import { useCallback } from "react";
 import { Outlet, matchPath, useLocation } from "react-router-dom";
+import RightRail from "../components/RightRail";
 import Sidebar from "../components/Sidebar";
 import PageHeader from "../components/PageHeader";
 import { reviewRows } from "../shared/mocks/reviewRows";
+import {
+  AppShellPortalProvider,
+  useAppShellPortalContext,
+} from "./AppShellPortalContext";
 
 export default function AppShell() {
+  return (
+    <AppShellPortalProvider>
+      <AppShellLayout />
+    </AppShellPortalProvider>
+  );
+}
+
+function AppShellLayout() {
   const location = useLocation();
+  const {
+    hasActionPane,
+    hasDetailPane,
+    hasShortcutPane,
+    setSlotContainer,
+  } = useAppShellPortalContext();
 
   const isTaskPage =
     location.pathname.startsWith(
       "/taak/"
     );
+  const isDashboardPage =
+    location.pathname ===
+    "/dashboard";
 
   const taskExecutionMatch =
     matchPath("/taak/:taakId/taakuitvoering/:id/selectie", location.pathname) ??
@@ -44,33 +67,59 @@ export default function AppShell() {
           { label: "Dashboard" },
         ];
 
+  const handleDetailPaneRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      setSlotContainer("detail", node);
+    },
+    [setSlotContainer]
+  );
+
+  const handleActionPaneRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      setSlotContainer("action", node);
+    },
+    [setSlotContainer]
+  );
+
+  const handleShortcutPaneRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      setSlotContainer("shortcut", node);
+    },
+    [setSlotContainer]
+  );
+
   return (
     <div className="flex h-screen">
-
-      {/* LEFT BAR */}
       <Sidebar />
 
-      {/* MAIN AREA */}
       <div className="flex flex-1 flex-col min-w-0">
-
-        {/* HEADER (MOET RUIMTE HEBBEN) */}
-        <div className="shrink-0 border-b border-gray-200 bg-white">
-          <div className="px-5 py-4">
-            <PageHeader
-              title={title}
-              breadcrumbs={
-                breadcrumbs
-              }
-            />
+        {!taskExecutionMatch &&
+        !isDashboardPage ? (
+          <div className="shrink-0 border-b border-gray-200 bg-white">
+            <div className="flex h-[69px] items-center px-5">
+              <PageHeader
+                title={title}
+                breadcrumbs={
+                  breadcrumbs
+                }
+              />
+            </div>
           </div>
-        </div>
+        ) : null}
 
-        {/* BODY */}
         <main className="flex flex-1 min-h-0 overflow-hidden">
           <Outlet />
         </main>
 
+        {hasShortcutPane && <div ref={handleShortcutPaneRef} />}
       </div>
+
+      <RightRail
+        showDetailPane={hasDetailPane}
+        showActionPane={hasActionPane}
+        onDetailPaneRef={handleDetailPaneRef}
+        onActionPaneRef={handleActionPaneRef}
+      />
     </div>
   );
 }

@@ -1,22 +1,8 @@
 import StatusBadge from "../../../components/StatusBadge";
-
-export type Connector = {
-  id?: string;
-  naam: string;
-  type: string;
-  omschrijving?: string;
-
-  status:
-    | "GEKOPPELD"
-    | "ACTIEF_CONNECTOR"
-    | "INACTIEF"
-    | "FOUT"
-    | "WAARSCHUWING"
-    | "SUCCES";
-};
+import type { TaskDefinitionConnector } from "../../../shared/types/taskDefinition";
 
 type Props = {
-  connectors: Connector[];
+  connectors: TaskDefinitionConnector[];
 };
 
 export default function ConnectorTable({

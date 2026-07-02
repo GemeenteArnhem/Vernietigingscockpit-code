@@ -1,15 +1,15 @@
-import {
+﻿import {
   useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
 import {
+  ClipboardList,
   FolderOpen,
   PencilLine,
   PlayCircle,
   PlugZap,
-  Settings2,
 } from "lucide-react";
 import {
   useNavigate,
@@ -22,24 +22,24 @@ import ActionPanel, {
   ActionPanelChoice,
   ActionPanelEmptyState,
   ActionPanelSection,
-  ActionPanelShortcuts,
 } from "../components/ActionPanel";
 import ContentPanel, {
-  ContentPanelBody,
   ContentPanelEmptyState,
-  ContentPanelHeader,
 } from "../components/ContentPanel";
-import RecordPaneBar, {
-  type RecordPaneBarFilter,
-  type RecordPaneBarItem,
+import ShortcutPane from "../components/ShortcutPane";
+import type {
+  RecordPaneBarFilter,
+  RecordPaneBarTab,
 } from "../components/record-pane/RecordPaneBar";
-import type { Connector } from "../features/task-definition/components/ConnectorTable";
-import TaskDefinitionConfiguration, {
-  type TaskDefinitionConfigurationData,
-} from "../features/task-definition/components/TaskDefinitionConfiguration";
-import TaskDefinitionInstances, {
-  type TaskDefinitionInstance,
-} from "../features/task-definition/components/TaskDefinitionInstances";
+import TaskDefinitionDetailPane from "../features/task-definition/components/TaskDefinitionDetailPane";
+import TaskDefinitionRecordPanel from "../features/task-definition/components/TaskDefinitionRecordPanel";
+import { AppShellPortal } from "../layouts/AppShellPortalContext";
+import { taskDefinitionRecords } from "../shared/mocks/taskDefinitionPage";
+import type {
+  TaskDefinitionExecutionStatus,
+  TaskDefinitionInstance,
+  TaskDefinitionRecord,
+} from "../shared/types/taskDefinition";
 
 type DefinitionFilter =
   | "alle"
@@ -58,185 +58,6 @@ type TaskDefinitionDecision = {
   icon: ReactNode;
   tone: "primary" | "success" | "warning";
 };
-
-type TaskDefinitionRecord = {
-  id: string;
-  naam: string;
-  subtitle: string;
-  categorie: string;
-  frequentie: string;
-  proceseigenaar: string;
-  archivaris: string;
-  instanties: TaskDefinitionInstance[];
-  stekkers: Connector[];
-};
-
-const mockTaskDefinitions: TaskDefinitionRecord[] = [
-  {
-    id: "zorgdomein-jaarlijks",
-    naam: "Zorgdomein jaarlijks",
-    subtitle:
-      "Basistaak voor de jaarlijkse vernietigingsronde binnen het zorgdomein.",
-    categorie: "Zorgdomein",
-    frequentie: "Jaarlijks",
-    proceseigenaar: "Jan de Vries",
-    archivaris: "R. de Vries",
-    instanties: [
-      {
-        id: "1",
-        naam: "Zorgdomein 2026",
-        subtitle: "Volgende instantie • 1 februari 2026",
-        recordmanager: "Jan de Vries",
-        status: "GEPLAND",
-        stap: "Startmoment",
-        voortgang: 0,
-        plannedStartDate: "2026-02-01",
-      },
-      {
-        id: "2",
-        naam: "Zorgdomein 2025",
-        subtitle: "Gestart 3 februari 2025",
-        recordmanager: "Jan de Vries",
-        status: "LOPEND",
-        stap: "Beoordeling",
-        voortgang: 40,
-        highlighted: true,
-      },
-      {
-        id: "3",
-        naam: "Zorgdomein 2024",
-        subtitle: "8 feb - 14 mrt 2024",
-        recordmanager: "Jan de Vries",
-        status: "VOLTOOID",
-        stap: "Vernietiging",
-        voortgang: 100,
-      },
-      {
-        id: "4",
-        naam: "Zorgdomein 2023",
-        subtitle: "6 feb - 22 mrt 2023",
-        recordmanager: "Jan de Vries",
-        status: "VOLTOOID",
-        stap: "Vernietiging",
-        voortgang: 100,
-      },
-    ],
-    stekkers: [
-      {
-        id: "1",
-        naam: "Suite4sociaaldomein",
-        type: "Taakapplicatie",
-        omschrijving: "Bestaanszekerheid",
-        status: "SUCCES",
-      },
-      {
-        id: "2",
-        naam: "Djuma",
-        type: "Zaaksysteem",
-        omschrijving: "Zaakdossiers",
-        status: "SUCCES",
-      },
-    ],
-  },
-  {
-    id: "hr-dossiers-kwartaal",
-    naam: "HR dossiers kwartaal",
-    subtitle:
-      "Terugkerende taakdefinitie voor personeelsdossiers met kwartaalritme.",
-    categorie: "Bedrijfsvoering",
-    frequentie: "Per kwartaal",
-    proceseigenaar: "S. Janssen",
-    archivaris: "M. Blom",
-    instanties: [
-      {
-        id: "5",
-        naam: "HR dossiers Q2 2026",
-        subtitle: "Gestart 4 mei 2026",
-        recordmanager: "S. Janssen",
-        status: "VERTRAAGD",
-        stap: "Accordering PO",
-        voortgang: 70,
-        highlighted: true,
-      },
-      {
-        id: "6",
-        naam: "HR dossiers Q1 2026",
-        subtitle: "Afgerond 28 maart 2026",
-        recordmanager: "S. Janssen",
-        status: "VOLTOOID",
-        stap: "Vernietiging",
-        voortgang: 100,
-      },
-      {
-        id: "7",
-        naam: "HR dossiers Q3 2026",
-        subtitle: "Volgende instantie • 4 augustus 2026",
-        recordmanager: "S. Janssen",
-        status: "GEPLAND",
-        stap: "Startmoment",
-        voortgang: 0,
-        plannedStartDate: "2026-08-04",
-      },
-    ],
-    stekkers: [
-      {
-        id: "3",
-        naam: "AFAS",
-        type: "Bronsysteem",
-        omschrijving: "Personeelsdossiers",
-        status: "SUCCES",
-      },
-      {
-        id: "4",
-        naam: "SharePoint archief",
-        type: "Archiefbron",
-        omschrijving: "Aanvullende bijlagen",
-        status: "WAARSCHUWING",
-      },
-    ],
-  },
-  {
-    id: "subsidiearchief-meerjarig",
-    naam: "Subsidiearchief meerjarig",
-    subtitle:
-      "Meerjarige taakdefinitie voor afgesloten subsidiedossiers en nazorg.",
-    categorie: "Sociaal domein",
-    frequentie: "Eenmalig",
-    proceseigenaar: "R. Bakker",
-    archivaris: "F. van Dijk",
-    instanties: [
-      {
-        id: "8",
-        naam: "Subsidiearchief 2015-2018",
-        subtitle: "Volgende instantie • 18 juni 2026",
-        recordmanager: "R. Bakker",
-        status: "GEPLAND",
-        stap: "Startmoment",
-        voortgang: 0,
-        plannedStartDate: "2026-06-18",
-        highlighted: true,
-      },
-      {
-        id: "9",
-        naam: "Subsidiearchief 2011-2014",
-        subtitle: "Afgerond 16 november 2025",
-        recordmanager: "R. Bakker",
-        status: "VOLTOOID",
-        stap: "Vernietiging",
-        voortgang: 100,
-      },
-    ],
-    stekkers: [
-      {
-        id: "5",
-        naam: "Djuma",
-        type: "Zaaksysteem",
-        omschrijving: "Subsidiedossiers",
-        status: "SUCCES",
-      },
-    ],
-  },
-];
 
 function getPrimaryInstance(
   definition: TaskDefinitionRecord
@@ -264,7 +85,7 @@ function getPrimaryInstance(
 
 function getDefinitionStatus(
   definition: TaskDefinitionRecord
-) {
+): TaskDefinitionExecutionStatus {
   if (
     definition.instanties.some(
       (instantie) =>
@@ -298,6 +119,21 @@ function getDefinitionStatus(
   return "VOLTOOID";
 }
 
+function getDefinitionStatusLabel(
+  status: TaskDefinitionExecutionStatus
+) {
+  switch (status) {
+    case "VERTRAAGD":
+      return "Vertraagd";
+    case "LOPEND":
+      return "Lopend";
+    case "GEPLAND":
+      return "Gepland";
+    default:
+      return "Voltooid";
+  }
+}
+
 function getDefinitionStepLabel(
   definition: TaskDefinitionRecord
 ) {
@@ -312,53 +148,6 @@ function getDefinitionStepLabel(
   );
 }
 
-function getDefinitionRiskCopy(
-  definition: TaskDefinitionRecord
-) {
-  const status =
-    getDefinitionStatus(
-      definition
-    );
-
-  if (status === "VERTRAAGD") {
-    return {
-      label: "Directe opvolging",
-      className:
-        "border border-red-200 bg-red-50 text-red-700",
-      summary:
-        "Er staat minimaal één uitvoering stil in een vervolgstap en vraagt actie.",
-    };
-  }
-
-  if (status === "GEPLAND") {
-    return {
-      label: "Voorbereiding",
-      className:
-        "border border-amber-200 bg-amber-50 text-amber-700",
-      summary:
-        "De volgende uitvoering staat gepland en de configuratie is leidend voor de start.",
-    };
-  }
-
-  if (status === "VOLTOOID") {
-    return {
-      label: "Historisch",
-      className:
-        "border border-slate-200 bg-slate-100 text-slate-700",
-      summary:
-        "Alle bekende uitvoeringen zijn afgerond; deze definitie blijft beschikbaar als referentie.",
-    };
-  }
-
-  return {
-    label: "Op schema",
-    className:
-      "border border-green-200 bg-green-50 text-green-700",
-    summary:
-      "Er is een actieve uitvoering en de configuratie ondersteunt het lopende proces.",
-  };
-}
-
 function getTaskDefinitionDecisions(
   definition: TaskDefinitionRecord
 ): TaskDefinitionDecision[] {
@@ -367,7 +156,7 @@ function getTaskDefinitionDecisions(
       definition
     );
   const today =
-    new Date("2026-05-31");
+    new Date("2026-07-01");
   const plannedStartDate =
     primaryInstance?.plannedStartDate
       ? new Date(
@@ -376,7 +165,7 @@ function getTaskDefinitionDecisions(
       : null;
 
   let primaryActionTitle =
-    "Laatste taak openen";
+    "Laatste uitvoering openen";
   let primaryActionIcon =
     <FolderOpen size={18} />;
   let primaryActionTone:
@@ -391,7 +180,7 @@ function getTaskDefinitionDecisions(
       "VERTRAAGD"
   ) {
     primaryActionTitle =
-      "Lopende taak openen";
+      "Lopende uitvoering openen";
   } else if (
     primaryInstance?.status ===
     "GEPLAND"
@@ -399,8 +188,8 @@ function getTaskDefinitionDecisions(
     primaryActionTitle =
       plannedStartDate &&
       plannedStartDate > today
-        ? "Geplande taak vervroegd starten"
-        : "Geplande taak starten";
+        ? "Geplande uitvoering vervroegd starten"
+        : "Geplande uitvoering starten";
     primaryActionIcon =
       <PlayCircle size={18} />;
     primaryActionTone =
@@ -418,7 +207,7 @@ function getTaskDefinitionDecisions(
     {
       id: "bewerk-configuratie",
       title:
-        "Taakinformatie bewerken",
+        "Taakdetails bewerken",
       icon: <PencilLine size={18} />,
       tone: "primary",
     },
@@ -476,7 +265,7 @@ export default function TaskDefinitionDetailPage() {
       decision: TaskDefinitionDecisionId;
     }>({
       recordId:
-        mockTaskDefinitions[0]
+        taskDefinitionRecords[0]
           ?.id ?? null,
       decision:
         "open-uitvoering",
@@ -508,7 +297,7 @@ export default function TaskDefinitionDetailPage() {
 
   const visibleDefinitions =
     useMemo(() => {
-      return mockTaskDefinitions.filter(
+      return taskDefinitionRecords.filter(
         (definition) => {
           const status =
             getDefinitionStatus(
@@ -536,6 +325,9 @@ export default function TaskDefinitionDetailPage() {
               .toLowerCase()
               .includes(needle) ||
             definition.categorie
+              .toLowerCase()
+              .includes(needle) ||
+            definition.frequentie
               .toLowerCase()
               .includes(needle);
 
@@ -572,40 +364,18 @@ export default function TaskDefinitionDetailPage() {
     taakId,
   ]);
 
-  const paneItems = useMemo<
-    RecordPaneBarItem[]
+  const tabs = useMemo<
+    RecordPaneBarTab[]
   >(
     () =>
-      visibleDefinitions.map(
-        (definition) => {
-          const status =
-            getDefinitionStatus(
-              definition
-            );
-
-          return {
-            id: definition.id,
-            title: definition.naam,
-            stepLabel:
-              getDefinitionStepLabel(
-                definition
-              ),
-            stepTone:
-              status ===
-              "VERTRAAGD"
-                ? "danger"
-                : status ===
-                    "LOPEND"
-                  ? "info"
-                  : status ===
-                    "GEPLAND"
-                    ? "warning"
-                    : "success",
-            status,
-          };
-        }
-      ),
-    [visibleDefinitions]
+      [
+        {
+          key: "alle",
+          label: "Alle taakdefinities",
+          count: taskDefinitionRecords.length,
+        },
+      ],
+    []
   );
 
   const selectedDefinition =
@@ -676,30 +446,102 @@ export default function TaskDefinitionDetailPage() {
         )
       : undefined;
 
-  const risk =
+  const selectedStatus =
     selectedDefinition
-      ? getDefinitionRiskCopy(
+      ? getDefinitionStatus(
           selectedDefinition
         )
-      : null;
-
-  const configuratie:
-    | TaskDefinitionConfigurationData
-    | undefined =
-    selectedDefinition
-      ? {
-          taaknaam:
-            selectedDefinition.naam,
-          categorie:
-            selectedDefinition.categorie,
-          frequentie:
-            selectedDefinition.frequentie,
-          proceseigenaar:
-            selectedDefinition.proceseigenaar,
-          archivaris:
-            selectedDefinition.archivaris,
-        }
       : undefined;
+
+  const detailItems =
+    selectedDefinition
+      ? [
+          {
+            label: "Taaknaam",
+            value: selectedDefinition.naam,
+          },
+          {
+            label: "Categorie",
+            value:
+              selectedDefinition.categorie,
+          },
+          {
+            label: "Frequentie",
+            value:
+              selectedDefinition.frequentie,
+          },
+          {
+            label: "Status",
+            value:
+              getDefinitionStatusLabel(
+                selectedStatus ??
+                  "VOLTOOID"
+              ),
+          },
+          {
+            label: "Actieve stap",
+            value:
+              getDefinitionStepLabel(
+                selectedDefinition
+              ),
+          },
+          {
+            label: "Recordmanager",
+            value:
+              primaryInstance
+                ?.recordmanager ??
+              "Niet toegewezen",
+          },
+          {
+            label: "Proceseigenaar",
+            value:
+              selectedDefinition.proceseigenaar,
+          },
+          {
+            label: "Archivaris",
+            value:
+              selectedDefinition.archivaris,
+          },
+        ]
+      : [];
+
+  const tableRows =
+    useMemo(
+      () =>
+        visibleDefinitions.map(
+          (definition) => {
+            const primary =
+              getPrimaryInstance(
+                definition
+              );
+
+            return {
+              id: definition.id,
+              taakdefinitie:
+                definition.naam,
+              categorie:
+                definition.categorie,
+              stap:
+                getDefinitionStepLabel(
+                  definition
+                ),
+              recordmanager:
+                primary
+                  ?.recordmanager ??
+                "Niet toegewezen",
+              proceseigenaar:
+                definition.proceseigenaar,
+              frequentie:
+                definition.frequentie,
+              uitvoeringen:
+                definition.instanties.length,
+              stekkers:
+                definition.stekkers.length,
+            };
+          }
+        ),
+      [visibleDefinitions]
+    );
 
   const handlePrimaryAction =
     () => {
@@ -733,7 +575,7 @@ export default function TaskDefinitionDetailPage() {
       }
 
       console.info(
-        "Stekker beheren",
+        "Stekkers beheren",
         selectedDefinition.id
       );
     };
@@ -785,15 +627,6 @@ export default function TaskDefinitionDetailPage() {
         event.preventDefault();
         handlePrimaryAction();
       }
-
-      if (key === "o" && selectedDefinition) {
-        event.preventDefault();
-        openInstance(
-          navigate,
-          selectedDefinition.id,
-          primaryInstance
-        );
-      }
     };
 
     window.addEventListener(
@@ -810,186 +643,152 @@ export default function TaskDefinitionDetailPage() {
   });
 
   return (
-    <div className="flex min-h-0 flex-1 overflow-hidden">
-      <RecordPaneBar
-        title="Taakdefinities"
-        searchValue={search}
-        onSearchChange={setSearch}
-        searchPlaceholder="Zoek taakdefinitie..."
-        tabs={[]}
-        activeTab=""
-        onTabChange={() => {}}
-        filters={filters}
-        activeFilter={filter}
-        onFilterChange={(key) =>
-          setFilter(
-            key as DefinitionFilter
-          )
-        }
-        items={paneItems}
-        selectedId={
-          effectiveSelectedId
-        }
-        onSelect={(id) =>
-          navigate(`/taak/${id}`)
-        }
-        emptyMessage="Geen taakdefinities gevonden binnen deze selectie."
-      />
-
-      {!selectedDefinition ||
-      !configuratie ||
-      !risk ? (
-        <ContentPanel>
-          <ContentPanelEmptyState
-            icon={
-              <Settings2 size={24} />
+    <>
+      <AppShellPortal slot="detail">
+        {selectedDefinition ? (
+          <TaskDefinitionDetailPane
+            definition={
+              selectedDefinition
             }
-            title="Kies een taakdefinitie"
-            description="Na selectie tonen we hier het overzicht van uitvoeringen, configuratie en gekoppelde bronnen."
+            currentIndex={
+              selectedIndex >= 0
+                ? selectedIndex + 1
+                : 0
+            }
+            totalCount={
+              visibleDefinitions.length
+            }
+            details={detailItems}
+            onPrevious={
+              previousDefinition
+                ? () =>
+                    navigate(
+                      `/taak/${previousDefinition.id}`
+                    )
+                : undefined
+            }
+            onNext={
+              nextDefinition
+                ? () =>
+                    navigate(
+                      `/taak/${nextDefinition.id}`
+                    )
+                : undefined
+            }
+            onOpenExecution={(
+              instance
+            ) =>
+              openInstance(
+                navigate,
+                selectedDefinition.id,
+                instance
+              )
+            }
           />
-        </ContentPanel>
-      ) : (
-        <ContentPanel>
-          <ContentPanelBody>
-            <ContentPanelHeader
-              eyebrow="Taakdefinitie"
-              title={
-                selectedDefinition.naam
-              }
-              subtitle={
-                selectedDefinition.subtitle
-              }
-            />
+        ) : (
+          <div className="flex h-full items-center justify-center px-6 text-sm text-slate-500">
+            Selecteer een taakdefinitie om details te zien.
+          </div>
+        )}
+      </AppShellPortal>
 
-            <TaskDefinitionConfiguration
-              configuratie={
-                configuratie
-              }
-              stekkers={
-                selectedDefinition.stekkers
-              }
-            />
-
-            <TaskDefinitionInstances
-              instanties={
-                selectedDefinition.instanties
-              }
-              onOpen={(instanceId) => {
-                const instance =
-                  selectedDefinition.instanties.find(
-                    (item) =>
-                      item.id ===
-                      instanceId
-                  );
-
-                openInstance(
-                  navigate,
-                  selectedDefinition.id,
-                  instance
-                );
-              }}
-            />
-          </ContentPanelBody>
-        </ContentPanel>
-      )}
-
-      <ActionPanel
-        title="Acties"
-        subtitle="Snelle vervolgstappen voor de geselecteerde taakdefinitie."
-        footer={
-          selectedDefinition ? (
-            <div className="space-y-2.5">
+      <AppShellPortal slot="action">
+        <ActionPanel
+          embedded
+          title="Actie"
+          titleClassName="text-sm"
+          hideHeaderBorder
+          hideFooterBorder
+          bodyPaddingYClass="py-0"
+          footer={
+            selectedDefinition ? (
               <ActionPanelButtonGroup>
                 <ActionPanelButton
                   label="Actie uitvoeren"
-                  onClick={
-                    handlePrimaryAction
-                  }
+                  onClick={handlePrimaryAction}
                   variant="primary"
                 />
-                <ActionPanelButton
-                  label="Open uitvoering"
-                  onClick={() =>
-                    openInstance(
-                      navigate,
-                      selectedDefinition.id,
-                      primaryInstance
-                    )
-                  }
-                  variant="secondary"
-                />
               </ActionPanelButtonGroup>
-              <ActionPanelShortcuts
-                shortcuts={[
-                  {
-                    keyLabel: "A",
-                    label: "Vorige",
-                  },
-                  {
-                    keyLabel: "D",
-                    label: "Volgende",
-                  },
-                    {
-                      keyLabel: "W",
-                      label: "Actie uitvoeren",
-                    },
-                    {
-                      keyLabel: "O",
-                      label: "Open uitvoering",
-                    },
-                ]}
-              />
-            </div>
-          ) : null
-        }
-      >
-        {!selectedDefinition ? (
-          <ActionPanelEmptyState
-            title="Kies eerst een taakdefinitie"
-            description="Na selectie tonen we hier de aanbevolen vervolgstappen voor uitvoeringen en configuratie."
-          />
-        ) : (
-          <>
+            ) : null
+          }
+        >
+          {!selectedDefinition ? (
+            <ActionPanelEmptyState
+              title="Kies eerst een taakdefinitie"
+              description="Kies een taakdefinitie om een actie te tonen."
+            />
+          ) : (
             <ActionPanelSection
               title="Kies een actie"
-              description="De details staan links. Kies hier alleen de vervolgstap."
             >
               <div className="space-y-3">
-                {decisions.map(
-                  (item) => (
-                    <ActionPanelChoice
-                      key={item.id}
-                      title={item.title}
-                      description={
-                        item.id === "open-uitvoering"
-                          ? "Open de meest relevante taakuitvoering vanuit deze definitie."
-                          : item.id === "bewerk-configuratie"
-                            ? "Werk taakinformatie, rollen en instellingen bij."
-                            : "Beheer gekoppelde bronnen en stekkers voor deze definitie."
-                      }
-                      icon={item.icon}
-                      tone={item.tone}
-                      density="compact"
-                      selected={
-                        activeDecision ===
-                        item.id
-                      }
-                      onClick={() =>
-                        setPanelState({
-                          recordId:
-                            selectedDefinition.id,
-                          decision:
-                            item.id,
-                        })
-                      }
-                    />
-                  )
-                )}
+                {decisions.map((item) => (
+                  <ActionPanelChoice
+                    key={item.id}
+                    title={item.title}
+                    description=""
+                    icon={item.icon}
+                    tone={item.tone}
+                    density="compact"
+                    selected={activeDecision === item.id}
+                    onClick={() =>
+                      setPanelState({
+                        recordId: selectedDefinition.id,
+                        decision: item.id,
+                      })
+                    }
+                  />
+                ))}
               </div>
             </ActionPanelSection>
-          </>
-        )}
-      </ActionPanel>
-    </div>
+          )}
+        </ActionPanel>
+      </AppShellPortal>
+
+      <AppShellPortal slot="shortcut">
+        <ShortcutPane
+          shortcuts={[
+            { keyLabel: "A", label: "Vorige" },
+            { keyLabel: "D", label: "Volgende" },
+            { keyLabel: "W", label: "Actie uitvoeren" },
+          ]}
+        />
+      </AppShellPortal>
+
+      {visibleDefinitions.length === 0 ? (
+        <ContentPanel>
+          <ContentPanelEmptyState
+            icon={
+              <ClipboardList size={24} />
+            }
+            title="Geen taakdefinities gevonden"
+            description="Pas je zoekopdracht of filters aan om taakdefinities te tonen."
+          />
+        </ContentPanel>
+      ) : (
+        <TaskDefinitionRecordPanel
+          recordId={
+            effectiveSelectedId
+          }
+          rows={tableRows}
+          onSelect={(id) =>
+            navigate(`/taak/${id}`)
+          }
+          searchValue={search}
+          onSearchChange={setSearch}
+          tabs={tabs}
+          activeTab="alle"
+          onTabChange={() => {}}
+          filters={filters}
+          activeFilter={filter}
+          onFilterChange={(key) =>
+            setFilter(
+              key as DefinitionFilter
+            )
+          }
+        />
+      )}
+    </>
   );
 }
+

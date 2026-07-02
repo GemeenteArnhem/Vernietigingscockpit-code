@@ -1,21 +1,5 @@
 import StatusBadge from "../../../components/StatusBadge";
-
-export type TaskDefinitionInstance =
-  {
-    id: string;
-    naam: string;
-    subtitle: string;
-    recordmanager: string;
-    status:
-      | "GEPLAND"
-      | "LOPEND"
-      | "VOLTOOID"
-      | "VERTRAAGD";
-    stap: string;
-    voortgang: number;
-    plannedStartDate?: string;
-    highlighted?: boolean;
-  };
+import type { TaskDefinitionInstance } from "../../../shared/types/taskDefinition";
 
 type Props = {
   instanties:
