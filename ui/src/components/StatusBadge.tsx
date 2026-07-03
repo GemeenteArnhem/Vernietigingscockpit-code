@@ -22,11 +22,6 @@ const statusConfig: Record<
   /* TASK / WORKFLOW */
   /* -------------------------------- */
 
-  LOPEND: {
-    label: "Lopend",
-    variant: "success",
-  },
-
   GEPLAND: {
     label: "Gepland",
     variant: "warning",

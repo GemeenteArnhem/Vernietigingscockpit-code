@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 
@@ -8,22 +8,60 @@ import PageHeader from "../components/PageHeader";
 import PageActionBar from "../components/PageActionBar";
 import ApprovalRecordTable from "../features/task-execution/approval/components/ApprovalRecordTable";
 import WorkflowBar from "../features/task-execution/components/WorkflowBar";
-import { reviewRows } from "../shared/mocks/reviewRows";
+import { listReviewRows } from "../shared/api/cockpitApi";
 import type { VernietigingsObject } from "../shared/types/destruction";
 
 export default function ArchivistApprovalPage() {
   const navigate = useNavigate();
   const { taakId, id } = useParams();
+  const [reviewRows, setReviewRows] = useState<VernietigingsObject[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [recordComments, setRecordComments] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      reviewRows
-        .filter((row) => row.archivarisToelichting)
-        .map((row) => [row.id, row.archivarisToelichting || ""])
-    )
+    ({})
   );
   const [approvalComment, setApprovalComment] = useState("");
   const [commentSectionOpen, setCommentSectionOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    if (!taakId || !id) {
+      return;
+    }
+
+    let ignore = false;
+
+    setLoading(true);
+    setLoadError(null);
+
+    listReviewRows(taakId, id)
+      .then((response) => {
+        if (!ignore) {
+          setReviewRows(response.items);
+          setRecordComments(
+            Object.fromEntries(
+              response.items
+                .filter((row) => row.archivarisToelichting)
+                .map((row) => [row.id, row.archivarisToelichting || ""])
+            )
+          );
+        }
+      })
+      .catch(() => {
+        if (!ignore) {
+          setLoadError("Reviewregels konden niet worden geladen.");
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [taakId, id]);
 
   const updateRecordComment = (rowId: string, value: string) => {
     setRecordComments((currentComments) => ({
@@ -69,12 +107,22 @@ export default function ArchivistApprovalPage() {
 
       <WorkflowBar activeStep="ACCORDERING_ARCH" />
 
-      <ApprovalRecordTable
-        rows={reviewRows}
-        approvalCommentLabel="Toelichting archivaris"
-        approvalCommentValue={getRecordComment}
-        onApprovalCommentChange={updateRecordComment}
-      />
+      {loading ? (
+        <div className="rounded-lg border border-gray-200 bg-white px-5 py-4 text-sm text-gray-500">
+          Reviewregels laden...
+        </div>
+      ) : loadError ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+          {loadError}
+        </div>
+      ) : (
+        <ApprovalRecordTable
+          rows={reviewRows}
+          approvalCommentLabel="Toelichting archivaris"
+          approvalCommentValue={getRecordComment}
+          onApprovalCommentChange={updateRecordComment}
+        />
+      )}
 
       <section className="rounded-2xl border border-gray-200 bg-white">
         <div className="flex items-center justify-between gap-4 px-5 py-4">

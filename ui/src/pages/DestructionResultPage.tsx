@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
 import { Archive, Download, FileOutput } from "lucide-react";
 
 import Breadcrumb from "../components/Breadcrumb";
@@ -7,9 +8,10 @@ import WorkflowBar from "../features/task-execution/components/WorkflowBar";
 import DestructionResultBar from "../features/task-execution/results/components/DestructionResultBar";
 import DestructionResultFilters from "../features/task-execution/results/components/DestructionResultFilters";
 import DestructionResultTable from "../features/task-execution/results/components/DestructionResultTable";
-import { destructionResultRows } from "../shared/mocks/destructionResultRows";
+import { listDestructionResults } from "../shared/api/cockpitApi";
 import type {
   DestructionResultColumnKey,
+  DestructionResultRow,
   DestructionResultStatus,
 } from "../shared/types/destructionResult";
 
@@ -24,11 +26,47 @@ const COLUMN_DEFAULTS: Record<DestructionResultColumnKey, boolean> = {
 };
 
 export default function DestructionResultPage() {
+  const { taakId, id } = useParams();
   const [visibleColumns, setVisibleColumns] =
     useState<Record<DestructionResultColumnKey, boolean>>(COLUMN_DEFAULTS);
   const [statusFilter, setStatusFilter] =
     useState<DestructionResultStatus | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [resultRows, setResultRows] = useState<DestructionResultRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!taakId || !id) {
+      return;
+    }
+
+    let ignore = false;
+
+    setLoading(true);
+    setLoadError(null);
+
+    listDestructionResults(taakId, id)
+      .then((response) => {
+        if (!ignore) {
+          setResultRows(response.items);
+        }
+      })
+      .catch(() => {
+        if (!ignore) {
+          setLoadError("Resultaatregels konden niet worden geladen.");
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [taakId, id]);
 
   const toggleColumn = (key: DestructionResultColumnKey) => {
     setVisibleColumns((current) => ({
@@ -36,8 +74,6 @@ export default function DestructionResultPage() {
       [key]: !current[key],
     }));
   };
-
-  const resultRows = useMemo(() => destructionResultRows, []);
 
   return (
     <div className="flex flex-col gap-3">
@@ -90,12 +126,22 @@ export default function DestructionResultPage() {
           onSearchQuery={setSearchQuery}
         />
 
-        <DestructionResultTable
-          rows={resultRows}
-          visibleColumns={visibleColumns}
-          statusFilter={statusFilter}
-          searchQuery={searchQuery}
-        />
+        {loading ? (
+          <div className="px-5 py-8 text-sm text-gray-500">
+            Resultaatregels laden...
+          </div>
+        ) : loadError ? (
+          <div className="px-5 py-8 text-sm text-red-700">
+            {loadError}
+          </div>
+        ) : (
+          <DestructionResultTable
+            rows={resultRows}
+            visibleColumns={visibleColumns}
+            statusFilter={statusFilter}
+            searchQuery={searchQuery}
+          />
+        )}
       </div>
     </div>
   );

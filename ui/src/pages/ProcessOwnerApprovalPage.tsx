@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { AlertTriangle, ArrowRight, CheckCircle2, FileSearch } from "lucide-react";
 
@@ -7,7 +7,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import PageHeader from "../components/PageHeader";
 import PageActionBar from "../components/PageActionBar";
 import WorkflowBar from "../features/task-execution/components/WorkflowBar";
-import { reviewRows } from "../shared/mocks/reviewRows";
+import { listReviewRows } from "../shared/api/cockpitApi";
 import type { VernietigingsObject } from "../shared/types/destruction";
 
 type ExceptionDecision = "akkoord" | "aanpassen" | "terug";
@@ -21,21 +21,59 @@ const DECISION_LABELS: Record<ExceptionDecision, string> = {
 export default function ProcessOwnerApprovalPage() {
   const navigate = useNavigate();
   const { taakId, id } = useParams();
+  const [reviewRows, setReviewRows] = useState<VernietigingsObject[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const exceptionRows = reviewRows.filter((row) => row.uitgesloten);
   const approvedRowsCount = reviewRows.length - exceptionRows.length;
   const [exceptionDecisions, setExceptionDecisions] = useState<
     Record<string, ExceptionDecision>
   >({});
   const [recordComments, setRecordComments] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      reviewRows
-        .filter((row) => row.proceseigenaarToelichting)
-        .map((row) => [row.id, row.proceseigenaarToelichting || ""])
-    )
+    ({})
   );
   const [returnComment, setReturnComment] = useState("");
   const [commentSectionOpen, setCommentSectionOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    if (!taakId || !id) {
+      return;
+    }
+
+    let ignore = false;
+
+    setLoading(true);
+    setLoadError(null);
+
+    listReviewRows(taakId, id)
+      .then((response) => {
+        if (!ignore) {
+          setReviewRows(response.items);
+          setRecordComments(
+            Object.fromEntries(
+              response.items
+                .filter((row) => row.proceseigenaarToelichting)
+                .map((row) => [row.id, row.proceseigenaarToelichting || ""])
+            )
+          );
+        }
+      })
+      .catch(() => {
+        if (!ignore) {
+          setLoadError("Reviewregels konden niet worden geladen.");
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [taakId, id]);
 
   const updateRecordComment = (rowId: string, value: string) => {
     setRecordComments((currentComments) => ({
@@ -87,6 +125,18 @@ export default function ProcessOwnerApprovalPage() {
       />
 
       <WorkflowBar activeStep="ACCORDERING_PO" />
+
+      {loading && (
+        <div className="rounded-lg border border-gray-200 bg-white px-5 py-4 text-sm text-gray-500">
+          Reviewregels laden...
+        </div>
+      )}
+
+      {loadError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+          {loadError}
+        </div>
+      )}
 
       <section className="grid gap-3 md:grid-cols-3">
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">

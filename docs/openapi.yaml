@@ -1,0 +1,901 @@
+openapi: 3.0.3
+info:
+  title: Vernietigingscockpit API
+  version: 0.1.0
+  description: >
+    API-contract voor de review-branch van de vernietigingscockpit. Het contract
+    beschrijft de selectie-, beoordelings-, accorderings-, uitvoerings- en
+    resultaatstappen zoals gemapt in de huidige frontend.
+  contact:
+    name: Beheerteam Vernietigingscockpit
+    email: beheerteam-vernietigingscockpit@example.org
+    url: https://example.org/vernietigingscockpit/issues
+  license:
+    name: EUPL-1.2
+    url: https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12
+servers:
+  - url: https://api.vernietigingscockpit.test/v1
+    description: Ontwikkelomgeving
+security:
+  - bearerAuth: []
+tags:
+  - name: Taakuitvoeringen
+    description: Workflow rond selectie, beoordeling, accordering en vernietiging.
+paths:
+  /taken/{taakId}/taakuitvoeringen/{taakuitvoeringId}:
+    get:
+      operationId: getTaakuitvoering
+      tags:
+        - Taakuitvoeringen
+      summary: Haal de status van een taakuitvoering op
+      parameters:
+        - $ref: "#/components/parameters/TaakId"
+        - $ref: "#/components/parameters/TaakuitvoeringId"
+      responses:
+        "200":
+          description: Taakuitvoering gevonden.
+          headers:
+            API-Version:
+              $ref: "#/components/headers/ApiVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Taakuitvoering"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /taken/{taakId}/taakuitvoeringen/{taakuitvoeringId}/stekkers:
+    get:
+      operationId: listStekkers
+      tags:
+        - Taakuitvoeringen
+      summary: Haal de stekkers voor selectie en uitvoering op
+      parameters:
+        - $ref: "#/components/parameters/TaakId"
+        - $ref: "#/components/parameters/TaakuitvoeringId"
+        - name: fase
+          in: query
+          description: Filter stekkers op de workflowfase waarin voortgang wordt getoond.
+          required: false
+          schema:
+            $ref: "#/components/schemas/StekkerFase"
+      responses:
+        "200":
+          description: Lijst met stekkers.
+          headers:
+            API-Version:
+              $ref: "#/components/headers/ApiVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StekkerList"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /taken/{taakId}/taakuitvoeringen/{taakuitvoeringId}/selectie:
+    post:
+      operationId: startSelectie
+      tags:
+        - Taakuitvoeringen
+      summary: Start selectie ophalen
+      description: Maakt een snapshot van vernietigbare objecten uit de gekoppelde stekkers.
+      parameters:
+        - $ref: "#/components/parameters/TaakId"
+        - $ref: "#/components/parameters/TaakuitvoeringId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartSelectieRequest"
+      responses:
+        "202":
+          description: Selectie is gestart.
+          headers:
+            API-Version:
+              $ref: "#/components/headers/ApiVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActieStatus"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /taken/{taakId}/taakuitvoeringen/{taakuitvoeringId}/reviewregels:
+    get:
+      operationId: listReviewregels
+      tags:
+        - Taakuitvoeringen
+      summary: Haal reviewregels voor beoordeling op
+      parameters:
+        - $ref: "#/components/parameters/TaakId"
+        - $ref: "#/components/parameters/TaakuitvoeringId"
+        - name: status
+          in: query
+          description: Filter op verwerkingsstatus.
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReviewStatus"
+        - name: zoekterm
+          in: query
+          description: Zoek in titel, bron-ID, code en metadata.
+          required: false
+          schema:
+            type: string
+        - name: alleenUitzonderingen
+          in: query
+          description: Geeft alleen uitgesloten records terug.
+          required: false
+          schema:
+            type: boolean
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Lijst met reviewregels.
+          headers:
+            API-Version:
+              $ref: "#/components/headers/ApiVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewregelList"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /taken/{taakId}/taakuitvoeringen/{taakuitvoeringId}/reviewregels/{reviewregelId}:
+    patch:
+      operationId: updateReviewregel
+      tags:
+        - Taakuitvoeringen
+      summary: Werk een reviewregel bij
+      parameters:
+        - $ref: "#/components/parameters/TaakId"
+        - $ref: "#/components/parameters/TaakuitvoeringId"
+        - $ref: "#/components/parameters/ReviewregelId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateReviewregelRequest"
+      responses:
+        "200":
+          description: Reviewregel bijgewerkt.
+          headers:
+            API-Version:
+              $ref: "#/components/headers/ApiVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reviewregel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /taken/{taakId}/taakuitvoeringen/{taakuitvoeringId}/reviewregels/markeer-beoordeeld:
+    post:
+      operationId: markeerReviewregelsBeoordeeld
+      tags:
+        - Taakuitvoeringen
+      summary: Markeer meerdere reviewregels als beoordeeld
+      parameters:
+        - $ref: "#/components/parameters/TaakId"
+        - $ref: "#/components/parameters/TaakuitvoeringId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarkeerBeoordeeldRequest"
+      responses:
+        "200":
+          description: Reviewregels gemarkeerd als beoordeeld.
+          headers:
+            API-Version:
+              $ref: "#/components/headers/ApiVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewregelList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /taken/{taakId}/taakuitvoeringen/{taakuitvoeringId}/accorderingen/proceseigenaar:
+    put:
+      operationId: legProceseigenaarAccorderingVast
+      tags:
+        - Taakuitvoeringen
+      summary: Leg accordering door proceseigenaar vast
+      parameters:
+        - $ref: "#/components/parameters/TaakId"
+        - $ref: "#/components/parameters/TaakuitvoeringId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProceseigenaarAccorderingRequest"
+      responses:
+        "200":
+          description: Accordering proceseigenaar vastgelegd.
+          headers:
+            API-Version:
+              $ref: "#/components/headers/ApiVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Accordering"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /taken/{taakId}/taakuitvoeringen/{taakuitvoeringId}/accorderingen/archivaris:
+    put:
+      operationId: legArchivarisAccorderingVast
+      tags:
+        - Taakuitvoeringen
+      summary: Leg accordering door archivaris vast
+      parameters:
+        - $ref: "#/components/parameters/TaakId"
+        - $ref: "#/components/parameters/TaakuitvoeringId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArchivarisAccorderingRequest"
+      responses:
+        "200":
+          description: Accordering archivaris vastgelegd.
+          headers:
+            API-Version:
+              $ref: "#/components/headers/ApiVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Accordering"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /taken/{taakId}/taakuitvoeringen/{taakuitvoeringId}/vernietiging:
+    post:
+      operationId: startVernietiging
+      tags:
+        - Taakuitvoeringen
+      summary: Start vernietiging uitvoeren
+      parameters:
+        - $ref: "#/components/parameters/TaakId"
+        - $ref: "#/components/parameters/TaakuitvoeringId"
+      responses:
+        "202":
+          description: Vernietiging is gestart.
+          headers:
+            API-Version:
+              $ref: "#/components/headers/ApiVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActieStatus"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /taken/{taakId}/taakuitvoeringen/{taakuitvoeringId}/resultaatregels:
+    get:
+      operationId: listResultaatregels
+      tags:
+        - Taakuitvoeringen
+      summary: Haal vernietigingsresultaten op
+      parameters:
+        - $ref: "#/components/parameters/TaakId"
+        - $ref: "#/components/parameters/TaakuitvoeringId"
+        - name: vernietigingsstatus
+          in: query
+          description: Filter op resultaatstatus.
+          required: false
+          schema:
+            $ref: "#/components/schemas/VernietigingsResultaatStatus"
+        - name: zoekterm
+          in: query
+          description: Zoek in titel, stekker, bron-ID, code en melding.
+          required: false
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Lijst met resultaatregels.
+          headers:
+            API-Version:
+              $ref: "#/components/headers/ApiVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultaatregelList"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /taken/{taakId}/taakuitvoeringen/{taakuitvoeringId}/verklaring:
+    get:
+      operationId: downloadVernietigingsverklaring
+      tags:
+        - Taakuitvoeringen
+      summary: Download de vernietigingsverklaring
+      parameters:
+        - $ref: "#/components/parameters/TaakId"
+        - $ref: "#/components/parameters/TaakuitvoeringId"
+      responses:
+        "200":
+          description: Vernietigingsverklaring als PDF.
+          headers:
+            API-Version:
+              $ref: "#/components/headers/ApiVersion"
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /taken/{taakId}/taakuitvoeringen/{taakuitvoeringId}/export:
+    get:
+      operationId: exporteerVernietigingsresultaat
+      tags:
+        - Taakuitvoeringen
+      summary: Exporteer de vernietigingsresultaten
+      parameters:
+        - $ref: "#/components/parameters/TaakId"
+        - $ref: "#/components/parameters/TaakuitvoeringId"
+        - name: formaat
+          in: query
+          description: Gewenst exportformaat.
+          required: false
+          schema:
+            type: string
+            enum:
+              - csv
+              - json
+            default: csv
+      responses:
+        "200":
+          description: Exportbestand.
+          headers:
+            API-Version:
+              $ref: "#/components/headers/ApiVersion"
+          content:
+            text/csv:
+              schema:
+                type: string
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultaatregelList"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /taken/{taakId}/taakuitvoeringen/{taakuitvoeringId}/archivering:
+    post:
+      operationId: archiveerTaakuitvoering
+      tags:
+        - Taakuitvoeringen
+      summary: Archiveer de afgeronde taakuitvoering
+      parameters:
+        - $ref: "#/components/parameters/TaakId"
+        - $ref: "#/components/parameters/TaakuitvoeringId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArchiveerTaakuitvoeringRequest"
+      responses:
+        "202":
+          description: Archivering is gestart.
+          headers:
+            API-Version:
+              $ref: "#/components/headers/ApiVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActieStatus"
+        "404":
+          $ref: "#/components/responses/NotFound"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  headers:
+    ApiVersion:
+      description: Volledige semantische versie van de API-implementatie.
+      schema:
+        type: string
+        pattern: "^\\d+\\.\\d+\\.\\d+$"
+        example: 0.1.0
+  parameters:
+    TaakId:
+      name: taakId
+      in: path
+      description: Unieke identificatie van de taakdefinitie.
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    TaakuitvoeringId:
+      name: taakuitvoeringId
+      in: path
+      description: Unieke identificatie van de taakuitvoering.
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    ReviewregelId:
+      name: reviewregelId
+      in: path
+      description: Unieke identificatie van de reviewregel.
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    Page:
+      name: page
+      in: query
+      description: Pagina-index, startend bij 1.
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: pageSize
+      in: query
+      description: Aantal items per pagina.
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 250
+        default: 50
+  responses:
+    BadRequest:
+      description: Ongeldig verzoek.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: Resource niet gevonden.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  schemas:
+    Problem:
+      type: object
+      description: Foutmelding volgens RFC 7807.
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+          example: https://api.example.org/problems/not-found
+        title:
+          type: string
+          example: Resource niet gevonden
+        status:
+          type: integer
+          minimum: 100
+          maximum: 599
+          example: 404
+        detail:
+          type: string
+          example: De gevraagde taakuitvoering bestaat niet.
+        instance:
+          type: string
+          format: uri-reference
+    Taakuitvoering:
+      type: object
+      required:
+        - id
+        - taakId
+        - titel
+        - actieveStap
+        - status
+      properties:
+        id:
+          type: string
+          example: tv-2026-001
+        taakId:
+          type: string
+          example: zorgdomein
+        titel:
+          type: string
+          example: Zorgdomein 2025
+        actieveStap:
+          $ref: "#/components/schemas/WorkflowStap"
+        status:
+          $ref: "#/components/schemas/TaakuitvoeringStatus"
+        aangemaaktOp:
+          type: string
+          format: date-time
+        bijgewerktOp:
+          type: string
+          format: date-time
+    WorkflowStap:
+      type: string
+      enum:
+        - SELECTIE
+        - BEOORDELING
+        - ACCORDERING_PROC
+        - ACCORDERING_ARCH
+        - UITVOERING
+        - RESULTAAT
+    TaakuitvoeringStatus:
+      type: string
+      enum:
+        - NIET_GESTART
+        - BEZIG
+        - WACHT_OP_ACCORDERING
+        - VOLTOOID
+        - GEARCHIVEERD
+        - FOUT
+    StekkerFase:
+      type: string
+      enum:
+        - selectie
+        - vernietiging
+    StekkerList:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Stekker"
+    Stekker:
+      type: object
+      required:
+        - id
+        - naam
+        - versie
+        - stekkerStatus
+        - voortgang
+      properties:
+        id:
+          type: string
+          example: sharepoint
+        naam:
+          type: string
+          example: Suite4sociaaldomein
+        versie:
+          type: string
+          example: "1.0"
+        stekkerStatus:
+          $ref: "#/components/schemas/StekkerStatus"
+        selectieStatus:
+          $ref: "#/components/schemas/ProcesStatus"
+        vernietigingsStatus:
+          $ref: "#/components/schemas/ProcesStatus"
+        voortgang:
+          type: integer
+          minimum: 0
+          maximum: 100
+          example: 42
+    StekkerStatus:
+      type: string
+      enum:
+        - SUCCES
+        - OK
+        - FOUT
+    ProcesStatus:
+      type: string
+      enum:
+        - NIET_GESTART
+        - BEZIG
+        - VOLTOOID
+        - GEDEELTELIJK_VOLTOOID
+    StartSelectieRequest:
+      type: object
+      properties:
+        stekkerIds:
+          type: array
+          description: Optionele selectie van stekkers. Bij leeg of afwezig worden alle actieve stekkers gebruikt.
+          items:
+            type: string
+    ActieStatus:
+      type: object
+      required:
+        - id
+        - status
+      properties:
+        id:
+          type: string
+          description: Identificatie van de gestarte actie of job.
+          example: job-123
+        status:
+          type: string
+          enum:
+            - GEACCEPTEERD
+            - BEZIG
+        melding:
+          type: string
+          example: Actie is gestart.
+    ReviewregelList:
+      type: object
+      required:
+        - items
+        - page
+        - pageSize
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Reviewregel"
+        page:
+          type: integer
+          minimum: 1
+          example: 1
+        pageSize:
+          type: integer
+          minimum: 1
+          example: 50
+        total:
+          type: integer
+          minimum: 0
+          example: 120
+    Reviewregel:
+      type: object
+      required:
+        - id
+        - titel
+        - omvang
+        - bewaartermijn
+        - vernietigingsdatum
+        - uitgesloten
+      properties:
+        id:
+          type: string
+          example: "1"
+        titel:
+          type: string
+          example: Contracten 2021 - Leveranciers
+        omvang:
+          type: integer
+          minimum: 0
+          example: 3
+        bewaartermijn:
+          type: integer
+          minimum: 0
+          description: Bewaartermijn in jaren.
+          example: 7
+        vernietigingsdatum:
+          type: string
+          pattern: "^\\d{4}-\\d{2}$"
+          example: 2026-01
+        status:
+          $ref: "#/components/schemas/ReviewStatus"
+        beoordeeld:
+          type: boolean
+          default: false
+        uitgesloten:
+          type: boolean
+          example: false
+        reden:
+          type: string
+          example: Onbekend recordtype
+        toelichting:
+          type: string
+          example: Nog beoordelen voor uitsluiting.
+        proceseigenaarToelichting:
+          type: string
+          example: Controle uitgevoerd.
+        archivarisToelichting:
+          type: string
+          example: Past binnen selectielijst.
+        bronId:
+          type: string
+          example: ZRC-2021-00441
+        code:
+          type: string
+          example: 7.1.2
+        startdatum:
+          type: string
+          pattern: "^\\d{2}-\\d{4}$"
+          example: 01-2021
+        einddatum:
+          type: string
+          pattern: "^\\d{2}-\\d{4}$"
+          example: 12-2021
+        selectielijst:
+          type: string
+          example: VNG 2017
+        resultaat:
+          type: string
+          example: Verleend
+        grondslag:
+          type: string
+          example: Art. 3 Archiefwet
+        bronSysteem:
+          type: string
+          example: Zaaksysteem A
+    ReviewStatus:
+      type: string
+      enum:
+        - OK
+        - FOUT
+        - OVERGESLAGEN
+        - NIET_GEVONDEN
+    UpdateReviewregelRequest:
+      type: object
+      properties:
+        beoordeeld:
+          type: boolean
+        uitgesloten:
+          type: boolean
+        reden:
+          type: string
+        toelichting:
+          type: string
+      minProperties: 1
+    MarkeerBeoordeeldRequest:
+      type: object
+      required:
+        - reviewregelIds
+      properties:
+        reviewregelIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+    ProceseigenaarAccorderingRequest:
+      type: object
+      required:
+        - uitzonderingen
+      properties:
+        algemeneToelichting:
+          type: string
+          example: Uitzonderingen akkoord, aanvullende controle niet nodig.
+        uitzonderingen:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProceseigenaarUitzondering"
+    ProceseigenaarUitzondering:
+      type: object
+      required:
+        - reviewregelId
+        - beslissing
+      properties:
+        reviewregelId:
+          type: string
+        beslissing:
+          $ref: "#/components/schemas/ProceseigenaarBeslissing"
+        toelichting:
+          type: string
+    ProceseigenaarBeslissing:
+      type: string
+      enum:
+        - akkoord
+        - aanpassen
+        - terug
+    ArchivarisAccorderingRequest:
+      type: object
+      properties:
+        algemeneToelichting:
+          type: string
+          example: Archivistische beoordeling akkoord.
+        reviewregelToelichtingen:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReviewregelToelichting"
+    ReviewregelToelichting:
+      type: object
+      required:
+        - reviewregelId
+        - toelichting
+      properties:
+        reviewregelId:
+          type: string
+        toelichting:
+          type: string
+    Accordering:
+      type: object
+      required:
+        - rol
+        - status
+        - vastgelegdOp
+      properties:
+        rol:
+          type: string
+          enum:
+            - proceseigenaar
+            - archivaris
+        status:
+          type: string
+          enum:
+            - VASTGELEGD
+            - TERUGGEZET
+        algemeneToelichting:
+          type: string
+        vastgelegdOp:
+          type: string
+          format: date-time
+    ResultaatregelList:
+      type: object
+      required:
+        - items
+        - page
+        - pageSize
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Resultaatregel"
+        page:
+          type: integer
+          minimum: 1
+          example: 1
+        pageSize:
+          type: integer
+          minimum: 1
+          example: 50
+        total:
+          type: integer
+          minimum: 0
+          example: 5
+    Resultaatregel:
+      type: object
+      required:
+        - id
+        - titel
+        - stekker
+        - vernietigingsstatus
+      properties:
+        id:
+          type: string
+          example: res-1
+        titel:
+          type: string
+          example: Contracten 2021 - Leveranciers
+        stekker:
+          type: string
+          example: Zaaksysteem A
+        vernietigingsstatus:
+          $ref: "#/components/schemas/VernietigingsResultaatStatus"
+        omvang:
+          type: integer
+          minimum: 0
+          example: 3
+        vernietigingsdatum:
+          type: string
+          pattern: "^\\d{4}-\\d{2}$"
+          example: 2026-01
+        bronId:
+          type: string
+          example: ZRC-2021-00441
+        code:
+          type: string
+          example: 7.1.2
+        grondslag:
+          type: string
+          example: Art. 3 Archiefwet
+        bronSysteem:
+          type: string
+          example: Zorgdomein
+        melding:
+          type: string
+          example: Object succesvol verwijderd.
+    VernietigingsResultaatStatus:
+      type: string
+      enum:
+        - SUCCES
+        - FOUT
+        - NIET_GEVONDEN
+        - OVERIG
+    ArchiveerTaakuitvoeringRequest:
+      type: object
+      properties:
+        toelichting:
+          type: string
+          example: Afgeronde vernietiging gearchiveerd.

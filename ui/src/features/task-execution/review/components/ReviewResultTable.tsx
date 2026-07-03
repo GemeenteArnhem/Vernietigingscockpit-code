@@ -217,7 +217,7 @@ export default function ReviewResultTable({
   return (
     <div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-max table-fixed text-sm">
+        <table className="table-fixed text-sm">
           <thead className="bg-gray-50 text-left">
             <tr>
               <th className="w-10 p-3" />
@@ -236,7 +236,7 @@ export default function ReviewResultTable({
 
               <th
                 onClick={() => toggleSort("titel")}
-                className="w-[22%] min-w-[260px] cursor-pointer p-3 text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-900"
+                className="w-[260px] cursor-pointer p-3 text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-900"
               >
                 Titel
                 {sortIcon(sortKey === "titel", sortDir)}
@@ -245,7 +245,7 @@ export default function ReviewResultTable({
               {col("omvang") && (
                 <th
                   onClick={() => toggleSort("omvang")}
-                  className="w-[8%] min-w-[100px] cursor-pointer p-3 text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-900"
+                  className="w-[100px] cursor-pointer p-3 text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-900"
                 >
                   Omvang
                   {sortIcon(sortKey === "omvang", sortDir)}
@@ -253,7 +253,7 @@ export default function ReviewResultTable({
               )}
 
               {col("bewaartermijn") && (
-                <th className="w-[10%] min-w-[130px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
+                <th className="w-[130px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
                   Bewaartermijn
                 </th>
               )}
@@ -261,7 +261,7 @@ export default function ReviewResultTable({
               {col("vernietigingsdatum") && (
                 <th
                   onClick={() => toggleSort("vernietigingsdatum")}
-                  className="w-[12%] min-w-[150px] cursor-pointer p-3 text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-900"
+                  className="w-[150px] cursor-pointer p-3 text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-900"
                 >
                   Vernietigingsdatum
                   {sortIcon(sortKey === "vernietigingsdatum", sortDir)}
@@ -269,55 +269,61 @@ export default function ReviewResultTable({
               )}
 
               {col("status") && (
-                <th className="w-[10%] min-w-[120px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
+                <th className="w-[120px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
                   Status
                 </th>
               )}
 
               {col("uitsluiten") && (
-                <th className="w-[10%] min-w-[130px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
+                <th className="w-[130px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
                   Uitsluiten
                 </th>
               )}
 
               {col("toelichting") && (
-                <th className="w-[22%] min-w-[260px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
+                <th className="w-[260px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
                   Toelichting
                 </th>
               )}
 
               {col("bron_id") && (
-                <th className="w-[12%] min-w-[160px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
+                <th className="w-[160px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
                   Bron-ID
                 </th>
               )}
 
               {col("code") && (
-                <th className="w-[8%] min-w-[100px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
+                <th className="w-[100px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
                   Code
                 </th>
               )}
 
               {col("periode") && (
-                <th className="w-[16%] min-w-[170px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
+                <th className="w-[170px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
                   Periode
                 </th>
               )}
 
               {col("selectielijst") && (
-                <th className="w-[10%] min-w-[140px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
+                <th className="w-[140px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
                   Selectielijst
                 </th>
               )}
 
+              {col("resultaat") && (
+                <th className="w-[140px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
+                  Resultaat
+                </th>
+              )}
+
               {col("grondslag") && (
-                <th className="w-[14%] min-w-[180px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
+                <th className="w-[180px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
                   Grondslag
                 </th>
               )}
 
               {col("bron_systeem") && (
-                <th className="w-[10%] min-w-[150px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
+                <th className="w-[150px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
                   Bronsysteem
                 </th>
               )}
@@ -428,6 +434,10 @@ export default function ReviewResultTable({
 
                   {col("selectielijst") && (
                     <td className="p-3 text-gray-500">{formatCellValue(row.selectielijst)}</td>
+                  )}
+
+                  {col("resultaat") && (
+                    <td className="p-3 text-gray-500">{formatCellValue(row.resultaat)}</td>
                   )}
 
                   {col("grondslag") && (

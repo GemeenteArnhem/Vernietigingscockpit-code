@@ -1,4 +1,4 @@
-import TaskStatusBadge from "../../../components/TaskStatusBadge";
+import StatusBadge from "../../../components/StatusBadge";
 import TaskProgress from "../../../components/TaskProgress";
 
 export type TaskDefinition = {
@@ -125,7 +125,7 @@ export default function TaskDefinitionTable({
                 </td>
 
                 <td className="px-4">
-                  <TaskStatusBadge status={row.status} />
+                  <StatusBadge status={row.status} />
                 </td>
               </tr>
             ))}

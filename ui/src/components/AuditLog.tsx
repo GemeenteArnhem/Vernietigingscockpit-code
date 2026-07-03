@@ -1,5 +1,3 @@
-import React from "react";
-
 type AuditItem = {
   id: string;
   date: string;

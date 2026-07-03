@@ -1,8 +1,11 @@
+import type { ReactNode } from "react";
+
 type Stat = {
   label: string;
   value: string;
   sub?: string;
   color: "blue" | "orange" | "red" | "green";
+  icon: ReactNode;
 };
 
 const DatabaseIcon = () => (
@@ -44,7 +47,7 @@ const CheckIcon = () => (
   </svg>
 );
 
-const stats = [
+const stats: Stat[] = [
   {
     label: "Totaal objecten",
     value: "1.248",
@@ -98,7 +101,7 @@ const Icon = ({
   icon,
 }: {
   color: keyof typeof colorMap;
-  icon: React.ReactNode;
+  icon: ReactNode;
 }) => {
   return (
     <div

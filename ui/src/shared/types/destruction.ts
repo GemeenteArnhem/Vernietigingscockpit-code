@@ -27,6 +27,7 @@ export type VernietigingsObject = {
   startdatum?: string;
   einddatum?: string;
   selectielijst?: string;
+  resultaat?: string;
   grondslag?: string;
   bron_systeem?: string;
 };
