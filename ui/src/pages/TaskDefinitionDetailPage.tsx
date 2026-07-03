@@ -10,9 +10,11 @@ import PageHeader from "../components/PageHeader";
 import Tabs from "../components/Tabs";
 
 import TaskDefinitionInstances from "../features/task-definition/components/TaskDefinitionInstances";
+import type { TaskDefinitionInstance } from "../features/task-definition/components/TaskDefinitionInstances";
 import TaskDefinitionConfiguration from "../features/task-definition/components/TaskDefinitionConfiguration";
+import type { Connector } from "../features/task-definition/components/ConnectorTable";
 
-const mockInstanties = [
+const mockInstanties: TaskDefinitionInstance[] = [
   {
     id: "1",
     naam: "Zorgdomein 2026",
@@ -110,7 +112,7 @@ const configuratie = {
     "R. de Vries",
 };
 
-const stekkers = [
+const stekkers: Connector[] = [
   {
     id: "1",
     naam: "Suite4sociaaldomein",
@@ -118,7 +120,7 @@ const stekkers = [
     omschrijving:
       "Bestaanszekerheid",
     status:
-      "SUCCES",
+      "GEKOPPELD",
   },
 
   {
@@ -133,7 +135,7 @@ const stekkers = [
       "Zaakdossiers",
 
     status:
-      "SUCCES",
+      "GEKOPPELD",
   },
 ];
 

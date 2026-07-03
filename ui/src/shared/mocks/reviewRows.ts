@@ -7,6 +7,14 @@ const SYSTEMS = [
   "Taakapplicatie D",
 ];
 
+const RESULTATEN = [
+  "Verleend",
+  "Geweigerd",
+  "Ingetrokken",
+  "Buiten behandeling gesteld",
+  "Niet ontvankelijk",
+];
+
 const GRONDSLAGEN = [
   "Art. 3 Archiefwet",
   "Art. 5 Archiefbesluit",
@@ -38,6 +46,7 @@ const baseRows: VernietigingsObject[] = [
     startdatum: "01-2021",
     einddatum: "12-2021",
     selectielijst: "VNG 2017",
+    resultaat: "Verleend",
     grondslag: "Art. 3 Archiefwet",
     bron_systeem: "Zaaksysteem A",
     proceseigenaarToelichting: "Kan worden vastgesteld.",
@@ -56,6 +65,7 @@ const baseRows: VernietigingsObject[] = [
     startdatum: "03-2020",
     einddatum: "11-2020",
     selectielijst: "VNG 2017",
+    resultaat: "Geweigerd",
     grondslag: "Art. 5 Archiefbesluit",
     bron_systeem: "DMS B",
   },
@@ -91,6 +101,7 @@ const generatedRows: VernietigingsObject[] = Array.from(
       startdatum: `${month}-${year}`,
       einddatum: `${endMonth}-${year}`,
       selectielijst: index % 2 === 0 ? "VNG 2017" : "VNG 2020",
+      resultaat: RESULTATEN[index % RESULTATEN.length],
       grondslag,
       bron_systeem: system,
     };

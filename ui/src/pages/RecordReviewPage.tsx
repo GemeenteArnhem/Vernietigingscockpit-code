@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 
@@ -12,7 +12,7 @@ import ReviewSelectionBar from "../features/task-execution/review/components/Rev
 import ReviewTableFilters from "../features/task-execution/review/components/ReviewTableFilters";
 import ReviewValidationBanner from "../features/task-execution/review/components/ReviewValidationBanner";
 
-import { reviewRows } from "../shared/mocks/reviewRows";
+import { listReviewRows, markReviewRowsReviewed } from "../shared/api/cockpitApi";
 import type { ColumnKey } from "../shared/types/reviewColumns";
 import type { VernietigingsObject } from "../shared/types/destruction";
 
@@ -27,6 +27,7 @@ const COLUMN_DEFAULTS: Record<ColumnKey, boolean> = {
   code: false,
   periode: false,
   selectielijst: false,
+  resultaat: false,
   grondslag: false,
   bron_systeem: false,
 };
@@ -43,13 +44,49 @@ export default function RecordReviewPage() {
     id,
   } = useParams();
 
-  const [rows, setRows] = useState(reviewRows);
+  const [rows, setRows] = useState<VernietigingsObject[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [visibleColumns, setVisibleColumns] =
     useState<Record<ColumnKey, boolean>>(COLUMN_DEFAULTS);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!taakId || !id) {
+      return;
+    }
+
+    let ignore = false;
+
+    setLoading(true);
+    setLoadError(null);
+
+    listReviewRows(taakId, id)
+      .then((response) => {
+        if (!ignore) {
+          setRows(response.items);
+        }
+      })
+      .catch(() => {
+        if (!ignore) {
+          setLoadError("Reviewregels konden niet worden geladen.");
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [taakId, id]);
 
   const toggleColumn = (key: ColumnKey) => {
     setVisibleColumns((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -58,21 +95,62 @@ export default function RecordReviewPage() {
   const selectedRows = rows.filter((row) => selected.includes(row.id));
   const hasSelectionErrors = selectedRows.some(hasError);
   const rowsWithErrors = rows.filter(hasError).length;
-  const markSelectedAsReviewed = () => {
-    setRows((currentRows) =>
-      currentRows.map((row) =>
-        selected.includes(row.id)
-          ? {
-              ...row,
-              beoordeeld: true,
-            }
-          : row
-      )
-    );
+  const markSelectedAsReviewed = async () => {
+    if (!taakId || !id || selected.length === 0) {
+      return;
+    }
+
+    setActionError(null);
+
+    try {
+      await markReviewRowsReviewed(taakId, id, selected);
+
+      setRows((currentRows) =>
+        currentRows.map((row) =>
+          selected.includes(row.id)
+            ? {
+                ...row,
+                beoordeeld: true,
+              }
+            : row
+        )
+      );
+    } catch {
+      setActionError("Geselecteerde reviewregels konden niet worden gemarkeerd.");
+    }
   };
 
   const goToProcessOwnerApproval = () => {
+    setActionError(null);
     setConfirmOpen(true);
+  };
+
+  const confirmProcessOwnerApproval = async () => {
+    if (!taakId || !id || submitting) {
+      return;
+    }
+
+    setSubmitting(true);
+    setActionError(null);
+
+    try {
+      const reviewregelIds = rows
+        .filter((row) => !row.beoordeeld)
+        .map((row) => row.id);
+
+      if (reviewregelIds.length > 0) {
+        await markReviewRowsReviewed(taakId, id, reviewregelIds);
+      }
+
+      setConfirmOpen(false);
+      navigate(
+        `/taak/${taakId}/taakuitvoering/${id}/accordering/proceseigenaar`
+      );
+    } catch {
+      setActionError("Doorzetten naar accordering kon niet worden vastgelegd.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -100,11 +178,18 @@ export default function RecordReviewPage() {
             icon: <ArrowRight className="h-3.5 w-3.5" />,
             onClick:
               goToProcessOwnerApproval,
+            disabled: loading || submitting,
           },
         ]}
       />
 
       <WorkflowBar activeStep="BEOORDELING" />
+
+      {actionError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError}
+        </div>
+      )}
 
       <ReviewValidationBanner count={rowsWithErrors} />
 
@@ -118,15 +203,25 @@ export default function RecordReviewPage() {
           onSearchQuery={setSearchQuery}
         />
 
-        <ReviewResultTable
-          rows={rows}
-          setRows={setRows}
-          selected={selected}
-          setSelected={setSelected}
-          visibleColumns={visibleColumns}
-          statusFilter={statusFilter}
-          searchQuery={searchQuery}
-        />
+        {loading ? (
+          <div className="px-5 py-8 text-sm text-gray-500">
+            Reviewregels laden...
+          </div>
+        ) : loadError ? (
+          <div className="px-5 py-8 text-sm text-red-700">
+            {loadError}
+          </div>
+        ) : (
+          <ReviewResultTable
+            rows={rows}
+            setRows={setRows}
+            selected={selected}
+            setSelected={setSelected}
+            visibleColumns={visibleColumns}
+            statusFilter={statusFilter}
+            searchQuery={searchQuery}
+          />
+        )}
 
         <ReviewSelectionBar
           count={selected.length}
@@ -140,20 +235,16 @@ export default function RecordReviewPage() {
         onNext={
           goToProcessOwnerApproval
         }
+        nextDisabled={loading || submitting}
       />
 
       <ConfirmDialog
         open={confirmOpen}
         title="Door naar accordering?"
         description="Je verlaat de beoordelingsstap en zet de geselecteerde lijst door naar de proceseigenaar voor accordering."
-        confirmLabel="Ja, door naar accordering"
+        confirmLabel={submitting ? "Bezig..." : "Ja, door naar accordering"}
         onCancel={() => setConfirmOpen(false)}
-        onConfirm={() => {
-          setConfirmOpen(false);
-          navigate(
-            `/taak/${taakId}/taakuitvoering/${id}/accordering/proceseigenaar`
-          );
-        }}
+        onConfirm={confirmProcessOwnerApproval}
       />
     </div>
   );

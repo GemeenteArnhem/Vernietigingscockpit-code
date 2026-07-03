@@ -1,5 +1,5 @@
-const ArrowRight = () => (
-  <svg viewBox="0 0 24 24" className="w-4 h-4">
+const ArrowRight = ({ className = "w-4 h-4" }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" className={className}>
     <path
       d="M5 12H19M19 12L13 6M19 12L13 18"
       stroke="currentColor"
@@ -16,6 +16,7 @@ type Props = {
   onNext?: () => void;
   backLabel?: string;
   nextLabel?: string;
+  nextDisabled?: boolean;
 };
 
 export default function PageActionBar({
@@ -23,6 +24,7 @@ export default function PageActionBar({
   onNext,
   backLabel = "Terug",
   nextLabel = "Door naar accordering",
+  nextDisabled = false,
 }: Props) {
   return (
     <div className="border-t border-gray-200 mt-6">
@@ -32,6 +34,7 @@ export default function PageActionBar({
 
         {/* LEFT */}
         <button
+          type="button"
           onClick={onBack}
           className="px-4 py-2 text-sm border border-gray-200 rounded-md text-gray-700 bg-white hover:bg-gray-50"
         >
@@ -40,8 +43,10 @@ export default function PageActionBar({
 
         {/* RIGHT */}
         <button
+          type="button"
           onClick={onNext}
-          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700"
+          disabled={nextDisabled}
+          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {nextLabel}
           <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-current">

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowRight,
@@ -13,6 +14,7 @@ import Breadcrumb from "../components/Breadcrumb";
 import PageHeader from "../components/PageHeader";
 import WorkflowBar from "../features/task-execution/components/WorkflowBar";
 import StatusBadge from "../components/StatusBadge";
+import { startSelectie } from "../shared/api/cockpitApi";
 
 type Connector = {
   id: string;
@@ -67,18 +69,6 @@ const connectors: Connector[] = [
   },
 ];
 
-const taskMeta = [
-  { label: "Taak-ID", value: "06" },
-  { label: "Recordmanager", value: "Marco de Boer" },
-  { label: "Startdatum", value: "08-04-2024" },
-];
-
-const ArrowCircleIcon = () => (
-  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-current">
-    <ArrowRight className="h-3.5 w-3.5" />
-  </span>
-);
-
 function renderStekkerStatus(status: Connector["stekkerStatus"]) {
   if (status === "SUCCES") {
     return <StatusBadge status="SUCCES" />;
@@ -129,6 +119,26 @@ function getVoortgangskleur(status: Connector["selectieStatus"]) {
 export default function RecordSelectionPage() {
   const navigate = useNavigate();
   const { taakId, id } = useParams();
+  const [startingSelection, setStartingSelection] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const handleStartSelection = async () => {
+    if (!taakId || !id || startingSelection) {
+      return;
+    }
+
+    setStartingSelection(true);
+    setActionError(null);
+
+    try {
+      await startSelectie(taakId, id);
+      navigate(`/taak/${taakId}/taakuitvoering/${id}/beoordeling`);
+    } catch {
+      setActionError("Selectie ophalen kon niet worden gestart.");
+    } finally {
+      setStartingSelection(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-3">
@@ -148,18 +158,22 @@ export default function RecordSelectionPage() {
         }}
         actions={[
           {
-            label: "selectie ophalen",
+            label: startingSelection ? "selectie starten..." : "selectie ophalen",
             variant: "primary",
             icon: <ArrowRight className="h-3.5 w-3.5" />,
-            onClick: () =>
-              navigate(
-                `/taak/${taakId}/taakuitvoering/${id}/beoordeling`
-              ),
+            onClick: handleStartSelection,
+            disabled: startingSelection,
           },
         ]}
       />
 
       <WorkflowBar activeStep="SELECTIE" />
+
+      {actionError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError}
+        </div>
+      )}
 
       <div className="rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-4">
         <div className="flex items-start gap-3">

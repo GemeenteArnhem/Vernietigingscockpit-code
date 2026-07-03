@@ -9,6 +9,7 @@ export type ColumnKey =
   | "code"
   | "periode"
   | "selectielijst"
+  | "resultaat"
   | "grondslag"
   | "bron_systeem";
 
@@ -23,6 +24,7 @@ export const COLUMN_LABELS: Record<ColumnKey, string> = {
   code: "Code",
   periode: "Periode",
   selectielijst: "Selectielijst",
+  resultaat: "Resultaat",
   grondslag: "Grondslag",
   bron_systeem: "Bronsysteem",
 };
@@ -39,6 +41,6 @@ export const COLUMN_GROUPS: ColumnGroup[] = [
   },
   {
     label: "Metadata",
-    keys: ["bron_id", "code", "periode", "selectielijst", "grondslag", "bron_systeem"],
+    keys: ["bron_id", "code", "periode", "selectielijst", "resultaat", "grondslag", "bron_systeem"],
   },
 ];

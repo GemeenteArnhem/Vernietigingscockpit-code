@@ -1,5 +1,6 @@
 # Nestjs specific
 /dist
+**/dist
 /node_modules
 /build
 /tmp
@@ -12,6 +13,9 @@ pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
+
+# OS metadata
+.DS_Store
 
 # dotenv environment variable files
 .env

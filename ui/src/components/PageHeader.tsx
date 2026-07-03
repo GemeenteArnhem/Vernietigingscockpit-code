@@ -5,11 +5,16 @@ type Action = {
   variant?: "primary" | "secondary";
   icon?: React.ReactNode;
   onClick?: () => void;
+  disabled?: boolean;
 };
 
 type Props = {
   titel: string;
   subtitel?: string;
+  meta?: {
+    label: string;
+    value: string;
+  }[];
 
   badge?: {
     label: string;
@@ -39,6 +44,7 @@ const badgeStyles = {
 export default function TaskHeader({
   titel,
   subtitel,
+  meta = [],
   badge,
   actions = [],
 }: Props) {
@@ -80,6 +86,17 @@ export default function TaskHeader({
           </p>
         )}
 
+        {meta.length > 0 && (
+          <dl className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+            {meta.map((item) => (
+              <div key={item.label} className="flex items-center gap-1.5">
+                <dt className="text-gray-400">{item.label}</dt>
+                <dd className="font-medium text-gray-700">{item.value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+
       </div>
 
       {/* RECHTS */}
@@ -90,7 +107,9 @@ export default function TaskHeader({
             (action, index) => (
               <button
                 key={index}
+                type="button"
                 onClick={action.onClick}
+                disabled={action.disabled}
                 className={`
                   flex
                   items-center
@@ -100,6 +119,8 @@ export default function TaskHeader({
                   rounded-md
                   text-sm
                   transition-colors
+                  disabled:cursor-not-allowed
+                  disabled:opacity-60
                   
                   ${
                     action.variant ===
