@@ -30,6 +30,7 @@ services:
       - "traefik.http.services.${API_TRAEFIK_SERVICE_NAME:-cockpit-api}.loadbalancer.server.port=3000"
     networks:
       - traefik
+      - database
     restart: unless-stopped
     healthcheck:
       test:
@@ -82,4 +83,7 @@ services:
 networks:
   traefik:
     name: ${TRAEFIK_NETWORK:-traefik}
+    external: true
+  database:
+    name: ${DATABASE_NETWORK:-intern}
     external: true
