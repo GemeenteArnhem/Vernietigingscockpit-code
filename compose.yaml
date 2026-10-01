@@ -4,6 +4,8 @@ services:
       context: .
       dockerfile: Dockerfile
       target: cockpit-api
+      args:
+        PRISMA_GENERATE_DATABASE_URL: ${PRISMA_GENERATE_DATABASE_URL:?PRISMA_GENERATE_DATABASE_URL is required}
     image: vernietigingscockpit-api:local
     container_name: ${API_CONTAINER_NAME:-cockpit-api}
     environment:

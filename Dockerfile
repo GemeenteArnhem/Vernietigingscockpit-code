@@ -10,11 +10,13 @@ RUN npm ci
 
 FROM deps AS cockpit-api-build
 
+ARG PRISMA_GENERATE_DATABASE_URL
+
 COPY apps/cockpit-api apps/cockpit-api
 
 WORKDIR /app/apps/cockpit-api
 
-RUN npm run db:generate
+RUN DATABASE_URL="${PRISMA_GENERATE_DATABASE_URL}" npm run db:generate
 RUN npm run build
 
 FROM node:22-alpine AS cockpit-api
