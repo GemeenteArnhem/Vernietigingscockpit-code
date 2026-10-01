@@ -31,6 +31,7 @@ COPY apps/cockpit-api/package.json apps/cockpit-api/package.json
 COPY --from=cockpit-api-build /app/node_modules ./node_modules
 COPY --from=cockpit-api-build /app/apps/cockpit-api/dist ./apps/cockpit-api/dist
 COPY --from=cockpit-api-build /app/apps/cockpit-api/prisma ./apps/cockpit-api/prisma
+COPY --from=cockpit-api-build /app/apps/cockpit-api/prisma.config.ts ./apps/cockpit-api/prisma.config.ts
 
 WORKDIR /app/apps/cockpit-api
 
