@@ -28,7 +28,7 @@ ENV PORT=3000
 
 COPY package.json package-lock.json ./
 COPY apps/cockpit-api/package.json apps/cockpit-api/package.json
-COPY --from=deps /app/node_modules ./node_modules
+COPY --from=cockpit-api-build /app/node_modules ./node_modules
 COPY --from=cockpit-api-build /app/apps/cockpit-api/dist ./apps/cockpit-api/dist
 COPY --from=cockpit-api-build /app/apps/cockpit-api/prisma ./apps/cockpit-api/prisma
 
