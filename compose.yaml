@@ -1,0 +1,83 @@
+services:
+  cockpit-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: cockpit-api
+    image: vernietigingscockpit-api:local
+    container_name: ${API_CONTAINER_NAME:-cockpit-api}
+    environment:
+      PORT: "3000"
+      API_HEALTHCHECK_URL: ${API_HEALTHCHECK_URL:?API_HEALTHCHECK_URL is required}
+      CORS_ORIGIN: ${API_CORS_ORIGIN:?API_CORS_ORIGIN is required}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      OIDC_ISSUER: ${OIDC_ISSUER:?OIDC_ISSUER is required}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-cockpit-api}
+      GOTENBERG_URL: ${GOTENBERG_URL:-}
+      GOTENBERG_USERNAME: ${GOTENBERG_USERNAME:-}
+      GOTENBERG_PASSWORD: ${GOTENBERG_PASSWORD:-}
+      SELECTIE_WORKER_ENABLED: ${SELECTIE_WORKER_ENABLED:-true}
+      SELECTIE_WORKER_INTERVAL_MS: ${SELECTIE_WORKER_INTERVAL_MS:-5000}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${TRAEFIK_NETWORK:-traefik}"
+      - "traefik.http.routers.${API_TRAEFIK_ROUTER_NAME:-cockpit-api}.rule=Host(`${API_DOMAIN:?API_DOMAIN is required}`)"
+      - "traefik.http.routers.${API_TRAEFIK_ROUTER_NAME:-cockpit-api}.entrypoints=${TRAEFIK_ENTRYPOINTS:-websecure}"
+      - "traefik.http.routers.${API_TRAEFIK_ROUTER_NAME:-cockpit-api}.tls=${TRAEFIK_TLS:-true}"
+      - "traefik.http.routers.${API_TRAEFIK_ROUTER_NAME:-cockpit-api}.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+      - "traefik.http.services.${API_TRAEFIK_SERVICE_NAME:-cockpit-api}.loadbalancer.server.port=3000"
+    networks:
+      - traefik
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch(process.env.API_HEALTHCHECK_URL).then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+
+  cockpit-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: cockpit-web
+      args:
+        VITE_AUTH_ENABLED: ${WEB_AUTH_ENABLED:-false}
+        VITE_OIDC_AUTHORITY: ${WEB_OIDC_AUTHORITY:?WEB_OIDC_AUTHORITY is required}
+        VITE_OIDC_CLIENT_ID: ${WEB_OIDC_CLIENT_ID:-cockpit-web}
+        VITE_OIDC_REDIRECT_URI: ${WEB_OIDC_REDIRECT_URI:?WEB_OIDC_REDIRECT_URI is required}
+        VITE_OIDC_POST_LOGOUT_REDIRECT_URI: ${WEB_OIDC_POST_LOGOUT_REDIRECT_URI:?WEB_OIDC_POST_LOGOUT_REDIRECT_URI is required}
+        VITE_OIDC_SCOPE: ${WEB_OIDC_SCOPE:-openid profile email}
+        VITE_API_BASE_URL: ${WEB_API_BASE_URL:?WEB_API_BASE_URL is required}
+    image: vernietigingscockpit-web:local
+    container_name: ${WEB_CONTAINER_NAME:-cockpit-web}
+    environment:
+      WEB_HEALTHCHECK_URL: ${WEB_HEALTHCHECK_URL:?WEB_HEALTHCHECK_URL is required}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${TRAEFIK_NETWORK:-traefik}"
+      - "traefik.http.routers.${WEB_TRAEFIK_ROUTER_NAME:-cockpit-web}.rule=Host(`${WEB_DOMAIN:?WEB_DOMAIN is required}`)"
+      - "traefik.http.routers.${WEB_TRAEFIK_ROUTER_NAME:-cockpit-web}.entrypoints=${TRAEFIK_ENTRYPOINTS:-websecure}"
+      - "traefik.http.routers.${WEB_TRAEFIK_ROUTER_NAME:-cockpit-web}.tls=${TRAEFIK_TLS:-true}"
+      - "traefik.http.routers.${WEB_TRAEFIK_ROUTER_NAME:-cockpit-web}.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+      - "traefik.http.services.${WEB_TRAEFIK_SERVICE_NAME:-cockpit-web}.loadbalancer.server.port=8080"
+    networks:
+      - traefik
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "wget -qO- \"$${WEB_HEALTHCHECK_URL}\" >/dev/null || exit 1"
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+networks:
+  traefik:
+    name: ${TRAEFIK_NETWORK:-traefik}
+    external: true
