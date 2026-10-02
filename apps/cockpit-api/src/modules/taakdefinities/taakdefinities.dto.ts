@@ -19,6 +19,7 @@ type StekkerRecord = {
 };
 
 type SelectieSummaryRecord = {
+  status: string;
   totaalKandidaten: number;
   totaalObjecten: number;
   totaalBetrokkenen: number;
@@ -126,6 +127,7 @@ export const taakdefinitieSelect = {
       },
       selecties: {
         select: {
+          status: true,
           totaalKandidaten: true,
           totaalObjecten: true,
           totaalBetrokkenen: true,

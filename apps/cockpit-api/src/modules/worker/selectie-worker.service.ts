@@ -66,7 +66,7 @@ type StekkerObjectenResponse = {
   offset: number;
   limit: number;
   totaal: number;
-  objecten: StekkerKandidaat[];
+  items: StekkerKandidaat[];
 };
 
 type StekkerVernietigingResponse = {
@@ -100,11 +100,8 @@ type StekkerVernietigingResultaat = {
   correlatieId?: string;
 };
 
-type StekkerVernietigingResultatenResponse = {
-  vernietigingId: string;
-  offset: number;
-  limit: number;
-  totaal: number;
+type StekkerBatchResultaat = {
+  batchNummer: number;
   resultaten: StekkerVernietigingResultaat[];
 };
 
@@ -222,14 +219,22 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
           }),
         ]);
       } catch (error) {
-        await this.prisma.client.selectie
-          .update({
-            where: { id: payload.selectieId },
-            data: {
-              status: "FAILED",
-              fout: describeError(error),
-            },
-          })
+        await this.prisma.client
+          .$transaction([
+            this.prisma.client.selectie.update({
+              where: { id: payload.selectieId },
+              data: {
+                status: "FAILED",
+                fout: describeError(error),
+              },
+            }),
+            this.prisma.client.outbox.update({
+              where: { id: job.id },
+              data: {
+                verzondenOp: new Date(),
+              },
+            }),
+          ])
           .catch(() => undefined);
         this.logger.warn(`selectie:start ${job.id} mislukt: ${describeError(error)}`);
       }
@@ -284,6 +289,15 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
           },
         });
       } catch (error) {
+        await this.prisma.client.selectie
+          .update({
+            where: { id: selectie.id },
+            data: {
+              status: "FAILED",
+              fout: describeError(error),
+            },
+          })
+          .catch(() => undefined);
         this.logger.warn(
           `poll selectie ${selectie.id} mislukt: ${describeError(error)}`
         );
@@ -385,9 +399,9 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
 
       total = page.totaal;
 
-      if (page.objecten.length > 0) {
+      if (page.items.length > 0) {
         await this.prisma.client.$transaction(
-          page.objecten.map((kandidaat) =>
+          page.items.map((kandidaat) =>
             this.prisma.client.vernietigingskandidaat.upsert({
               where: {
                 selectieId_kandidaatId: {
@@ -405,8 +419,8 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
         );
       }
 
-      imported += page.objecten.length;
-      offset += page.objecten.length;
+      imported += page.items.length;
+      offset += page.items.length;
     } while (total !== null && imported < total && offset > 0);
 
     if (total !== null && imported !== total) {
@@ -457,7 +471,8 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
             cockpitTaakId: payload.taakinstantieId,
             besluitReferentie: `taak-${payload.taakinstantieId}`,
             vernietigingsdossierId: payload.taakinstantieId,
-          }
+          },
+          `vernietiging-start-${payload.selectieId}`
         );
         const batches = chunk(payload.kandidaten, 100);
 
@@ -471,7 +486,8 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
                 vernietigingskandidaatId: kandidaat.kandidaatId,
                 bronId: kandidaat.bronId,
               })),
-            }
+            },
+            `vernietiging-batch-${vernietiging.vernietigingId}-${index + 1}`
           );
         }
 
@@ -481,15 +497,18 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
           {
             aantalBatches: batches.length,
             aantalKandidaten: payload.kandidaten.length,
-          }
+          },
+          `vernietiging-vrijgeven-${vernietiging.vernietigingId}`
         );
-        const resultaten = await this.importVernietigingResultaten(
-          selectie.stekkerConfiguratie.baseUrl,
-          vrijgegeven.vernietigingId
-        );
+        const resultaten = isVernietigingAfgerond(vrijgegeven.status)
+          ? await this.importVernietigingResultaten(
+              selectie.stekkerConfiguratie.baseUrl,
+              vrijgegeven.vernietigingId
+            )
+          : null;
         const resultaatPayload = {
           ...vrijgegeven,
-          resultaten,
+          ...(resultaten ? { resultaten } : {}),
         };
 
         await this.prisma.client.$transaction([
@@ -560,7 +579,7 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
           selectie.externVernietigingId
         );
         const resultaten =
-          response.status === "COMPLETED" || response.status === "PARTIAL"
+          isVernietigingAfgerond(response.status)
             ? await this.importVernietigingResultaten(
                 selectie.stekkerConfiguratie.baseUrl,
                 selectie.externVernietigingId
@@ -592,29 +611,14 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async importVernietigingResultaten(baseUrl: string, vernietigingId: string) {
-    const limit = 500;
-    let offset = 0;
-    let total: number | null = null;
-    const resultaten: StekkerVernietigingResultaat[] = [];
+    const batches = await this.getVernietigingBatches(baseUrl, vernietigingId);
 
-    do {
-      const page = await this.getVernietigingResultaten(baseUrl, vernietigingId, {
-        offset,
-        limit,
-      });
-
-      total = page.totaal;
-      resultaten.push(...page.resultaten);
-      offset += page.resultaten.length;
-    } while (total !== null && resultaten.length < total && offset > 0);
-
-    if (total !== null && resultaten.length !== total) {
-      throw new Error(
-        `Aantal geimporteerde vernietigingsresultaten (${resultaten.length}) komt niet overeen met totaal (${total}).`
-      );
-    }
-
-    return resultaten;
+    return batches.flatMap((batch) =>
+      batch.resultaten.map((resultaat) => ({
+        ...resultaat,
+        batchNummer: resultaat.batchNummer ?? batch.batchNummer,
+      }))
+    );
   }
 
   private async updateTaakStatusNaVernietiging(taakinstantieId: string) {
@@ -696,10 +700,12 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
       cockpitTaakId: string;
       besluitReferentie: string;
       vernietigingsdossierId: string;
-    }
+    },
+    idempotencyKey: string
   ) {
     return this.requestVernietiging(`${baseUrl}/vernietigingen`, {
       method: "POST",
+      headers: mutationHeaders(idempotencyKey),
       body: JSON.stringify(body),
     });
   }
@@ -713,7 +719,8 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
         vernietigingskandidaatId: string;
         bronId: string;
       }>;
-    }
+    },
+    idempotencyKey: string
   ) {
     return this.requestJson<unknown>(
       `${baseUrl}/vernietigingen/${encodeURIComponent(
@@ -721,6 +728,7 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
       )}/batches`,
       {
         method: "POST",
+        headers: mutationHeaders(idempotencyKey),
         body: JSON.stringify(body),
       }
     );
@@ -732,7 +740,8 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
     body: {
       aantalBatches: number;
       aantalKandidaten: number;
-    }
+    },
+    idempotencyKey: string
   ) {
     return this.requestVernietiging(
       `${baseUrl}/vernietigingen/${encodeURIComponent(
@@ -740,6 +749,7 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
       )}/vrijgeven`,
       {
         method: "POST",
+        headers: mutationHeaders(idempotencyKey),
         body: JSON.stringify(body),
       }
     );
@@ -754,15 +764,11 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  private async getVernietigingResultaten(
-    baseUrl: string,
-    vernietigingId: string,
-    paging: { offset: number; limit: number }
-  ) {
-    return this.requestJson<StekkerVernietigingResultatenResponse>(
+  private async getVernietigingBatches(baseUrl: string, vernietigingId: string) {
+    return this.requestJson<StekkerBatchResultaat[]>(
       `${baseUrl}/vernietigingen/${encodeURIComponent(
         vernietigingId
-      )}/resultaten?offset=${paging.offset}&limit=${paging.limit}`,
+      )}/batches`,
       {
         method: "GET",
       }
@@ -781,7 +787,9 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
     const response = await fetch(url, {
       ...init,
       headers: {
+        ...(init.headers as Record<string, string> | undefined),
         "Content-Type": "application/json",
+        Accept: "application/json",
       },
     });
 
@@ -798,7 +806,49 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
 }
 
 function normalizeStatus(response: StekkerSelectieResponse) {
-  return response.selectiestatus ?? response.status ?? "RUNNING";
+  const rawStatus = response.selectiestatus ?? response.status;
+  const status = rawStatus?.trim().toUpperCase().replace(/[\s-]+/g, "_");
+
+  if (response.foutmelding && !status) {
+    return "FAILED";
+  }
+
+  switch (status) {
+    case "GEIMPORTEERD":
+    case "READY":
+    case "COMPLETED":
+    case "COMPLETE":
+    case "VOLTOOID":
+      return "READY";
+    case "AANGEVRAAGD":
+    case "QUEUED":
+    case "PENDING":
+      return "AANGEVRAAGD";
+    case "RUNNING":
+    case "BEZIG":
+    case "PROCESSING":
+      return "RUNNING";
+    case "FAILED":
+    case "FAIL":
+    case "ERROR":
+    case "FOUT":
+    case "MISLUKT":
+    case "FETCH_FAILED":
+      return "FAILED";
+    default:
+      return response.foutmelding ? "FAILED" : (rawStatus ?? "RUNNING");
+  }
+}
+
+function isVernietigingAfgerond(status: string) {
+  return status === "COMPLETED" || status === "PARTIAL" || status === "FAILED";
+}
+
+function mutationHeaders(idempotencyKey: string) {
+  return {
+    "Idempotency-Key": idempotencyKey,
+    "X-Correlation-ID": idempotencyKey,
+  };
 }
 
 function parseDate(value?: string | null) {
@@ -878,8 +928,47 @@ function chunk<T>(items: T[], size: number) {
 
 function describeError(error: unknown) {
   if (error instanceof Error) {
-    return error.message;
+    const cause = formatErrorCause(error.cause);
+
+    return cause ? `${error.message}: ${cause}` : error.message;
   }
 
   return "Onbekende fout.";
+}
+
+function formatErrorCause(cause: unknown): string | null {
+  if (!cause) {
+    return null;
+  }
+
+  if (cause instanceof Error) {
+    return cause.message;
+  }
+
+  if (typeof cause === "object") {
+    const details = cause as {
+      code?: unknown;
+      errno?: unknown;
+      syscall?: unknown;
+      address?: unknown;
+      port?: unknown;
+      message?: unknown;
+    };
+    const parts = [
+      details.code,
+      details.errno,
+      details.syscall,
+      details.address,
+      details.port,
+      details.message,
+    ]
+      .filter((part): part is string | number => {
+        return typeof part === "string" || typeof part === "number";
+      })
+      .map(String);
+
+    return parts.length > 0 ? parts.join(" ") : JSON.stringify(cause);
+  }
+
+  return String(cause);
 }

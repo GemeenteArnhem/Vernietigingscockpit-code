@@ -35,6 +35,8 @@ type SelectionActionId =
   | "herkansen"
   | "naar-beoordeling";
 
+const EMPTY_CONNECTORS: TaskExecutionConnector[] = [];
+
 function getSelectieStatusLabel(status: TaskExecutionConnectorSelectionStatus) {
   switch (status) {
     case "NIET_GESTART":
@@ -95,6 +97,7 @@ export default function RecordSelectionPage() {
     retour: 0,
     uitgesloten: 0,
   });
+  const [apiTaskName, setApiTaskName] = useState<string | null>(null);
   const [isStartingSelection, setIsStartingSelection] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [continuePromptDismissed, setContinuePromptDismissed] = useState(false);
@@ -106,7 +109,7 @@ export default function RecordSelectionPage() {
     "selectie-ophalen"
   );
 
-  const connectors = apiConnectors ?? [];
+  const connectors = apiConnectors ?? EMPTY_CONNECTORS;
   const summaryStats = apiSummaryStats;
 
   const selectedConnector =
@@ -148,6 +151,13 @@ export default function RecordSelectionPage() {
     hasApiData &&
     allConnectorsComplete &&
     !continuePromptDismissed;
+  const effectiveSelectedAction: SelectionActionId = allConnectorsComplete
+    ? "naar-beoordeling"
+    : selectedConnectorNeedsRetry
+      ? "herkansen"
+      : hasUnstartedSelection
+        ? "selectie-ophalen"
+        : selectedAction;
 
   const navigateToReview = useCallback(() => {
     navigate(`/taak/${taakId}/taakuitvoering/${id}/beoordeling`);
@@ -162,6 +172,7 @@ export default function RecordSelectionPage() {
 
     setApiConnectors(selection.connectors);
     setApiSummaryStats(selection.summaryStats);
+    setApiTaskName(selection.taak.naam);
     setSelectedConnectorId((current) => current ?? selection.connectors[0]?.id ?? null);
     setApiError(null);
   }, [accessToken, id]);
@@ -226,28 +237,40 @@ export default function RecordSelectionPage() {
   }, [continueCountdown, continuePromptOpen, navigateToReview]);
 
   const handlePrimaryAction = useCallback(async () => {
-    if (selectedAction === "naar-beoordeling") {
+    if (effectiveSelectedAction === "naar-beoordeling") {
       navigateToReview();
       return;
     }
 
     if (
-      selectedAction === "herkansen" &&
+      effectiveSelectedAction === "herkansen" &&
       !selectedConnectorNeedsRetry
     ) {
       return;
     }
 
-    if (selectedAction === "selectie-ophalen" && accessToken && id) {
+    if (
+      (effectiveSelectedAction === "selectie-ophalen" ||
+        effectiveSelectedAction === "herkansen") &&
+      accessToken &&
+      id
+    ) {
       setIsStartingSelection(true);
       setApiError(null);
 
       try {
-        const selection = await startTaskSelection(accessToken, id);
+        const retryStekkerId =
+          effectiveSelectedAction === "herkansen"
+            ? selectedConnector?.id
+            : undefined;
+        const selection = await startTaskSelection(accessToken, id, {
+          stekkerId: retryStekkerId,
+        });
 
         setApiConnectors(selection.connectors);
         setApiSummaryStats(selection.summaryStats);
-        setSelectedConnectorId(selection.connectors[0]?.id ?? null);
+        setApiTaskName(selection.taak.naam);
+        setSelectedConnectorId(retryStekkerId ?? selection.connectors[0]?.id ?? null);
         setContinuePromptDismissed(false);
         setContinueCountdown(5);
       } catch (caught) {
@@ -262,9 +285,10 @@ export default function RecordSelectionPage() {
     navigateToReview();
   }, [
     accessToken,
+    effectiveSelectedAction,
     id,
     navigateToReview,
-    selectedAction,
+    selectedConnector,
     selectedConnectorNeedsRetry,
   ]);
 
@@ -283,7 +307,7 @@ export default function RecordSelectionPage() {
         event.preventDefault();
 
         if (
-          selectedAction === "herkansen" &&
+          effectiveSelectedAction === "herkansen" &&
           !selectedConnectorNeedsRetry
         ) {
           return;
@@ -295,7 +319,7 @@ export default function RecordSelectionPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handlePrimaryAction, selectedAction, selectedConnectorNeedsRetry]);
+  }, [effectiveSelectedAction, handlePrimaryAction, selectedConnectorNeedsRetry]);
 
   if (!selectedConnector) {
     return (
@@ -380,7 +404,7 @@ export default function RecordSelectionPage() {
                 disabled={
                   isStartingSelection ||
                   hasRunningSelection ||
-                  (selectedAction === "herkansen" &&
+                  (effectiveSelectedAction === "herkansen" &&
                     !selectedConnectorNeedsRetry)
                 }
                 onClick={handlePrimaryAction}
@@ -405,7 +429,7 @@ export default function RecordSelectionPage() {
                   icon={<CheckCircle2 size={18} />}
                   tone="success"
                   density="compact"
-                  selected={selectedAction === "naar-beoordeling"}
+                  selected={effectiveSelectedAction === "naar-beoordeling"}
                   onClick={() => setSelectedAction("naar-beoordeling")}
                 />
               ) : hasRunningSelection ? (
@@ -421,7 +445,7 @@ export default function RecordSelectionPage() {
                       icon={<ArrowRight size={18} />}
                       tone="primary"
                       density="compact"
-                      selected={selectedAction === "selectie-ophalen"}
+                      selected={effectiveSelectedAction === "selectie-ophalen"}
                       onClick={() => setSelectedAction("selectie-ophalen")}
                     />
                   ) : null}
@@ -433,7 +457,7 @@ export default function RecordSelectionPage() {
                       icon={<RotateCcw size={18} />}
                       tone="warning"
                       density="compact"
-                      selected={selectedAction === "herkansen"}
+                      selected={effectiveSelectedAction === "herkansen"}
                       onClick={() => setSelectedAction("herkansen")}
                     />
                   ) : null}
@@ -455,6 +479,7 @@ export default function RecordSelectionPage() {
       <ContentPanel>
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <TaskExecutionHeader
+            title={apiTaskName ?? undefined}
             activeStep="SELECTIE"
             summaryStats={summaryStats}
             metaItems={[]}

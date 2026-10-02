@@ -33,7 +33,10 @@ export function taakdefinitieActies(
 }
 
 export function taakinstantieActies(
-  record: MedewerkerBoundRecord & { status: string },
+  record: MedewerkerBoundRecord & {
+    status: string;
+    selecties?: Array<unknown>;
+  },
   context: {
     roles: Role[];
     medewerkerId: string | null;
@@ -43,8 +46,9 @@ export function taakinstantieActies(
   const isRecordmanager =
     context.roles.includes("recordmanager") &&
     context.medewerkerId === record.recordmanager.id;
+  const selectieNogNietGestart = (record.selecties?.length ?? 0) === 0;
 
-  if (isRecordmanager && record.status === "init") {
+  if (isRecordmanager && record.status === "init" && selectieNogNietGestart) {
     acties.push("selectie.starten");
   }
 

@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 type BreadcrumbItem = {
   label: string;
   href?: string;
@@ -6,14 +8,21 @@ type BreadcrumbItem = {
 type Props = {
   title: string;
   breadcrumbs?: BreadcrumbItem[];
+  icon?: ReactNode;
 };
 
-export default function PageHeader({ title, breadcrumbs }: Props) {
+export default function PageHeader({ title, breadcrumbs, icon }: Props) {
   return (
     <div className="flex items-center justify-between">
 
       {/* LINKS: title + breadcrumbs in één lijn */}
       <div className="flex items-center gap-3">
+        {icon ? (
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-700">
+            {icon}
+          </div>
+        ) : null}
+
         <h1 className="text-xl font-semibold text-gray-900">
           {title}
         </h1>

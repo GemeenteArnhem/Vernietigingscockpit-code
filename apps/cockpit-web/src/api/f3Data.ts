@@ -376,7 +376,7 @@ export async function getTaskSelection(accessToken: string, taskInstanceId: stri
 export async function startTaskSelection(
   accessToken: string,
   taskInstanceId: string,
-  peildatum?: string | null
+  input: { peildatum?: string | null; stekkerId?: string | null } = {}
 ) {
   const selectie = await apiRequest<ApiTaakSelectie>(
     `/taken/${taskInstanceId}/selectie`,
@@ -386,7 +386,7 @@ export async function startTaskSelection(
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ peildatum }),
+      body: JSON.stringify(input),
     }
   );
 
@@ -431,6 +431,7 @@ export async function getDestructionResults(
   const rows = response.resultaten.map(mapDestructionResult);
 
   return {
+    taak: response.taak,
     rows,
     contexts: response.resultaten.map((result) =>
       mapDestructionResultContext(result, response.taak)
@@ -652,6 +653,7 @@ function mapTaakToDashboardRecord(taak: ApiTaakinstantie): DashboardTaskRecord {
   return {
     id: taak.id,
     taakdefinitieId: taak.taakdefinitie?.id,
+    taakdefinitieNaam: taak.taakdefinitie?.naam,
     naam: taak.naam,
     subtitle: taak.gestartOp
       ? `Gestart ${startdatum}`

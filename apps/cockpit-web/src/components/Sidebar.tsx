@@ -34,57 +34,49 @@ const ShieldIcon = () => (
 );
 
 
-function shouldAutoCollapse(pathname: string) {
-  return (
-    /^\/taak\/[^/]+$/.test(pathname) ||
-    pathname.includes("/dashboard") ||
-    pathname.includes("/selectie") ||
-    pathname.includes("/beoordeling") ||
-    pathname.includes("/resultaat") ||
-    pathname.includes("/uitvoering") ||
-    pathname.includes("/accordering")
-  );
-}
-
 export default function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const collapseTimerRef = useRef<number | null>(null);
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
 
-  useEffect(() => {
-    if (collapseTimerRef.current !== null) {
-      window.clearTimeout(collapseTimerRef.current);
-    }
-
-    setIsExpanded(true);
-
-    if (shouldAutoCollapse(location.pathname)) {
-      collapseTimerRef.current = window.setTimeout(() => {
-        setIsExpanded(false);
-        collapseTimerRef.current = null;
-      }, AUTO_COLLAPSE_DELAY_MS);
-    }
-
-    return () => {
-      if (collapseTimerRef.current !== null) {
-        window.clearTimeout(collapseTimerRef.current);
-        collapseTimerRef.current = null;
-      }
-    };
-  }, [location.pathname]);
-
-  const handleToggle = () => {
+  const clearCollapseTimer = () => {
     if (collapseTimerRef.current !== null) {
       window.clearTimeout(collapseTimerRef.current);
       collapseTimerRef.current = null;
     }
+  };
 
-    setIsExpanded((current) => !current);
+  const collapseWithDelay = () => {
+    clearCollapseTimer();
+
+    collapseTimerRef.current = window.setTimeout(() => {
+      setIsExpanded(false);
+      collapseTimerRef.current = null;
+    }, AUTO_COLLAPSE_DELAY_MS);
+  };
+
+  useEffect(() => {
+    return () => {
+      clearCollapseTimer();
+    };
+  }, []);
+
+  const revealSidebar = () => {
+    clearCollapseTimer();
+
+    setIsExpanded(true);
+  };
+
+  const navigateFromSidebar = (path: string) => {
+    revealSidebar();
+    navigate(path);
   };
 
   return (
     <div
+      onMouseEnter={revealSidebar}
+      onMouseLeave={collapseWithDelay}
       className={`relative h-full shrink-0 border-r border-gray-200 bg-white shadow-sm transition-[width] duration-200 ease-out ${
         isExpanded ? "w-64" : "w-[4.5rem]"
       }`}
@@ -92,7 +84,7 @@ export default function Sidebar() {
       <div className="flex h-full w-full flex-col overflow-hidden">
         <button
           type="button"
-          onClick={handleToggle}
+          onClick={revealSidebar}
           className="mx-2 mt-2 flex items-center gap-3 rounded-md px-4 py-2 text-left hover:bg-gray-50"
         >
           <div className="flex h-5 w-5 shrink-0 items-center justify-center">
@@ -114,7 +106,7 @@ export default function Sidebar() {
             icon={<LayoutDashboard />}
             active={location.pathname.startsWith("/dashboard")}
             expanded={isExpanded}
-            onClick={() => navigate("/dashboard")}
+            onClick={() => navigateFromSidebar("/dashboard")}
           />
 
           <SidebarItem
@@ -125,7 +117,7 @@ export default function Sidebar() {
               location.pathname.startsWith("/taak/")
             }
             expanded={isExpanded}
-            onClick={() => navigate("/taak/1")}
+            onClick={() => navigateFromSidebar("/taak/1")}
           />
 
           <SidebarItem
@@ -139,7 +131,7 @@ export default function Sidebar() {
         <div className="flex-1" />
 
         <div className="mt-auto">
-          <SidebarFooter expanded={isExpanded} />
+          <SidebarFooter expanded={isExpanded} onUserClick={revealSidebar} />
         </div>
       </div>
     </div>

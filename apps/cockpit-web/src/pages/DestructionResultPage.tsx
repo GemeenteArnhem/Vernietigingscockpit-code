@@ -614,6 +614,7 @@ export default function DestructionResultPage() {
   const [apiContexts, setApiContexts] = useState<DestructionResultContext[] | null>(null);
   const [apiSummaryStats, setApiSummaryStats] = useState(EMPTY_SUMMARY_STATS);
   const [apiMetaItems, setApiMetaItems] = useState<Array<{ label: string; value: string }>>([]);
+  const [apiTaskName, setApiTaskName] = useState<string | null>(null);
   const [verklaringBeschikbaar, setVerklaringBeschikbaar] = useState(false);
   const collator = useMemo(
     () => new Intl.Collator("nl", { numeric: true, sensitivity: "base" }),
@@ -628,7 +629,7 @@ export default function DestructionResultPage() {
     let isCurrent = true;
 
     getDestructionResults(accessToken, id)
-      .then(({ rows, contexts, summaryStats, metaItems }) => {
+      .then(({ taak, rows, contexts, summaryStats, metaItems }) => {
         if (!isCurrent) {
           return;
         }
@@ -637,6 +638,7 @@ export default function DestructionResultPage() {
         setApiContexts(contexts);
         setApiSummaryStats(summaryStats);
         setApiMetaItems(metaItems);
+        setApiTaskName(taak.naam);
         setSelectedId((current) => current ?? rows[0]?.id ?? null);
       })
       .catch(() => {
@@ -645,6 +647,7 @@ export default function DestructionResultPage() {
           setApiContexts(null);
           setApiSummaryStats(EMPTY_SUMMARY_STATS);
           setApiMetaItems([]);
+          setApiTaskName(null);
         }
       });
 
@@ -1024,6 +1027,7 @@ export default function DestructionResultPage() {
 
       <ContentPanel>
         <TaskExecutionHeader
+          title={apiTaskName ?? undefined}
           activeStep="RESULTAAT"
           summaryStats={apiSummaryStats}
           metaItems={apiMetaItems}

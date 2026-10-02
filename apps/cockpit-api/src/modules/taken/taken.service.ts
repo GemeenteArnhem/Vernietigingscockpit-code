@@ -23,6 +23,7 @@ import type {
 
 export type StartSelectieInput = {
   peildatum?: string | null;
+  stekkerId?: string | null;
 };
 
 @Injectable()
@@ -102,6 +103,7 @@ export class TakenService {
           select: {
             id: true,
             status: true,
+            stekkerId: true,
           },
         },
       },
@@ -109,10 +111,6 @@ export class TakenService {
 
     if (taak.status !== "init") {
       throw new BadRequestException("Selectie kan alleen starten vanuit status init.");
-    }
-
-    if (taak.selecties.length > 0) {
-      throw new BadRequestException("Voor deze taak is de selectie al gestart.");
     }
 
     const stekkers = taak.taakdefinitie.stekkers.filter(
@@ -132,6 +130,114 @@ export class TakenService {
     }
 
     const effectievePeildatum = peildatum ?? taak.peildatum;
+
+    if (taak.selecties.length > 0) {
+      const retryStekkerId = input.stekkerId?.trim();
+
+      if (!retryStekkerId) {
+        throw new BadRequestException(
+          "Voor deze taak is de selectie al gestart. Kies een gefaalde stekker om te herkansen."
+        );
+      }
+
+      const bestaandeSelectie = taak.selecties.find(
+        (selectie) => selectie.stekkerId === retryStekkerId
+      );
+
+      if (!bestaandeSelectie) {
+        throw new BadRequestException(
+          "Voor deze stekker is geen selectie gevonden om te herkansen."
+        );
+      }
+
+      if (bestaandeSelectie.status !== "FAILED") {
+        throw new BadRequestException(
+          "Alleen een gefaalde selectie kan opnieuw worden geprobeerd."
+        );
+      }
+
+      const taakStekker = stekkers.find(
+        ({ stekkerId }) => stekkerId === retryStekkerId
+      );
+
+      if (!taakStekker) {
+        throw new BadRequestException(
+          "Deze stekker is niet actief voor deze taakdefinitie."
+        );
+      }
+
+      const configuratie = taakStekker.stekker.configuraties[0];
+
+      await this.prisma.client.$transaction(async (tx) => {
+        await tx.vernietigingskandidaat.deleteMany({
+          where: {
+            selectieId: bestaandeSelectie.id,
+          },
+        });
+
+        await tx.selectie.update({
+          where: {
+            id: bestaandeSelectie.id,
+          },
+          data: {
+            stekkerConfiguratieId: configuratie.id,
+            status: "AANGEVRAAGD",
+            externSelectieId: null,
+            peildatum: effectievePeildatum,
+            selectietijdstip: new Date(),
+            totaalKandidaten: 0,
+            totaalObjecten: 0,
+            totaalBetrokkenen: 0,
+            stekkerversie: null,
+            configuratieversie: String(configuratie.versie),
+            apiVersie: null,
+            geimporteerd: 0,
+            fout: null,
+          },
+        });
+
+        await tx.outbox.create({
+          data: {
+            taakinstantieId: taak.id,
+            queue: "selectie",
+            jobNaam: "selectie:start",
+            payload: {
+              taakinstantieId: taak.id,
+              selectieId: bestaandeSelectie.id,
+              stekkerId: taakStekker.stekkerId,
+              stekkerConfiguratieId: configuratie.id,
+              peildatum: formatDateOnly(effectievePeildatum),
+              selectieparameters: taakStekker.selectieparameters,
+            },
+          },
+        });
+
+        await this.createAuditEvent(tx, user, {
+          taakinstantieId: taak.id,
+          actie: "SELECTION_RETRY_REQUESTED",
+          entiteitType: "selectie",
+          entiteitId: bestaandeSelectie.id,
+          details: {
+            selectieId: bestaandeSelectie.id,
+            stekkerId: taakStekker.stekkerId,
+            peildatum: formatDateOnly(effectievePeildatum),
+          },
+        });
+      });
+
+      const refreshed = await this.prisma.client.taakinstantie.findUniqueOrThrow({
+        where: {
+          id: taakinstantieId,
+        },
+        select: taakSelectieSelect,
+      });
+
+      return {
+        ...mapTaakSelectie(refreshed),
+        aangemaakteSelecties: [bestaandeSelectie.id],
+      };
+    }
+
     const selectieIds = await this.prisma.client.$transaction(async (tx) => {
       const createdSelecties: string[] = [];
 

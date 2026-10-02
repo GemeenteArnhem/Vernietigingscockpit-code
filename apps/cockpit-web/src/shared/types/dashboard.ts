@@ -14,6 +14,7 @@ export type DashboardWorkflowStepId =
 export type DashboardTaskRecord = {
   id: string;
   taakdefinitieId?: string;
+  taakdefinitieNaam?: string;
   naam: string;
   subtitle: string;
   status: TaskExecutionStatus;

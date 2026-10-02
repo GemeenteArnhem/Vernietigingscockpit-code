@@ -12,10 +12,12 @@ import { formatRoles } from "../auth/sessionUser";
 
 type Props = {
   expanded?: boolean;
+  onUserClick?: () => void;
 };
 
 export default function SidebarFooter({
   expanded = false,
+  onUserClick,
 }: Props) {
   const { user, signOut } = useSessionUser();
 
@@ -23,9 +25,13 @@ export default function SidebarFooter({
     <div className="border-t border-gray-200 px-2 py-4">
 
       {/* USER */}
-      <div className={`mb-4 flex w-full cursor-pointer items-center rounded-md py-2 hover:bg-gray-50 ${
+      <button
+        type="button"
+        onClick={onUserClick}
+        className={`mb-4 flex w-full cursor-pointer items-center rounded-md py-2 text-left hover:bg-gray-50 ${
         expanded ? "justify-between gap-3 px-2" : "justify-start px-4"
-      }`}>
+      }`}
+      >
 
         <div className="flex min-w-0 items-center gap-3">
           {/* avatar */}
@@ -51,7 +57,7 @@ export default function SidebarFooter({
         >
           <ChevronDown className="w-4 h-4" />
         </span>
-      </div>
+      </button>
 
       {/* MENU ITEMS */}
       <div className="flex flex-col gap-1">

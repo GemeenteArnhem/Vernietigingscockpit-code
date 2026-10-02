@@ -46,6 +46,8 @@ type DashboardDecision = {
   tone: "primary" | "success" | "warning";
 };
 
+const EMPTY_DASHBOARD_ROWS: DashboardTaskRecord[] = [];
+
 function getReminderLabel(
   record: DashboardTaskRecord
 ) {
@@ -77,7 +79,7 @@ function getDashboardDecisions(
     const decisions: DashboardDecision[] = [
       {
         id: "openen",
-        title: "Open taak",
+        title: "Open taakuitvoering",
         icon: <FolderOpen size={18} />,
         tone: "primary",
       },
@@ -99,7 +101,7 @@ function getDashboardDecisions(
     return [
       {
         id: "openen",
-        title: "Open taak",
+        title: "Open taakuitvoering",
         icon: <FolderOpen size={18} />,
         tone: "primary",
       },
@@ -134,7 +136,7 @@ function getDashboardDecisions(
   return [
     {
       id: "openen",
-      title: "Open taak",
+      title: "Open taakuitvoering",
       icon: <FolderOpen size={18} />,
       tone: "primary",
     },
@@ -226,7 +228,7 @@ export default function DashboardPage() {
     };
   }, [accessToken, scope]);
 
-  const rows = apiRows ?? [];
+  const rows = apiRows ?? EMPTY_DASHBOARD_ROWS;
 
   const tabs = useMemo<
     RecordPaneBarTab[]
@@ -407,6 +409,10 @@ export default function DashboardPage() {
             value: selectedRecord.stap,
           },
           {
+            label: "Taakdefinitie",
+            value: selectedRecord.taakdefinitieNaam ?? "-",
+          },
+          {
             label: "Voortgang",
             value: `${selectedRecord.voortgang}%`,
           },
@@ -436,8 +442,8 @@ export default function DashboardPage() {
               selectedRecord.frequentie,
           },
           {
-            label: "Omvang dossiers",
-            value: `${selectedRecord.dossierTelling} dossiers`,
+            label: "#Vernietigingskandidaten",
+            value: selectedRecord.dossierTelling.toLocaleString("nl-NL"),
           },
           {
             label: "Dagen in stap",
@@ -507,6 +513,34 @@ export default function DashboardPage() {
       })
     );
   }, [navigate, selectedRecord]);
+
+  const openTaskExecution = useCallback(
+    (record: DashboardTaskRecord) => {
+      navigate(
+        getTaskExecutionRoute({
+          taakdefinitieId: record.taakdefinitieId ?? record.id,
+          taakinstantieId: record.id,
+          stap: record.stap,
+          stapId: record.stapId,
+        })
+      );
+    },
+    [navigate]
+  );
+
+  const handleRowOpen = useCallback(
+    (recordId: string) => {
+      const record = visibleRows.find((row) => row.id === recordId);
+
+      if (!record) {
+        return;
+      }
+
+      setSelectedId(record.id);
+      openTaskExecution(record);
+    },
+    [openTaskExecution, visibleRows]
+  );
 
   useEffect(() => {
     const handleKeyDown = (
@@ -635,22 +669,17 @@ export default function DashboardPage() {
             selectedRecord ? (
               <ActionPanelButtonGroup>
                 <ActionPanelButton
-                  label={
-                    activeDecision ===
-                      "herinneren" ||
-                    activeDecision ===
-                      "herplannen"
-                      ? "Actie uitvoeren"
-                      : "Taak openen"
-                  }
+                  label="Actie uitvoeren"
                   variant="primary"
                   onClick={handlePrimaryAction}
                 />
-                <ActionPanelButton
-                  label="Taak openen"
-                  variant="secondary"
-                  onClick={handleSecondaryAction}
-                />
+                {activeDecision !== "openen" ? (
+                  <ActionPanelButton
+                    label="Taakuitvoering openen"
+                    variant="secondary"
+                    onClick={handleSecondaryAction}
+                  />
+                ) : null}
               </ActionPanelButtonGroup>
             ) : undefined
           }
@@ -694,19 +723,20 @@ export default function DashboardPage() {
             { keyLabel: "A", label: "Vorige" },
             { keyLabel: "D", label: "Volgende" },
             { keyLabel: "W", label: "Actie uitvoeren" },
-            { keyLabel: "O", label: "Taak openen" },
+            { keyLabel: "O", label: "Taakuitvoering openen" },
           ]}
         />
       </AppShellPortal>
 
       <ContentPanel>
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <TaskExecutionHeader
             title="Dashboard"
             activeStep="BEOORDELING"
             summaryStats={{ teBeoordelen: 0, akkoord: 0, retour: 0, uitgesloten: 0 }}
             metaItems={[]}
             showStatusOverview={false}
+            showTaskContext={false}
           />
 
           <div className="flex min-h-0 min-w-0 w-full flex-1 flex-col bg-white">
@@ -719,7 +749,7 @@ export default function DashboardPage() {
               <DashboardRecordPanel
                 recordId={activeRecordId}
                 rows={dashboardTableRows}
-                onSelect={setSelectedId}
+                onSelect={handleRowOpen}
                 searchValue={search}
                 onSearchChange={setSearch}
                 tabs={tabs}

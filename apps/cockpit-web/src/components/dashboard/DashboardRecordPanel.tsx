@@ -7,9 +7,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import ContentPanel, {
-  ContentPanelEmptyState,
-} from "../ContentPanel";
+import { ContentPanelEmptyState } from "../ContentPanel";
 import type {
   RecordPaneBarFilter,
   RecordPaneBarTab,
@@ -171,21 +169,8 @@ export default function DashboardRecordPanel({
     [activeFilter, activeFilterLabel, activeTab, activeTabLabel, onFilterChange, onTabChange]
   );
 
-  if (rows.length === 0) {
-    return (
-      <ContentPanel>
-        <ContentPanelEmptyState
-          icon={<FolderArchive size={24} />}
-          title="Geen taken binnen deze selectie"
-          description="Pas je zoekopdracht of filters aan om taakuitvoeringen te tonen."
-        />
-      </ContentPanel>
-    );
-  }
-
   return (
-    <ContentPanel className="bg-white">
-      <section className="flex min-h-0 flex-1 flex-col bg-white">
+    <section className="flex h-full min-h-0 flex-col bg-white">
         <div className="sticky top-0 z-20 border-b border-slate-200 bg-white">
           <div className="space-y-3 px-4 py-3">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -312,23 +297,30 @@ export default function DashboardRecordPanel({
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto">
-          <table className="w-full table-fixed text-sm">
-            <thead className="bg-white">
-              <tr className="border-b border-slate-200">
-                <th className="w-[34%] bg-white px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  Taakuitvoering
-                </th>
-                <th className="w-[30%] bg-white px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  Voortgang
-                </th>
-                <th className="w-[18%] bg-white px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  Recordmanager
-                </th>
-                <th className="w-[18%] bg-white px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  Startdatum
-                </th>
-              </tr>
-            </thead>
+          {rows.length === 0 ? (
+            <ContentPanelEmptyState
+              icon={<FolderArchive size={24} />}
+              title="Geen taken binnen deze selectie"
+              description="Pas je zoekopdracht of filters aan om taakuitvoeringen te tonen."
+            />
+          ) : (
+            <table className="w-full table-fixed text-sm">
+              <thead className="bg-white">
+                <tr className="border-b border-slate-200">
+                  <th className="w-[34%] bg-white px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Taakuitvoering
+                  </th>
+                  <th className="w-[30%] bg-white px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Voortgang
+                  </th>
+                  <th className="w-[18%] bg-white px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Recordmanager
+                  </th>
+                  <th className="w-[18%] bg-white px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Startdatum
+                  </th>
+                </tr>
+              </thead>
 
             <tbody>
               {rows.map((row) => {
@@ -375,13 +367,13 @@ export default function DashboardRecordPanel({
                 );
               })}
             </tbody>
-          </table>
+            </table>
+          )}
         </div>
 
         <div className="border-t border-slate-200 px-4 py-3 text-sm text-slate-500">
           {rows.length.toLocaleString("nl-NL")} taken geladen
         </div>
-      </section>
-    </ContentPanel>
+    </section>
   );
 }

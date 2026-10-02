@@ -84,11 +84,13 @@ async function main() {
         versie: 1,
       },
     },
-    update: {},
+    update: {
+      baseUrl: "http://localhost:3000",
+    },
     create: {
       stekkerId: stekker.id,
       versie: 1,
-      baseUrl: "http://localhost:3002",
+      baseUrl: "http://localhost:3000",
       authType: "oauth2_cc",
       tokenUrl:
         "https://auth.cockpit.arnhem.dev/realms/vernietigingscockpit/protocol/openid-connect/token",

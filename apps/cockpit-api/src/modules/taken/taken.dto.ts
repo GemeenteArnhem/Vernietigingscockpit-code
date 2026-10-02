@@ -12,6 +12,7 @@ type TaakdefinitieSummaryRecord = {
 };
 
 type SelectieSummaryRecord = {
+  status: string;
   totaalKandidaten: number;
   totaalObjecten: number;
   totaalBetrokkenen: number;
@@ -75,6 +76,7 @@ export const taakinstantieSelect = {
   },
   selecties: {
     select: {
+      status: true,
       totaalKandidaten: true,
       totaalObjecten: true,
       totaalBetrokkenen: true,

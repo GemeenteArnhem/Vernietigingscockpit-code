@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { ClipboardList } from "lucide-react";
 import { Outlet, matchPath, useLocation } from "react-router-dom";
 import RightRail from "../components/RightRail";
 import Sidebar from "../components/Sidebar";
@@ -97,8 +98,11 @@ function AppShellLayout() {
             <div className="flex h-[69px] items-center px-5">
               <PageHeader
                 title={title}
-                breadcrumbs={
-                  breadcrumbs
+                breadcrumbs={isTaskPage ? undefined : breadcrumbs}
+                icon={
+                  isTaskPage ? (
+                    <ClipboardList size={24} strokeWidth={1.8} />
+                  ) : undefined
                 }
               />
             </div>

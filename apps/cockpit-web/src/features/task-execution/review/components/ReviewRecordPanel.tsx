@@ -369,12 +369,6 @@ function ReviewChunkedTable({
   ] as TableColumnKey[]).filter((column) => visibleColumns.includes(column));
 
   useEffect(() => {
-    if (currentPage !== safePage) {
-      setCurrentPage(safePage);
-    }
-  }, [currentPage, safePage]);
-
-  useEffect(() => {
     const element = scrollRef.current;
 
     if (!element) {
@@ -984,6 +978,7 @@ export default function ReviewRecordPanel({
   return (
     <ContentPanel>
       <TaskExecutionHeader
+        title={context.proces}
         activeStep={activeStep}
         summaryStats={stats}
         metaItems={taskMetaItems}

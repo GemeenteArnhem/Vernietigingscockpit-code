@@ -28,6 +28,7 @@ type Props = {
   summaryStats: TaskExecutionHeaderSummaryStats;
   metaItems: TaskExecutionHeaderMetaItem[];
   showStatusOverview?: boolean;
+  showTaskContext?: boolean;
 };
 
 export type {
@@ -52,6 +53,10 @@ const TASK_EXECUTION_STEPS = [
 ] as const;
 
 function getMetaIcon(label: string) {
+  if (label === "Taak") {
+    return <ClipboardCheck size={20} strokeWidth={1.8} />;
+  }
+
   if (label === "Startdatum") {
     return <CalendarDays size={20} strokeWidth={1.8} />;
   }
@@ -69,6 +74,7 @@ export default function TaskExecutionHeader({
   summaryStats,
   metaItems,
   showStatusOverview = true,
+  showTaskContext = true,
 }: Props) {
   const [detailsOpen, setDetailsOpen] = useState(false);
 
@@ -76,9 +82,14 @@ export default function TaskExecutionHeader({
     () => title ?? "Taakuitvoering",
     [title]
   );
+  const headerTitle =
+    showTaskContext && title ? `Taakuitvoering - ${title}` : taskTitle;
   const activeStepMeta =
     TASK_EXECUTION_STEPS.find((step) => step.id === activeStep) ??
     TASK_EXECUTION_STEPS[1];
+  const displayedMetaItems = showTaskContext
+    ? [{ label: "Taak", value: taskTitle }, ...metaItems]
+    : metaItems;
   const totalCount =
     summaryStats.teBeoordelen +
     summaryStats.akkoord +
@@ -100,28 +111,21 @@ export default function TaskExecutionHeader({
             <ClipboardCheck size={24} strokeWidth={1.8} />
           </div>
 
-          <div className="min-w-0 shrink-0">
+          <div className="min-w-0 shrink">
             <h1 className="truncate text-[18px] font-semibold tracking-tight text-slate-950">
-              {taskTitle}
+              {headerTitle}
             </h1>
           </div>
 
-          <div className="min-w-0 flex-1">
-            <nav className="truncate text-sm leading-5 text-slate-500">
-              <span>Home</span>
-              <span className="px-2">/</span>
-              <span>Taken</span>
-              <span className="px-2">/</span>
-              <span>Taakuitvoering</span>
-              <span className="px-2">/</span>
-              <span className="text-slate-600">{taskTitle}</span>
-            </nav>
-            <p className="truncate text-[12.5px] font-medium leading-4 text-slate-500">
-              Stap {activeStepMeta.position}/6
-              <span className="px-1.5 text-slate-400">-</span>
-              <span className="text-slate-700">{activeStepMeta.label}</span>
-            </p>
-          </div>
+          {showTaskContext ? (
+            <div className="flex min-w-0 flex-1 items-center">
+              <span className="inline-flex max-w-full items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-sm font-medium text-sky-700">
+                <span className="truncate">{activeStepMeta.label}</span>
+              </span>
+            </div>
+          ) : (
+            <div className="min-w-0 flex-1" />
+          )}
 
           <div className="ml-auto flex shrink-0 items-center gap-5">
             {showStatusOverview
@@ -135,23 +139,25 @@ export default function TaskExecutionHeader({
                 ))
               : null}
 
-            <button
-              type="button"
-              onClick={() => setDetailsOpen((current) => !current)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
-              aria-expanded={detailsOpen}
-              aria-label="Taakdetails tonen of verbergen"
-            >
-              <ChevronUp
-                size={16}
-                className={`transition-transform ${detailsOpen ? "" : "rotate-180"}`}
-              />
-            </button>
+            {showTaskContext ? (
+              <button
+                type="button"
+                onClick={() => setDetailsOpen((current) => !current)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
+                aria-expanded={detailsOpen}
+                aria-label="Taakdetails tonen of verbergen"
+              >
+                <ChevronUp
+                  size={16}
+                  className={`transition-transform ${detailsOpen ? "" : "rotate-180"}`}
+                />
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
 
-      {detailsOpen ? (
+      {showTaskContext && detailsOpen ? (
         <div
           className={`absolute right-0 top-[calc(100%-1px)] z-20 overflow-hidden rounded-b-2xl border border-slate-200 border-t-0 bg-white shadow-xl shadow-slate-200/80 ${
             showStatusOverview ? "w-[636px]" : "w-[320px]"
@@ -164,7 +170,7 @@ export default function TaskExecutionHeader({
               </h2>
 
               <div className="mt-5 space-y-0">
-                {metaItems.map((item) => (
+                {displayedMetaItems.map((item) => (
                   <div
                     key={item.label}
                     className="flex items-start gap-4 border-b border-slate-100 py-5 last:border-b-0 last:pb-0 first:pt-0"
