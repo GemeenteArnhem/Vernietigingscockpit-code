@@ -81,9 +81,29 @@ type TableColumnKey =
 export type ReviewRecordSortKey = TableColumnKey;
 export type ReviewRecordSortDirection = "asc" | "desc";
 
-type SearchScope = "all" | "omschrijving" | "code" | "vernietigingsdatum" | "bronId";
+export type SearchScope = "all" | "omschrijving" | "code" | "vernietigingsdatum" | "bronId";
 
-type FacetFilterKey = "status" | "selectielijst" | "stekker" | "bewaartermijn";
+export type FacetFilterKey = "status" | "selectielijst" | "stekker" | "bewaartermijn";
+
+export type FacetOptie = { waarde: string; label: string };
+
+// Server-gestuurde lijst (CC-10): zoeken, filteren, sorteren en pagineren gebeurt op de
+// server; de tabel toont alleen de geladen pagina. Zonder deze prop werkt de tabel zoals
+// voorheen volledig in de browser. Het uiterlijk is in beide gevallen gelijk.
+export type ServerLijst = {
+  totaal: number;
+  pagina: number;
+  paginaGrootte: number;
+  zoek: string;
+  zoekIn: SearchScope;
+  filters: Partial<Record<FacetFilterKey, string>>;
+  facetOpties: Record<FacetFilterKey, FacetOptie[]>;
+  onPaginaChange: (pagina: number) => void;
+  onZoekChange: (zoek: string, zoekIn: SearchScope) => void;
+  onFiltersChange: (filters: Partial<Record<FacetFilterKey, string>>) => void;
+  // Alle id's die aan de huidige zoekopdracht en filters voldoen.
+  gefilterdeIds: () => Promise<string[]>;
+};
 
 type Props = {
   record?: VernietigingsKandidaat;
@@ -103,6 +123,7 @@ type Props = {
   sortDirection?: ReviewRecordSortDirection;
   onSortChange?: (key: ReviewRecordSortKey, direction: ReviewRecordSortDirection) => void;
   enableCrossPageBulkSelection?: boolean;
+  server?: ServerLijst;
   onPrevious?: () => void;
   onNext?: () => void;
 };
@@ -266,6 +287,7 @@ function ReviewChunkedTable({
   sortDirection = "asc",
   onSortChange,
   enableCrossPageBulkSelection = false,
+  server,
 }: {
   rows: ReviewRecordTableRow[];
   selectedIds: string[];
@@ -276,6 +298,7 @@ function ReviewChunkedTable({
   sortDirection?: ReviewRecordSortDirection;
   onSortChange?: (key: ReviewRecordSortKey, direction: ReviewRecordSortDirection) => void;
   enableCrossPageBulkSelection?: boolean;
+  server?: ServerLijst;
 }) {
   const [search, setSearch] = useState("");
   const [searchScope, setSearchScope] = useState<SearchScope>("all");
@@ -288,26 +311,48 @@ function ReviewChunkedTable({
   const [activeFilters, setActiveFilters] = useState<Partial<Record<FacetFilterKey, string>>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const facetOptions = useMemo(
-    () => ({
+  // In server-modus komen zoekterm, zoekkolom, filters en pagina uit `server`.
+  const zoekWaarde = server ? server.zoek : search;
+  const zoekScope = server ? server.zoekIn : searchScope;
+  const filters = server ? server.filters : activeFilters;
+  const pagina = server ? server.pagina : currentPage;
+  const paginaGrootte = server ? server.paginaGrootte : PAGE_SIZE;
+
+  const facetOptions = useMemo<Record<FacetFilterKey, FacetOptie[]>>(() => {
+    if (server) {
+      return server.facetOpties;
+    }
+
+    const opties = (waarden: string[]) => waarden.map((waarde) => ({ waarde, label: waarde }));
+
+    return {
       status: [
         "nog-te-beoordelen",
         "afgerond",
         "retour",
         "conflict",
         "uitgesteld",
-      ].filter((status) => rows.some((row) => row.queueStatus === status)),
-      selectielijst: Array.from(new Set(rows.map((row) => row.selectielijst))).sort(),
-      stekker: Array.from(new Set(rows.map((row) => row.stekker))).sort(),
-      bewaartermijn: Array.from(new Set(rows.map((row) => row.bewaartermijn))).sort(),
-    }),
-    [rows]
-  );
+      ]
+        .filter((status) => rows.some((row) => row.queueStatus === status))
+        .map((status) => ({ waarde: status, label: getQueueStatusLabel(status as ReviewQueueStatus) })),
+      selectielijst: opties(Array.from(new Set(rows.map((row) => row.selectielijst))).sort()),
+      stekker: opties(Array.from(new Set(rows.map((row) => row.stekker))).sort()),
+      bewaartermijn: opties(Array.from(new Set(rows.map((row) => row.bewaartermijn))).sort()),
+    };
+  }, [rows, server]);
+
+  const facetLabel = (key: FacetFilterKey, waarde: string) =>
+    facetOptions[key].find((optie) => optie.waarde === waarde)?.label ??
+    (key === "status" ? getQueueStatusLabel(waarde as ReviewQueueStatus) : waarde);
 
   const searchScopeLabel =
-    SEARCH_SCOPE_OPTIONS.find((option) => option.key === searchScope)?.label ?? "Alle kolommen";
+    SEARCH_SCOPE_OPTIONS.find((option) => option.key === zoekScope)?.label ?? "Alle kolommen";
 
   const filteredRows = useMemo(() => {
+    if (server) {
+      return rows;
+    }
+
     const query = search.trim().toLowerCase();
     return rows.filter((row) => {
       const matchesSearch = !query
@@ -335,20 +380,24 @@ function ReviewChunkedTable({
 
       return matchesSearch && matchesFilters;
     });
-  }, [activeFilters, rows, search, searchScope]);
+  }, [activeFilters, rows, search, searchScope, server]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
-  const safePage = Math.min(currentPage, totalPages - 1);
-  const pageStart = safePage * PAGE_SIZE;
-  const pageEnd = Math.min(pageStart + PAGE_SIZE, filteredRows.length);
-  const visibleRows = filteredRows.slice(pageStart, pageEnd);
+  const totaalGefilterd = server ? server.totaal : filteredRows.length;
+  const totalPages = Math.max(1, Math.ceil(totaalGefilterd / paginaGrootte));
+  const safePage = Math.min(pagina, totalPages - 1);
+  const pageStart = safePage * paginaGrootte;
+  const pageEnd = server
+    ? pageStart + rows.length
+    : Math.min(pageStart + paginaGrootte, filteredRows.length);
+  const visibleRows = server ? rows : filteredRows.slice(pageStart, pageEnd);
   const hasPreviousPage = safePage > 0;
   const hasNextPage = safePage < totalPages - 1;
   const paginationItems = getPaginationItems(totalPages, safePage);
   const allVisibleSelected =
     visibleRows.length > 0 && visibleRows.every((row) => selectedIds.includes(row.id));
-  const allFilteredSelected =
-    filteredRows.length > 0 && filteredRows.every((row) => selectedIds.includes(row.id));
+  const allFilteredSelected = server
+    ? allVisibleSelected && selectedIds.length >= server.totaal
+    : filteredRows.length > 0 && filteredRows.every((row) => selectedIds.includes(row.id));
   const selectedVisibleCount = visibleRows.filter((row) => selectedIds.includes(row.id)).length;
 
   const orderedColumns = ([
@@ -376,7 +425,7 @@ function ReviewChunkedTable({
     }
 
     element.scrollTop = 0;
-  }, [safePage, search, activeFilters, searchScope]);
+  }, [safePage, zoekWaarde, filters, zoekScope]);
 
   const toggleRow = (id: string) => {
     if (!onSelectedIdsChange) {
@@ -407,20 +456,51 @@ function ReviewChunkedTable({
     );
   };
 
-  const selectAllFilteredRows = () => {
+  const selectAllFilteredRows = async () => {
     if (!onSelectedIdsChange) {
       return;
     }
 
-    onSelectedIdsChange(Array.from(new Set([...selectedIds, ...filteredRows.map((row) => row.id)])));
+    const ids = server ? await server.gefilterdeIds() : filteredRows.map((row) => row.id);
+    onSelectedIdsChange(Array.from(new Set([...selectedIds, ...ids])));
   };
 
-  const clearFilteredSelection = () => {
+  const clearFilteredSelection = async () => {
     if (!onSelectedIdsChange) {
       return;
     }
 
-    onSelectedIdsChange(selectedIds.filter((id) => !filteredRows.some((row) => row.id === id)));
+    const ids = new Set(server ? await server.gefilterdeIds() : filteredRows.map((row) => row.id));
+    onSelectedIdsChange(selectedIds.filter((id) => !ids.has(id)));
+  };
+
+  const zetPagina = (volgende: number) => {
+    if (server) {
+      server.onPaginaChange(volgende);
+    } else {
+      setCurrentPage(volgende);
+    }
+  };
+
+  const zetZoek = (zoek: string, scope: SearchScope) => {
+    if (server) {
+      server.onZoekChange(zoek, scope);
+      return;
+    }
+
+    setSearch(zoek);
+    setSearchScope(scope);
+    setCurrentPage(0);
+  };
+
+  const zetFilters = (volgende: Partial<Record<FacetFilterKey, string>>) => {
+    if (server) {
+      server.onFiltersChange(volgende);
+      return;
+    }
+
+    setActiveFilters(volgende);
+    setCurrentPage(0);
   };
 
   const toggleColumn = (column: TableColumnKey) => {
@@ -459,25 +539,20 @@ function ReviewChunkedTable({
     const nextDirection =
       sortKey === column && sortDirection === "asc" ? "desc" : "asc";
     onSortChange?.(column, nextDirection);
-    setCurrentPage(0);
+    if (!server) {
+      setCurrentPage(0);
+    }
   };
 
   const setFacetFilter = (key: FacetFilterKey, value: string) => {
-    setActiveFilters((current) => ({
-      ...current,
-      [key]: value,
-    }));
-    setCurrentPage(0);
+    zetFilters({ ...filters, [key]: value });
     setFilterMenuOpen(false);
   };
 
   const clearFacetFilter = (key: FacetFilterKey) => {
-    setActiveFilters((current) => {
-      const next = { ...current };
-      delete next[key];
-      return next;
-    });
-    setCurrentPage(0);
+    const next = { ...filters };
+    delete next[key];
+    zetFilters(next);
   };
 
   return (
@@ -492,11 +567,8 @@ function ReviewChunkedTable({
                   className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
                 />
                 <input
-                  value={search}
-                  onChange={(event) => {
-                    setSearch(event.target.value);
-                    setCurrentPage(0);
-                  }}
+                  value={zoekWaarde}
+                  onChange={(event) => zetZoek(event.target.value, zoekScope)}
                   placeholder="Zoek op titel, selectieregel of vernietigingsdatum..."
                   className="h-11 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-14 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-500"
                 />
@@ -520,12 +592,11 @@ function ReviewChunkedTable({
                             key={option.key}
                             type="button"
                             onClick={() => {
-                              setSearchScope(option.key);
+                              zetZoek(zoekWaarde, option.key);
                               setSearchScopeOpen(false);
-                              setCurrentPage(0);
                             }}
                             className={`flex w-full items-center rounded-md px-3 py-2 text-left text-sm transition ${
-                              searchScope === option.key
+                              zoekScope === option.key
                                 ? "bg-blue-50 text-blue-700"
                                 : "text-slate-700 hover:bg-slate-50"
                             }`}
@@ -588,7 +659,7 @@ function ReviewChunkedTable({
 
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
-            {Object.entries(activeFilters).map(([key, value]) => (
+            {Object.entries(filters).map(([key, value]) => (
               <span
                 key={`${key}-${value}`}
                 className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700"
@@ -596,9 +667,7 @@ function ReviewChunkedTable({
                 <span className="font-medium text-slate-500">
                   {FACET_FILTER_LABELS[key as FacetFilterKey]}:
                 </span>
-                <span>
-                  {key === "status" ? getQueueStatusLabel(value as ReviewQueueStatus) : value}
-                </span>
+                <span>{facetLabel(key as FacetFilterKey, value)}</span>
                 <button
                   type="button"
                   onClick={() => clearFacetFilter(key as FacetFilterKey)}
@@ -635,18 +704,16 @@ function ReviewChunkedTable({
                         <div className="flex flex-wrap gap-1.5">
                           {facetOptions[filterKey].map((option) => (
                             <button
-                              key={`${filterKey}-${option}`}
+                              key={`${filterKey}-${option.waarde}`}
                               type="button"
-                              onClick={() => setFacetFilter(filterKey, option)}
+                              onClick={() => setFacetFilter(filterKey, option.waarde)}
                               className={`rounded-full border px-3 py-1.5 text-sm transition ${
-                                activeFilters[filterKey] === option
+                                filters[filterKey] === option.waarde
                                   ? "border-blue-600 bg-blue-50 text-blue-700"
                                   : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                               }`}
                             >
-                              {filterKey === "status"
-                                ? getQueueStatusLabel(option as ReviewQueueStatus)
-                                : option}
+                              {option.label}
                             </button>
                           ))}
                         </div>
@@ -658,7 +725,7 @@ function ReviewChunkedTable({
             </div>
           </div>
 
-          {enableCrossPageBulkSelection && allVisibleSelected && filteredRows.length > visibleRows.length ? (
+          {enableCrossPageBulkSelection && allVisibleSelected && totaalGefilterd > visibleRows.length ? (
             <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
               {!allFilteredSelected ? (
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -667,20 +734,20 @@ function ReviewChunkedTable({
                   </span>
                   <button
                     type="button"
-                    onClick={selectAllFilteredRows}
+                    onClick={() => void selectAllFilteredRows()}
                     className="font-medium text-sky-800 underline underline-offset-2 hover:text-sky-900"
                   >
-                    Selecteer ook alle {filteredRows.length.toLocaleString("nl-NL")} gefilterde records
+                    Selecteer ook alle {totaalGefilterd.toLocaleString("nl-NL")} gefilterde records
                   </button>
                 </div>
               ) : (
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span>
-                    Alle {filteredRows.length.toLocaleString("nl-NL")} gefilterde records zijn geselecteerd.
+                    Alle {totaalGefilterd.toLocaleString("nl-NL")} gefilterde records zijn geselecteerd.
                   </span>
                   <button
                     type="button"
-                    onClick={clearFilteredSelection}
+                    onClick={() => void clearFilteredSelection()}
                     className="font-medium text-sky-800 underline underline-offset-2 hover:text-sky-900"
                   >
                     Selectie binnen filter wissen
@@ -873,14 +940,14 @@ function ReviewChunkedTable({
 
       <div className="flex items-center justify-between gap-4 border-t border-slate-200 px-4 py-2 text-sm text-slate-500">
         <div className="whitespace-nowrap">
-          {filteredRows.length === 0
+          {totaalGefilterd === 0
             ? "0 records"
-            : `${(pageStart + 1).toLocaleString("nl-NL")}-${pageEnd.toLocaleString("nl-NL")} van ${filteredRows.length.toLocaleString("nl-NL")} records`}
+            : `${(pageStart + 1).toLocaleString("nl-NL")}-${pageEnd.toLocaleString("nl-NL")} van ${totaalGefilterd.toLocaleString("nl-NL")} records`}
         </div>
         <div className="flex items-center gap-1">
           <button
             type="button"
-            onClick={() => setCurrentPage((page) => Math.max(page - 1, 0))}
+            onClick={() => zetPagina(Math.max(safePage - 1, 0))}
             disabled={!hasPreviousPage}
             className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
             aria-label="Vorige pagina"
@@ -900,7 +967,7 @@ function ReviewChunkedTable({
               <button
                 key={item}
                 type="button"
-                onClick={() => setCurrentPage(item)}
+                onClick={() => zetPagina(item)}
                 aria-current={item === safePage ? "page" : undefined}
                 className={`inline-flex h-7 min-w-7 items-center justify-center rounded-md border px-2 text-xs font-semibold transition ${
                   item === safePage
@@ -915,7 +982,7 @@ function ReviewChunkedTable({
 
           <button
             type="button"
-            onClick={() => setCurrentPage((page) => Math.min(page + 1, totalPages - 1))}
+            onClick={() => zetPagina(Math.min(safePage + 1, totalPages - 1))}
             disabled={!hasNextPage}
             className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
             aria-label="Volgende pagina"
@@ -943,6 +1010,7 @@ export default function ReviewRecordPanel({
   sortDirection,
   onSortChange,
   enableCrossPageBulkSelection = false,
+  server,
 }: Props) {
   if (!record || !context) {
     return (
@@ -996,6 +1064,7 @@ export default function ReviewRecordPanel({
             sortDirection={sortDirection}
             onSortChange={onSortChange}
             enableCrossPageBulkSelection={enableCrossPageBulkSelection}
+            server={server}
           />
         </div>
       ) : (
@@ -1011,6 +1080,7 @@ export default function ReviewRecordPanel({
             sortDirection={sortDirection}
             onSortChange={onSortChange}
             enableCrossPageBulkSelection={enableCrossPageBulkSelection}
+            server={server}
           />
           )}
 

@@ -1,0 +1,232 @@
+# Acceptatieomgeving voor lokaal testen in Docker Desktop: de volledige cockpit (web, API,
+# worker), PostgreSQL, Keycloak, Gotenberg en de teststekker. Alleen testgegevens; niet voor
+# productie. Wachtwoorden en secrets staan in .env naast dit bestand (niet in git), gemaakt
+# met init-geheimen.mjs (zie README.md in deze map).
+#
+#   node infrastructure/acceptatie/init-geheimen.mjs
+#   docker compose -f infrastructure/acceptatie/docker-compose.yml up -d --build
+#
+# Adressen: lokaal (standaard) web op http://localhost:8480, API op :8481 en Keycloak op
+# http://host.docker.internal:8482 (voor browser én containers gelijk, zodat de issuer in de
+# tokens overal klopt; Docker Desktop zet die naam in het hosts-bestand van Windows).
+# Op een server: ACC_WEB_URL, ACC_API_URL en ACC_AUTH_URL in .env (https-domeinen) en
+# docker-compose.vm.yml erbij voor Traefik; zie README.md.
+
+name: vernietigingscockpit-acceptatie
+
+x-keycloak-issuer: &issuer ${ACC_AUTH_URL:-http://host.docker.internal:8482}/realms/vernietigingscockpit
+# Alleen voor `prisma generate` tijdens de build; er wordt geen verbinding gemaakt.
+x-prisma-generate: &prisma-generate postgresql://prisma:prisma@localhost:5432/prisma?schema=public
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cockpit
+      POSTGRES_PASSWORD: ${ACC_DB_WACHTWOORD:?maak eerst .env met init-geheimen.mjs}
+      POSTGRES_DB: cockpit
+    ports:
+      - "127.0.0.1:55434:5432"
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cockpit -d cockpit"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${ACC_KEYCLOAK_ADMIN_WACHTWOORD:?maak eerst .env met init-geheimen.mjs}
+      KC_HOSTNAME: ${ACC_AUTH_URL:-http://host.docker.internal:8482}
+      # Achter een reverse proxy (Traefik): X-Forwarded-headers volgen.
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_PORT: "8080"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8482:8080"
+    volumes:
+      # Accounts en hun id's blijven bewaard; de realm wordt alleen bij de eerste start ingelezen.
+      - keycloak:/opt/keycloak/data
+      - ./keycloak/vernietigingscockpit-realm.json:/opt/keycloak/data/import/vernietigingscockpit-realm.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+    restart: unless-stopped
+
+  # Bij elke start: wachtwoorden van de testgebruikers en het client-secret van cockpit-stekker
+  # uit .env zetten, en de scopes van de Stekker-API aan die client koppelen.
+  keycloak-init:
+    image: quay.io/keycloak/keycloak:26.3
+    entrypoint: ["/bin/bash", "/init/keycloak-init.sh"]
+    environment:
+      KC_ADMIN: admin
+      KC_ADMIN_PASSWORD: ${ACC_KEYCLOAK_ADMIN_WACHTWOORD:?maak eerst .env met init-geheimen.mjs}
+      GEBRUIKERS_WACHTWOORD: ${ACC_GEBRUIKERS_WACHTWOORD:?maak eerst .env met init-geheimen.mjs}
+      STEKKER_GEHEIM: ${ACC_STEKKER_GEHEIM:?maak eerst .env met init-geheimen.mjs}
+      WEB_URL: ${ACC_WEB_URL:-http://localhost:8480}
+    volumes:
+      - ./keycloak/keycloak-init.sh:/init/keycloak-init.sh:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:3000/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    restart: unless-stopped
+
+  # De teststekker, gebouwd uit de checkout naast deze repo (of STEKKER_REPO).
+  stekker:
+    build:
+      context: ${STEKKER_REPO:-../../../Vernietigingscockpit-stekker-test}
+    environment:
+      AUTH_ENABLED: "true"
+      AUTH_ISSUER: *issuer
+      AUTH_JWKS_URL: ${ACC_AUTH_URL:-http://host.docker.internal:8482}/realms/vernietigingscockpit/protocol/openid-connect/certs
+      AUTH_AUDIENCE: teststekker
+      SELECTIE_PROCESSING_DELAY_MS: "2000"
+      VERNIETIGING_PROCESSING_DELAY_MS: "2000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - stekker-data:/app/runtime
+    depends_on:
+      keycloak-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: cockpit-migrate
+      args:
+        PRISMA_GENERATE_DATABASE_URL: *prisma-generate
+    image: vernietigingscockpit-migrate:acceptatie
+    environment:
+      DATABASE_URL: postgresql://cockpit:${ACC_DB_WACHTWOORD:?maak eerst .env met init-geheimen.mjs}@db:5432/cockpit?schema=public&sslmode=disable
+      APP_DB_USER: cockpit_api
+      APP_DB_PASSWORD: ${ACC_DB_APP_WACHTWOORD:?maak eerst .env met init-geheimen.mjs}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Testgegevens: medewerkers rm1/po1/arch1, de teststekker (OAuth2 via Keycloak) en een
+  # taakdefinitie. Idempotent; draait bij elke start na de migraties.
+  seed:
+    image: vernietigingscockpit-migrate:acceptatie
+    pull_policy: never
+    command: ["npm", "run", "db:seed"]
+    environment:
+      DATABASE_URL: postgresql://cockpit:${ACC_DB_WACHTWOORD:?maak eerst .env met init-geheimen.mjs}@db:5432/cockpit?schema=public&sslmode=disable
+      SEED_STEKKER_BASE_URL: http://stekker:3000
+      SEED_STEKKER_AUTH_TYPE: oauth2_cc
+      SEED_STEKKER_TOKEN_URL: ${ACC_AUTH_URL:-http://host.docker.internal:8482}/realms/vernietigingscockpit/protocol/openid-connect/token
+      SEED_STEKKER_CLIENT_ID: cockpit-stekker
+      SEED_STEKKER_SECRET_REF: KC_STEKKER_CLIENT_SECRET
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: cockpit-api
+      args:
+        PRISMA_GENERATE_DATABASE_URL: *prisma-generate
+    image: vernietigingscockpit-api:acceptatie
+    environment:
+      PORT: "3000"
+      DATABASE_URL: postgresql://cockpit_api:${ACC_DB_APP_WACHTWOORD:?maak eerst .env met init-geheimen.mjs}@db:5432/cockpit?schema=public&sslmode=disable
+      OIDC_ISSUER: *issuer
+      OIDC_AUDIENCE: cockpit-api
+      CORS_ORIGIN: ${ACC_WEB_URL:-http://localhost:8480}
+      SELECTIE_WORKER_ENABLED: "false"
+      LOG_LEVEL: info
+    ports:
+      - "8481:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/v1/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    restart: unless-stopped
+
+  worker:
+    image: vernietigingscockpit-api:acceptatie
+    pull_policy: never
+    command: ["node", "dist/worker.js"]
+    environment:
+      WORKER_ID: worker-acceptatie
+      DATABASE_URL: postgresql://cockpit_api:${ACC_DB_APP_WACHTWOORD:?maak eerst .env met init-geheimen.mjs}@db:5432/cockpit?schema=public&sslmode=disable
+      SELECTIE_WORKER_INTERVAL_MS: "2000"
+      WORKER_LEASE_MS: "300000"
+      WORKER_BACKOFF_START_MS: "2000"
+      WORKER_BACKOFF_MAX_MS: "30000"
+      WORKER_POLL_START_MS: "2000"
+      WORKER_POLL_MAX_MS: "10000"
+      # Zelfde waarde als het client-secret dat keycloak-init op cockpit-stekker zet.
+      KC_STEKKER_CLIENT_SECRET: ${ACC_STEKKER_GEHEIM:?maak eerst .env met init-geheimen.mjs}
+      GOTENBERG_URL: http://gotenberg:3000
+      ARCHIEF_PAD: /archief
+      LOG_LEVEL: info
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - archief:/archief
+    depends_on:
+      api:
+        condition: service_healthy
+      gotenberg:
+        condition: service_healthy
+      stekker:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: cockpit-web
+      args:
+        VITE_OIDC_AUTHORITY: *issuer
+        VITE_OIDC_CLIENT_ID: cockpit-web
+        VITE_OIDC_REDIRECT_URI: ${ACC_WEB_URL:-http://localhost:8480}/auth/callback
+        VITE_OIDC_POST_LOGOUT_REDIRECT_URI: ${ACC_WEB_URL:-http://localhost:8480}
+        VITE_OIDC_SCOPE: openid profile email
+        VITE_API_BASE_URL: ${ACC_API_URL:-http://localhost:8481}/api/v1
+    image: vernietigingscockpit-web:acceptatie
+    environment:
+      WEB_OIDC_AUTHORITY: *issuer
+      WEB_API_BASE_URL: ${ACC_API_URL:-http://localhost:8481}/api/v1
+    ports:
+      - "8480:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  db:
+  keycloak:
+  archief:
+  stekker-data:

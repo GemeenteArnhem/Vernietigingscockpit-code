@@ -1,3 +1,5 @@
+import { ACTIEVE_SELECTIE } from "./actieve-selectie.js";
+
 type MedewerkerSummaryRecord = {
   id: string;
   naam: string;
@@ -75,6 +77,7 @@ export const taakinstantieSelect = {
     },
   },
   selecties: {
+    where: ACTIEVE_SELECTIE,
     select: {
       status: true,
       totaalKandidaten: true,

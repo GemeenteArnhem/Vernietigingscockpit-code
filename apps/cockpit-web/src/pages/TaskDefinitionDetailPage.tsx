@@ -34,6 +34,7 @@ import type {
 import TaskDefinitionDetailPane from "../features/task-definition/components/TaskDefinitionDetailPane";
 import TaskDefinitionRecordPanel from "../features/task-definition/components/TaskDefinitionRecordPanel";
 import { createTaskInstance, getTaskDefinitions } from "../api/f3Data";
+import ActieFoutmelding from "../components/ActieFoutmelding";
 import { useSessionUser } from "../auth/useSessionUser";
 import { AppShellPortal } from "../layouts/AppShellPortalContext";
 import type {
@@ -42,6 +43,9 @@ import type {
   TaskDefinitionRecord,
 } from "../shared/types/taskDefinition";
 import { getTaskExecutionRoute } from "../shared/workflowRoutes";
+
+// Vaste lege lijst, zodat useMemo-afhankelijkheden niet bij elke render veranderen.
+const EMPTY_DEFINITIONS: TaskDefinitionRecord[] = [];
 
 type DefinitionFilter =
   | "alle"
@@ -282,6 +286,8 @@ export default function TaskDefinitionDetailPage() {
     isCreatingInstance,
     setIsCreatingInstance,
   ] = useState(false);
+  const [actionError, setActionError] =
+    useState<string | null>(null);
 
   const [search, setSearch] =
     useState("");
@@ -331,7 +337,7 @@ export default function TaskDefinitionDetailPage() {
     };
   }, [accessToken]);
 
-  const definitions = apiDefinitions ?? [];
+  const definitions = apiDefinitions ?? EMPTY_DEFINITIONS;
 
   const filters = useMemo<
     RecordPaneBarFilter[]
@@ -648,6 +654,7 @@ export default function TaskDefinitionDetailPage() {
         }
 
         setIsCreatingInstance(true);
+        setActionError(null);
 
         try {
           const instantie =
@@ -681,6 +688,12 @@ export default function TaskDefinitionDetailPage() {
             navigate,
             selectedDefinition.id,
             instantie
+          );
+        } catch (error) {
+          setActionError(
+            error instanceof Error
+              ? error.message
+              : "Taakuitvoering aanmaken is mislukt."
           );
         } finally {
           setIsCreatingInstance(false);
@@ -846,14 +859,16 @@ export default function TaskDefinitionDetailPage() {
                     tone={item.tone}
                     density="compact"
                     selected={activeDecision === item.id}
-                    onClick={() =>
+                    onClick={() => {
+                      setActionError(null);
                       setPanelState({
                         recordId: selectedDefinition.id,
                         decision: item.id,
-                      })
-                    }
+                      });
+                    }}
                   />
                 ))}
+                <ActieFoutmelding melding={actionError} />
               </div>
             </ActionPanelSection>
           )}

@@ -2,19 +2,24 @@ import { Inject, Injectable } from "@nestjs/common";
 import type { AuthUser } from "../auth/auth-user.js";
 import { actionsForRoles } from "../auth/app-action.js";
 import { PrismaService } from "../../shared/db/prisma.service.js";
+import { CurrentMedewerkerService } from "../auth/current-medewerker.service.js";
+import type { ApiMe } from "@vernietigingscockpit/api-contract";
 
 @Injectable()
 export class MeService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(CurrentMedewerkerService) private readonly currentMedewerker: CurrentMedewerkerService
+  ) {}
 
-  async getMe(user: AuthUser) {
+  async getMe(user: AuthUser): Promise<ApiMe> {
     const medewerker = await this.findMedewerker(user);
     const name = user.name ?? user.username ?? user.email ?? user.sub;
 
+    // De koppeling met de medewerker verandert hier niet (CC-12); alleen het profiel.
     const dbUser = await this.prisma.client.gebruiker.upsert({
       where: { id: user.sub },
       update: {
-        medewerkerId: medewerker?.id ?? null,
         naam: name,
         email: user.email,
         rollen: user.roles,
@@ -58,36 +63,10 @@ export class MeService {
   }
 
   private async findMedewerker(user: AuthUser) {
-    const externId = user.username;
+    const medewerkerId = await this.currentMedewerker.findForUser(user);
 
-    if (externId) {
-      const medewerker = await this.prisma.client.medewerker.findFirst({
-        where: {
-          externId,
-          actief: true,
-        },
-        include: {
-          afdeling: true,
-        },
-      });
-
-      if (medewerker) {
-        return medewerker;
-      }
-    }
-
-    if (!user.email) {
-      return null;
-    }
-
-    return this.prisma.client.medewerker.findFirst({
-      where: {
-        email: user.email,
-        actief: true,
-      },
-      include: {
-        afdeling: true,
-      },
-    });
+    return medewerkerId
+      ? this.prisma.client.medewerker.findUnique({ where: { id: medewerkerId }, include: { afdeling: true } })
+      : null;
   }
 }

@@ -48,43 +48,44 @@ model Afdeling {
 }
 
 model Medewerker {
-  id                          String            @id @default(uuid()) @db.Uuid
+  id                          String             @id @default(uuid()) @db.Uuid
   naam                        String
-  email                       String            @unique
+  email                       String             @unique
   rollen                      AppRole[]
-  afdelingId                  String?           @map("afdeling_id") @db.Uuid
-  afdeling                    Afdeling?         @relation(fields: [afdelingId], references: [id])
-  actief                      Boolean           @default(true)
+  afdelingId                  String?            @map("afdeling_id") @db.Uuid
+  afdeling                    Afdeling?          @relation(fields: [afdelingId], references: [id])
+  actief                      Boolean            @default(true)
   bron                        String
-  externId                    String?           @map("extern_id")
+  externId                    String?            @map("extern_id")
   gebruiker                   Gebruiker?
-  taakdefinitiesRecordmanager Taakdefinitie[]   @relation("TaakdefinitieRecordmanager")
-  taakdefinitiesPo            Taakdefinitie[]   @relation("TaakdefinitieProceseigenaar")
-  taakdefinitiesArchivaris    Taakdefinitie[]   @relation("TaakdefinitieArchivaris")
-  takenRecordmanager          Taakinstantie[]   @relation("TaakinstantieRecordmanager")
-  takenPo                     Taakinstantie[]   @relation("TaakinstantieProceseigenaar")
-  takenArchivaris             Taakinstantie[]   @relation("TaakinstantieArchivaris")
+  taakdefinitiesRecordmanager Taakdefinitie[]    @relation("TaakdefinitieRecordmanager")
+  taakdefinitiesPo            Taakdefinitie[]    @relation("TaakdefinitieProceseigenaar")
+  taakdefinitiesArchivaris    Taakdefinitie[]    @relation("TaakdefinitieArchivaris")
+  takenRecordmanager          Taakinstantie[]    @relation("TaakinstantieRecordmanager")
+  takenPo                     Taakinstantie[]    @relation("TaakinstantieProceseigenaar")
+  takenArchivaris             Taakinstantie[]    @relation("TaakinstantieArchivaris")
+  kandidaatBesluiten          KandidaatBesluit[]
 
   @@map("medewerker")
 }
 
 model Gebruiker {
-  id            String      @id
-  medewerkerId  String?     @unique @map("medewerker_id") @db.Uuid
-  medewerker    Medewerker? @relation(fields: [medewerkerId], references: [id])
-  naam          String
-  email         String?
-  rollen        AppRole[]
-  laatstGezien  DateTime    @default(now()) @map("laatst_gezien")
+  id           String      @id
+  medewerkerId String?     @unique @map("medewerker_id") @db.Uuid
+  medewerker   Medewerker? @relation(fields: [medewerkerId], references: [id])
+  naam         String
+  email        String?
+  rollen       AppRole[]
+  laatstGezien DateTime    @default(now()) @map("laatst_gezien") @db.Timestamptz
 
   @@map("gebruiker")
 }
 
 model Stekker {
-  id             String                  @id @default(uuid()) @db.Uuid
+  id             String                 @id @default(uuid()) @db.Uuid
   naam           String
   omschrijving   String?
-  actief         Boolean                 @default(true)
+  actief         Boolean                @default(true)
   configuraties  StekkerConfiguratie[]
   taakdefinities TaakdefinitieStekker[]
 
@@ -92,99 +93,105 @@ model Stekker {
 }
 
 model StekkerConfiguratie {
-  id                  String    @id @default(uuid()) @db.Uuid
-  stekkerId           String    @map("stekker_id") @db.Uuid
-  stekker             Stekker   @relation(fields: [stekkerId], references: [id])
-  versie              Int
-  baseUrl             String    @map("base_url")
-  authType            String    @map("auth_type")
-  tokenUrl            String?   @map("token_url")
-  clientId            String?   @map("client_id")
-  secretRef           String?   @map("secret_ref")
-  scopes              String[]
-  parameters          Json
-  verwachteApiMajor   Int       @map("verwachte_api_major")
-  timeouts            Json
-  aangemaaktDoor      String    @map("aangemaakt_door")
-  aangemaaktOp        DateTime  @default(now()) @map("aangemaakt_op")
-  selecties           Selectie[]
+  id                String     @id @default(uuid()) @db.Uuid
+  stekkerId         String     @map("stekker_id") @db.Uuid
+  stekker           Stekker    @relation(fields: [stekkerId], references: [id])
+  versie            Int
+  baseUrl           String     @map("base_url")
+  authType          String     @map("auth_type")
+  tokenUrl          String?    @map("token_url")
+  clientId          String?    @map("client_id")
+  secretRef         String?    @map("secret_ref")
+  scopes            String[]
+  parameters        Json
+  verwachteApiMajor Int        @map("verwachte_api_major")
+  timeouts          Json
+  aangemaaktDoor    String     @map("aangemaakt_door")
+  aangemaaktOp      DateTime   @default(now()) @map("aangemaakt_op") @db.Timestamptz
+  selecties         Selectie[]
 
   @@unique([stekkerId, versie])
   @@map("stekker_configuratie")
 }
 
 model Taakdefinitie {
-  id                 String                 @id @default(uuid()) @db.Uuid
-  naam               String
-  omschrijving       String?
-  categorie          String
-  frequentie         Frequentie
-  startmaand         Int?                   @map("startmaand")
-  recordmanagerId    String                 @map("recordmanager_id") @db.Uuid
-  proceseigenaarId   String                 @map("proceseigenaar_id") @db.Uuid
-  archivarisId       String                 @map("archivaris_id") @db.Uuid
-  recordmanager      Medewerker             @relation("TaakdefinitieRecordmanager", fields: [recordmanagerId], references: [id])
-  proceseigenaar     Medewerker             @relation("TaakdefinitieProceseigenaar", fields: [proceseigenaarId], references: [id])
-  archivaris         Medewerker             @relation("TaakdefinitieArchivaris", fields: [archivarisId], references: [id])
-  actief             Boolean                @default(true)
-  versie             Int                    @default(1)
-  stekkers           TaakdefinitieStekker[]
-  instanties         Taakinstantie[]
+  id               String                 @id @default(uuid()) @db.Uuid
+  naam             String
+  omschrijving     String?
+  categorie        String
+  frequentie       Frequentie
+  startmaand       Int?                   @map("startmaand")
+  recordmanagerId  String                 @map("recordmanager_id") @db.Uuid
+  proceseigenaarId String                 @map("proceseigenaar_id") @db.Uuid
+  archivarisId     String                 @map("archivaris_id") @db.Uuid
+  recordmanager    Medewerker             @relation("TaakdefinitieRecordmanager", fields: [recordmanagerId], references: [id])
+  proceseigenaar   Medewerker             @relation("TaakdefinitieProceseigenaar", fields: [proceseigenaarId], references: [id])
+  archivaris       Medewerker             @relation("TaakdefinitieArchivaris", fields: [archivarisId], references: [id])
+  actief           Boolean                @default(true)
+  versie           Int                    @default(1)
+  stekkers         TaakdefinitieStekker[]
+  instanties       Taakinstantie[]
 
   @@map("taakdefinitie")
 }
 
 model TaakdefinitieStekker {
-  taakdefinitieId    String         @map("taakdefinitie_id") @db.Uuid
-  stekkerId          String         @map("stekker_id") @db.Uuid
-  taakdefinitie      Taakdefinitie  @relation(fields: [taakdefinitieId], references: [id])
-  stekker            Stekker        @relation(fields: [stekkerId], references: [id])
-  selectieparameters Json           @map("selectieparameters")
+  taakdefinitieId    String        @map("taakdefinitie_id") @db.Uuid
+  stekkerId          String        @map("stekker_id") @db.Uuid
+  taakdefinitie      Taakdefinitie @relation(fields: [taakdefinitieId], references: [id])
+  stekker            Stekker       @relation(fields: [stekkerId], references: [id])
+  selectieparameters Json          @map("selectieparameters")
 
   @@id([taakdefinitieId, stekkerId])
   @@map("taakdefinitie_stekker")
 }
 
 model Taakinstantie {
-  id                 String          @id @default(uuid()) @db.Uuid
-  taakdefinitieId    String          @map("taakdefinitie_id") @db.Uuid
-  taakdefinitie      Taakdefinitie   @relation(fields: [taakdefinitieId], references: [id])
+  id                 String             @id @default(uuid()) @db.Uuid
+  taakdefinitieId    String             @map("taakdefinitie_id") @db.Uuid
+  taakdefinitie      Taakdefinitie      @relation(fields: [taakdefinitieId], references: [id])
   naam               String
   status             TaakStatus
-  stapSinds          DateTime        @default(now()) @map("stap_sinds")
-  ronde              Int             @default(1)
-  peildatum          DateTime?       @db.Date
-  recordmanagerId    String          @map("recordmanager_id") @db.Uuid
-  proceseigenaarId   String          @map("proceseigenaar_id") @db.Uuid
-  archivarisId       String          @map("archivaris_id") @db.Uuid
-  recordmanager      Medewerker      @relation("TaakinstantieRecordmanager", fields: [recordmanagerId], references: [id])
-  proceseigenaar     Medewerker      @relation("TaakinstantieProceseigenaar", fields: [proceseigenaarId], references: [id])
-  archivaris         Medewerker      @relation("TaakinstantieArchivaris", fields: [archivarisId], references: [id])
-  gestartOp          DateTime?       @map("gestart_op")
-  afgerondOp         DateTime?       @map("afgerond_op")
-  versie             Int             @default(1)
+  stapSinds          DateTime           @default(now()) @map("stap_sinds") @db.Timestamptz
+  ronde              Int                @default(1)
+  peildatum          DateTime?          @db.Date
+  recordmanagerId    String             @map("recordmanager_id") @db.Uuid
+  proceseigenaarId   String             @map("proceseigenaar_id") @db.Uuid
+  archivarisId       String             @map("archivaris_id") @db.Uuid
+  recordmanager      Medewerker         @relation("TaakinstantieRecordmanager", fields: [recordmanagerId], references: [id])
+  proceseigenaar     Medewerker         @relation("TaakinstantieProceseigenaar", fields: [proceseigenaarId], references: [id])
+  archivaris         Medewerker         @relation("TaakinstantieArchivaris", fields: [archivarisId], references: [id])
+  gestartOp          DateTime?          @map("gestart_op") @db.Timestamptz
+  afgerondOp         DateTime?          @map("afgerond_op") @db.Timestamptz
+  versie             Int                @default(1)
+  // Vingerafdruk van de lijst bij de vrijgave door de archivaris (CC-9); gecontroleerd
+  // bij de vernietigingsopdracht.
+  lijstHash          String?            @map("lijst_hash")
   selecties          Selectie[]
   verklaringen       Verklaring[]
   auditEvents        AuditEvent[]
   outboxItems        Outbox[]
+  vernietigingen     Vernietiging[]
+  kandidaatBesluiten KandidaatBesluit[]
+  archiveringen      Archivering[]
 
   @@map("taakinstantie")
 }
 
 model Verklaring {
-  id               String          @id @default(uuid()) @db.Uuid
-  taakinstantieId  String          @map("taakinstantie_id") @db.Uuid
-  taakinstantie    Taakinstantie   @relation(fields: [taakinstantieId], references: [id])
-  versie           Int
-  status           String
-  pdf              Bytes
-  pdfSha256        String          @map("pdf_sha256")
-  csv              Bytes
-  csvSha256        String          @map("csv_sha256")
-  csvBestandsnaam  String          @map("csv_bestandsnaam")
-  metadata         Json
-  gegenereerdOp    DateTime        @default(now()) @map("gegenereerd_op")
-  gegenereerdDoor  String?         @map("gegenereerd_door")
+  id              String        @id @default(uuid()) @db.Uuid
+  taakinstantieId String        @map("taakinstantie_id") @db.Uuid
+  taakinstantie   Taakinstantie @relation(fields: [taakinstantieId], references: [id])
+  versie          Int
+  status          String
+  pdf             Bytes
+  pdfSha256       String        @map("pdf_sha256")
+  csv             Bytes
+  csvSha256       String        @map("csv_sha256")
+  csvBestandsnaam String        @map("csv_bestandsnaam")
+  metadata        Json
+  gegenereerdOp   DateTime      @default(now()) @map("gegenereerd_op") @db.Timestamptz
+  gegenereerdDoor String?       @map("gegenereerd_door")
 
   @@unique([taakinstantieId, versie])
   @@index([taakinstantieId, gegenereerdOp])
@@ -192,65 +199,74 @@ model Verklaring {
 }
 
 model Selectie {
-  id                       String                @id @default(uuid()) @db.Uuid
-  taakinstantieId          String                @map("taakinstantie_id") @db.Uuid
-  taakinstantie            Taakinstantie         @relation(fields: [taakinstantieId], references: [id])
-  stekkerId                String                @map("stekker_id") @db.Uuid
-  stekkerConfiguratieId    String                @map("stekker_configuratie_id") @db.Uuid
-  stekkerConfiguratie      StekkerConfiguratie   @relation(fields: [stekkerConfiguratieId], references: [id])
-  externSelectieId         String?               @map("extern_selectie_id")
-  status                   String
-  peildatum                DateTime?             @db.Date
-  selectietijdstip         DateTime?
-  totaalKandidaten         Int                   @default(0) @map("totaal_kandidaten")
-  totaalObjecten           Int                   @default(0) @map("totaal_objecten")
-  totaalBetrokkenen        Int                   @default(0) @map("totaal_betrokkenen")
-  stekkerversie            String?
-  configuratieversie       String?
-  apiVersie                String?               @map("api_versie")
-  geimporteerd             Int                   @default(0)
-  fout                     String?
-  externVernietigingId     String?               @map("extern_vernietiging_id")
-  vernietigingStatus       String?               @map("vernietiging_status")
-  vernietigingGestartOp    DateTime?             @map("vernietiging_gestart_op")
-  vernietigingAfgerondOp   DateTime?             @map("vernietiging_afgerond_op")
-  vernietigingResultaat    Json?                 @map("vernietiging_resultaat")
-  kandidaten               Vernietigingskandidaat[]
+  id                    String                   @id @default(uuid()) @db.Uuid
+  taakinstantieId       String                   @map("taakinstantie_id") @db.Uuid
+  taakinstantie         Taakinstantie            @relation(fields: [taakinstantieId], references: [id])
+  stekkerId             String                   @map("stekker_id") @db.Uuid
+  stekkerConfiguratieId String                   @map("stekker_configuratie_id") @db.Uuid
+  stekkerConfiguratie   StekkerConfiguratie      @relation(fields: [stekkerConfiguratieId], references: [id])
+  externSelectieId      String?                  @map("extern_selectie_id")
+  status                String
+  peildatum             DateTime?                @db.Date
+  selectietijdstip      DateTime?                @db.Timestamptz
+  totaalKandidaten      Int                      @default(0) @map("totaal_kandidaten")
+  totaalObjecten        Int                      @default(0) @map("totaal_objecten")
+  totaalBetrokkenen     Int                      @default(0) @map("totaal_betrokkenen")
+  stekkerversie         String?
+  configuratieversie    String?
+  apiVersie             String?                  @map("api_versie")
+  geimporteerd          Int                      @default(0)
+  fout                  String?
+  geclaimdTot           DateTime?                @map("geclaimd_tot") @db.Timestamptz
+  geclaimdDoor          String?                  @map("geclaimd_door")
+  // Herkansen (CC-16): het oude record krijgt status VERVANGEN en verwijst naar het nieuwe.
+  vervangenDoorId       String?                  @map("vervangen_door_id") @db.Uuid
+  vervangenDoor         Selectie?                @relation("SelectieVervanging", fields: [vervangenDoorId], references: [id])
+  vervangt              Selectie[]               @relation("SelectieVervanging")
+  // Opeenvolgende fouten bij het opvragen van de status, en wanneer opnieuw.
+  pollFouten            Int                      @default(0) @map("poll_fouten")
+  volgendePollOp        DateTime?                @map("volgende_poll_op") @db.Timestamptz
+  kandidaten            Vernietigingskandidaat[]
+  vernietiging          Vernietiging?
 
   @@index([taakinstantieId])
   @@map("selectie")
 }
 
 model Vernietigingskandidaat {
-  id                         String    @id @default(uuid()) @db.Uuid
-  selectieId                 String    @map("selectie_id") @db.Uuid
-  selectie                   Selectie  @relation(fields: [selectieId], references: [id])
-  kandidaatId                String    @map("kandidaat_id")
-  bronId                     String    @map("bron_id")
-  bronIdNaam                 String?   @map("bron_id_naam")
-  omschrijving               String
-  classificatieschema        String?
-  classificatiesleutel       String?
-  classificatieomschrijving  String?
-  selectielijst              String?
-  grondslag                  String?
-  grondslagAfwijkend         String?   @map("grondslag_afwijkend")
-  resultaat                  String?
-  bewaartermijn              String?
-  waardering                 String?
-  begindatum                 DateTime? @db.Date
-  einddatum                  DateTime? @db.Date
-  vernietigingsdatum         DateTime? @db.Date
-  aantalObjecten             Int       @default(0) @map("aantal_objecten")
-  aantalBetrokkenen          Int       @default(0) @map("aantal_betrokkenen")
-  relatieType                String?   @map("relatie_type")
-  relatieId                  String?   @map("relatie_id")
-  bron                       Json
-  beoordeling                String    @default("OPGENOMEN")
-  uitsluitReden              String?   @map("uitsluit_reden")
-  toelichting                String?
-  beoordeeldDoor             String?   @map("beoordeeld_door") @db.Uuid
-  versie                     Int       @default(1)
+  id                        String                 @id @default(uuid()) @db.Uuid
+  selectieId                String                 @map("selectie_id") @db.Uuid
+  selectie                  Selectie               @relation(fields: [selectieId], references: [id])
+  kandidaatId               String                 @map("kandidaat_id")
+  bronId                    String                 @map("bron_id")
+  bronIdNaam                String?                @map("bron_id_naam")
+  omschrijving              String
+  classificatieschema       String?
+  classificatiesleutel      String?
+  classificatieomschrijving String?
+  selectielijst             String?
+  grondslag                 String?
+  grondslagAfwijkend        String?                @map("grondslag_afwijkend")
+  resultaat                 String?
+  bewaartermijn             String?
+  waardering                String?
+  begindatum                DateTime?              @db.Date
+  einddatum                 DateTime?              @db.Date
+  vernietigingsdatum        DateTime?              @db.Date
+  aantalObjecten            Int                    @default(0) @map("aantal_objecten")
+  aantalBetrokkenen         Int                    @default(0) @map("aantal_betrokkenen")
+  relatieType               String?                @map("relatie_type")
+  relatieId                 String?                @map("relatie_id")
+  bron                      Json
+  beoordeling               String                 @default("OPGENOMEN")
+  uitsluitReden             String?                @map("uitsluit_reden")
+  toelichting               String?
+  beoordeeldDoor            String?                @map("beoordeeld_door") @db.Uuid
+  // Laatste beoordeling door de recordmanager; toelichting en beoordeeld_door zijn van de RM.
+  beoordeeldOp              DateTime?              @map("beoordeeld_op") @db.Timestamptz
+  versie                    Int                    @default(1)
+  uitvoeringsresultaten     Uitvoeringsresultaat[]
+  besluiten                 KandidaatBesluit[]
 
   @@unique([selectieId, kandidaatId])
   @@index([selectieId, beoordeling])
@@ -260,52 +276,176 @@ model Vernietigingskandidaat {
 }
 
 model AuditEvent {
-  id              BigInt          @id @default(autoincrement())
-  taakinstantieId String          @map("taakinstantie_id") @db.Uuid
-  taakinstantie   Taakinstantie   @relation(fields: [taakinstantieId], references: [id])
-  tijdstip        DateTime        @default(now())
-  actorType       AuditActorType  @map("actor_type")
-  actorId         String?         @map("actor_id")
-  actorNaam       String?         @map("actor_naam")
+  id              BigInt         @id @default(autoincrement())
+  taakinstantieId String         @map("taakinstantie_id") @db.Uuid
+  taakinstantie   Taakinstantie  @relation(fields: [taakinstantieId], references: [id])
+  tijdstip        DateTime       @default(now()) @db.Timestamptz
+  actorType       AuditActorType @map("actor_type")
+  actorId         String?        @map("actor_id")
+  actorNaam       String?        @map("actor_naam")
   rol             AppRole?
   actie           String
-  entiteitType    String          @map("entiteit_type")
-  entiteitId      String          @map("entiteit_id")
+  entiteitType    String         @map("entiteit_type")
+  entiteitId      String         @map("entiteit_id")
   details         Json
-  correlatieId    String?         @map("correlatie_id")
-  vorigeHash      String?         @map("vorige_hash")
+  correlatieId    String?        @map("correlatie_id")
+  vorigeHash      String?        @map("vorige_hash")
   hash            String
 
+  @@index([taakinstantieId, id], map: "idx_audit_event_taak")
   @@map("audit_event")
 }
 
 model ConfiguratieEvent {
-  id            BigInt          @id @default(autoincrement())
-  tijdstip      DateTime        @default(now())
-  actorType     AuditActorType  @map("actor_type")
-  actorId       String?         @map("actor_id")
-  actorNaam     String?         @map("actor_naam")
-  rol           AppRole?
-  actie         String
-  entiteitType  String          @map("entiteit_type")
-  entiteitId    String          @map("entiteit_id")
-  details       Json
-  correlatieId  String?         @map("correlatie_id")
-  vorigeHash    String?         @map("vorige_hash")
-  hash          String
+  id           BigInt         @id @default(autoincrement())
+  tijdstip     DateTime       @default(now()) @db.Timestamptz
+  actorType    AuditActorType @map("actor_type")
+  actorId      String?        @map("actor_id")
+  actorNaam    String?        @map("actor_naam")
+  rol          AppRole?
+  actie        String
+  entiteitType String         @map("entiteit_type")
+  entiteitId   String         @map("entiteit_id")
+  details      Json
+  correlatieId String?        @map("correlatie_id")
+  vorigeHash   String?        @map("vorige_hash")
+  hash         String
 
   @@map("configuratie_event")
 }
 
 model Outbox {
-  id              String          @id @default(uuid()) @db.Uuid
-  taakinstantieId String?         @map("taakinstantie_id") @db.Uuid
-  taakinstantie   Taakinstantie?  @relation(fields: [taakinstantieId], references: [id])
-  queue           String
-  jobNaam         String          @map("job_naam")
-  payload         Json
-  aangemaaktOp    DateTime        @default(now()) @map("aangemaakt_op")
-  verzondenOp     DateTime?       @map("verzonden_op")
+  id               String         @id @default(uuid()) @db.Uuid
+  taakinstantieId  String?        @map("taakinstantie_id") @db.Uuid
+  taakinstantie    Taakinstantie? @relation(fields: [taakinstantieId], references: [id])
+  queue            String
+  jobNaam          String         @map("job_naam")
+  payload          Json
+  aangemaaktOp     DateTime       @default(now()) @map("aangemaakt_op") @db.Timestamptz
+  verzondenOp      DateTime?      @map("verzonden_op") @db.Timestamptz
+  // OPEN, VERWERKT of MISLUKT (CHECK-constraint in de migratie).
+  status           String         @default("OPEN")
+  pogingen         Int            @default(0)
+  volgendePogingOp DateTime       @default(now()) @map("volgende_poging_op") @db.Timestamptz
+  laatsteFout      String?        @map("laatste_fout")
+  // Claim door een worker (CC-7): tot dit tijdstip, door deze worker.
+  geclaimdTot      DateTime?      @map("geclaimd_tot") @db.Timestamptz
+  geclaimdDoor     String?        @map("geclaimd_door")
 
   @@map("outbox")
+}
+
+// Uitvoering per selectie (stekker), CC-8. De cockpit legt elke stap zelf vast, zodat een
+// nieuwe poging (na een fout of een gecrashte worker) afgeronde stappen overslaat.
+model Vernietiging {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  taakinstantieId      String                 @map("taakinstantie_id") @db.Uuid
+  taakinstantie        Taakinstantie          @relation(fields: [taakinstantieId], references: [id])
+  selectieId           String                 @unique @map("selectie_id") @db.Uuid
+  selectie             Selectie               @relation(fields: [selectieId], references: [id])
+  besluitReferentie    String                 @map("besluit_referentie")
+  batchGrootte         Int                    @map("batch_grootte")
+  aantalKandidaten     Int                    @map("aantal_kandidaten")
+  // LOPEND, MISLUKT (opdracht niet gelukt), INTEGRITEIT_MISLUKT of AFGEROND.
+  status               String                 @default("LOPEND")
+  externVernietigingId String?                @map("extern_vernietiging_id")
+  // Status volgens de stekker: IDLE, RUNNING, COMPLETED, PARTIAL of FAILED.
+  stekkerStatus        String?                @map("stekker_status")
+  vrijgegevenOp        DateTime?              @map("vrijgegeven_op") @db.Timestamptz
+  stekkerStarttijd     DateTime?              @map("stekker_starttijd") @db.Timestamptz
+  stekkerEindtijd      DateTime?              @map("stekker_eindtijd") @db.Timestamptz
+  volgendePollOp       DateTime?              @map("volgende_poll_op") @db.Timestamptz
+  pollPogingen         Int                    @default(0) @map("poll_pogingen")
+  fout                 String?
+  aangemaaktOp         DateTime               @default(now()) @map("aangemaakt_op") @db.Timestamptz
+  afgerondOp           DateTime?              @map("afgerond_op") @db.Timestamptz
+  geclaimdTot          DateTime?              @map("geclaimd_tot") @db.Timestamptz
+  geclaimdDoor         String?                @map("geclaimd_door")
+  batches              VernietigingBatch[]
+  resultaten           Uitvoeringsresultaat[]
+
+  @@index([taakinstantieId])
+  @@map("vernietiging")
+}
+
+model VernietigingBatch {
+  id             String                 @id @default(uuid()) @db.Uuid
+  vernietigingId String                 @map("vernietiging_id") @db.Uuid
+  vernietiging   Vernietiging           @relation(fields: [vernietigingId], references: [id])
+  batchNummer    Int                    @map("batch_nummer")
+  aantal         Int
+  // Gezet zodra de stekker de batch heeft geaccepteerd.
+  geaccepteerdOp DateTime?              @map("geaccepteerd_op") @db.Timestamptz
+  resultaten     Uitvoeringsresultaat[]
+
+  @@unique([vernietigingId, batchNummer])
+  @@map("vernietiging_batch")
+}
+
+// Eén regel per aangeboden kandidaat, vooraf aangemaakt; `resultaat` vult de stekker.
+model Uitvoeringsresultaat {
+  id             String                 @id @default(uuid()) @db.Uuid
+  vernietigingId String                 @map("vernietiging_id") @db.Uuid
+  vernietiging   Vernietiging           @relation(fields: [vernietigingId], references: [id])
+  batchId        String                 @map("batch_id") @db.Uuid
+  batch          VernietigingBatch      @relation(fields: [batchId], references: [id])
+  kandidaatId    String                 @map("kandidaat_id") @db.Uuid
+  kandidaat      Vernietigingskandidaat @relation(fields: [kandidaatId], references: [id])
+  // SUCCESS, FAILED, SKIPPED, NOT_FOUND of CHANGED (OpenAPI); leeg tot de stekker het meldt.
+  resultaat      String?
+  foutcode       String?
+  foutmelding    String?
+  bronstatus     String?
+  logReference   String?                @map("log_reference")
+  correlatieId   String?                @map("correlatie_id")
+  ontvangenOp    DateTime?              @map("ontvangen_op") @db.Timestamptz
+
+  @@unique([vernietigingId, kandidaatId])
+  @@index([batchId])
+  @@map("uitvoeringsresultaat")
+}
+
+// Besluit van de proceseigenaar of archivaris over één kandidaat (CC-9). Append-only: elk
+// besluit is een nieuwe regel, zodat de toelichting van de recordmanager op de kandidaat
+// zelf blijft staan en de geschiedenis per ronde bewaard blijft.
+model KandidaatBesluit {
+  id              String                 @id @default(uuid()) @db.Uuid
+  kandidaatId     String                 @map("kandidaat_id") @db.Uuid
+  kandidaat       Vernietigingskandidaat @relation(fields: [kandidaatId], references: [id])
+  taakinstantieId String                 @map("taakinstantie_id") @db.Uuid
+  taakinstantie   Taakinstantie          @relation(fields: [taakinstantieId], references: [id])
+  ronde           Int
+  // proceseigenaar of archivaris
+  rol             String
+  // AKKOORD of RETOUR
+  besluit         String
+  toelichting     String?
+  medewerkerId    String                 @map("medewerker_id") @db.Uuid
+  medewerker      Medewerker             @relation(fields: [medewerkerId], references: [id])
+  tijdstip        DateTime               @default(now()) @db.Timestamptz
+
+  @@index([kandidaatId, tijdstip])
+  @@map("kandidaat_besluit")
+}
+
+// Archivering van het vernietigingsdossier (CC-18). Een poging per regel; status PENDING,
+// SUCCESS of FAILED. De adapter bepaalt waar het pakket terechtkomt (eerst bestand,
+// later OpenZaak).
+model Archivering {
+  id               String        @id @default(uuid()) @db.Uuid
+  taakinstantieId  String        @map("taakinstantie_id") @db.Uuid
+  taakinstantie    Taakinstantie @relation(fields: [taakinstantieId], references: [id])
+  status           String        @default("PENDING")
+  adapter          String
+  verklaringVersie Int?          @map("verklaring_versie")
+  locatie          String?
+  manifestSha256   String?       @map("manifest_sha256")
+  openzaakZaakId   String?       @map("openzaak_zaak_id")
+  fout             String?
+  aangevraagdDoor  String        @map("aangevraagd_door")
+  aangevraagdOp    DateTime      @default(now()) @map("aangevraagd_op") @db.Timestamptz
+  afgerondOp       DateTime?     @map("afgerond_op") @db.Timestamptz
+
+  @@index([taakinstantieId])
+  @@map("archivering")
 }

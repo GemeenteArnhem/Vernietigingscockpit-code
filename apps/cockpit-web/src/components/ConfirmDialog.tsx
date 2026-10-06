@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { AlertTriangle, X } from "lucide-react";
 
 type Props = {
@@ -9,6 +9,8 @@ type Props = {
   cancelLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
+  // Optionele extra inhoud onder de beschrijving, bijv. aantallen per stekker.
+  children?: ReactNode;
 };
 
 export default function ConfirmDialog({
@@ -19,6 +21,7 @@ export default function ConfirmDialog({
   cancelLabel = "Annuleren",
   onConfirm,
   onCancel,
+  children,
 }: Props) {
   useEffect(() => {
     if (!open) {
@@ -92,6 +95,7 @@ export default function ConfirmDialog({
 
         <div className="px-6 py-5">
           <p className="text-sm leading-6 text-slate-600">{description}</p>
+          {children}
         </div>
 
         <div className="flex flex-col-reverse gap-3 border-t border-slate-100 bg-slate-50/70 px-6 py-5 sm:flex-row sm:justify-end">

@@ -66,8 +66,9 @@ export default function ReviewTableFilters({
   searchQuery,
   onSearchQuery,
 }: Props) {
-  const status = useDropdown();
-  const columns = useDropdown();
+  // Destructureren: zo leest de render alleen state, en wordt de ref alleen doorgegeven.
+  const { open: statusOpen, setOpen: setStatusOpen, ref: statusRef } = useDropdown();
+  const { open: columnsOpen, setOpen: setColumnsOpen, ref: columnsRef } = useDropdown();
 
   const activeStatusLabel =
     STATUS_OPTIONS.find((option) => option.value === statusFilter)?.label ??
@@ -92,12 +93,12 @@ export default function ReviewTableFilters({
             </div>
           </div>
 
-          <div className="relative" ref={status.ref}>
+          <div className="relative" ref={statusRef}>
             <button
               type="button"
-              onClick={() => status.setOpen((current) => !current)}
+              onClick={() => setStatusOpen((current) => !current)}
               className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors hover:bg-gray-50 ${
-                statusActive || status.open
+                statusActive || statusOpen
                   ? "border-blue-500 bg-blue-50 text-blue-600"
                   : "border-gray-200 text-blue-600"
               }`}
@@ -106,7 +107,7 @@ export default function ReviewTableFilters({
               {activeStatusLabel}
             </button>
 
-            {status.open && (
+            {statusOpen && (
               <div className="absolute left-0 top-full z-20 mt-1 min-w-[180px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
                 {STATUS_OPTIONS.map((option) => (
                   <button
@@ -114,7 +115,7 @@ export default function ReviewTableFilters({
                     type="button"
                     onClick={() => {
                       onStatusFilter(option.value);
-                      status.setOpen(false);
+                      setStatusOpen(false);
                     }}
                     className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-gray-50 ${
                       statusFilter === option.value
@@ -133,12 +134,12 @@ export default function ReviewTableFilters({
           </div>
         </div>
 
-        <div className="relative self-start lg:self-auto" ref={columns.ref}>
+        <div className="relative self-start lg:self-auto" ref={columnsRef}>
           <button
             type="button"
-            onClick={() => columns.setOpen((current) => !current)}
+            onClick={() => setColumnsOpen((current) => !current)}
             className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors hover:bg-gray-50 ${
-              columns.open
+              columnsOpen
                 ? "border-blue-500 bg-blue-50 text-blue-600"
                 : "border-gray-200 text-blue-600"
             }`}
@@ -147,7 +148,7 @@ export default function ReviewTableFilters({
             Kolommen
           </button>
 
-          {columns.open && (
+          {columnsOpen && (
             <div className="absolute right-0 top-full z-20 mt-1 max-h-80 min-w-[220px] overflow-y-auto rounded-lg border border-gray-200 bg-white py-2 shadow-lg">
               {COLUMN_GROUPS.map((group) => (
                 <div key={group.label}>

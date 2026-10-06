@@ -4,10 +4,8 @@ import { Outlet, matchPath, useLocation } from "react-router-dom";
 import RightRail from "../components/RightRail";
 import Sidebar from "../components/Sidebar";
 import PageHeader from "../components/PageHeader";
-import {
-  AppShellPortalProvider,
-  useAppShellPortalContext,
-} from "./AppShellPortalContext";
+import { AppShellPortalProvider } from "./AppShellPortalContext";
+import { useAppShellPortalContext } from "./appShellPortalState";
 
 export default function AppShell() {
   return (

@@ -1,3 +1,5 @@
+import { ACTIEVE_SELECTIE } from "./actieve-selectie.js";
+
 type SelectieStekkerRecord = {
   stekker: {
     id: string;
@@ -92,6 +94,7 @@ export const taakSelectieSelect = {
     },
   },
   selecties: {
+    where: ACTIEVE_SELECTIE,
     select: {
       id: true,
       stekkerId: true,

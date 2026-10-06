@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev, dev5]
+  pull_request:
+
+jobs:
+  controle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Alleen nodig voor `prisma generate`; er wordt geen verbinding gemaakt.
+      DATABASE_URL: postgresql://prisma:prisma@localhost:5432/prisma?schema=public
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Gelijk aan de runtime-image (node:22-alpine).
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Stekkertypes (CC-19): gegenereerd uit de spec in de architectuurrepo. Deze stap faalt
+      # als packages/stekker-client/src/stekker-api.ts niet meer overeenkomt met de spec.
+      - name: Architectuurrepo uitchecken (stekkerspec)
+        uses: actions/checkout@v4
+        with:
+          repository: GemeenteArnhem/Vernietigingscockpit
+          ref: Review
+          path: architectuur
+          sparse-checkout: designrules/api
+
+      - name: Stekkertypes controleren tegen de spec
+        run: npm run check:generated --workspace @vernietigingscockpit/stekker-client
+        env:
+          STEKKER_SPEC: ${{ github.workspace }}/architectuur/designrules/api/stekker-openapi-spec.yaml
+
+      - name: Prisma-client genereren
+        run: npm run db:generate --workspace @vernietigingscockpit/cockpit-api
+
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+      # Integratietests starten PostgreSQL via Testcontainers (Docker is beschikbaar op de runner).
+      - run: npm run test:integratie
+
+      - run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: controle
+    env:
+      # Vastgepinde versie van de teststekker; bijwerken bij een nieuwe stekker- of specversie.
+      STEKKER_COMMIT: efcb4e6290ae4756afa203eb95f2176b2882b66b
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Teststekker uitchecken
+        uses: actions/checkout@v4
+        with:
+          repository: GemeenteArnhem/Vernietigingscockpit-stekker-test
+          ref: ${{ env.STEKKER_COMMIT }}
+          path: stekker
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Prisma-client genereren
+        run: npm run db:generate --workspace @vernietigingscockpit/cockpit-api
+        env:
+          DATABASE_URL: postgresql://prisma:prisma@localhost:5432/prisma?schema=public
+
+      - name: E2E (cockpit + teststekker met OAuth2 + nep-IdP)
+        run: npm run test:e2e
+        env:
+          STEKKER_REPO: ${{ github.workspace }}/stekker

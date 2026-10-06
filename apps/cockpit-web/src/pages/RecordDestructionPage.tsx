@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowRight,
+  RotateCcw,
 } from "lucide-react";
 
 import ActionPanel, {
@@ -10,6 +11,7 @@ import ActionPanel, {
   ActionPanelChoice,
   ActionPanelSection,
 } from "../components/ActionPanel";
+import ConfirmDialog from "../components/ConfirmDialog";
 import ContentPanel from "../components/ContentPanel";
 import ShortcutPane from "../components/ShortcutPane";
 import RecordDetailsPanel from "../features/task-execution/components/RecordDetailsPanel";
@@ -17,6 +19,7 @@ import TaskExecutionHeader from "../features/task-execution/components/TaskExecu
 import { AppShellPortal } from "../layouts/AppShellPortalContext";
 import {
   getDestructionExecution,
+  retryVernietiging,
   startVernietigingsopdracht,
 } from "../api/f3Data";
 import { useSessionUser } from "../auth/useSessionUser";
@@ -25,6 +28,10 @@ import type {
   TaskExecutionConnectorDestructionStatus,
   TaskExecutionDestructionConnector,
 } from "../shared/types/taskExecutionConnector";
+import ActieFoutmelding from "../components/ActieFoutmelding";
+
+// Vaste lege lijsten, zodat useMemo-afhankelijkheden niet bij elke render veranderen.
+const EMPTY_CONNECTORS: DestructionExecutionData["connectors"] = [];
 
 type DestructionExecutionData = Awaited<
   ReturnType<typeof getDestructionExecution>
@@ -97,8 +104,10 @@ export default function RecordDestructionPage() {
   const [isLoadingExecution, setIsLoadingExecution] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Standaard 'opnieuw': is opnieuw proberen mogelijk, dan staat die keuze voorgeselecteerd.
+  const [selectedAction, setSelectedAction] = useState<"hoofd" | "opnieuw">("opnieuw");
 
-  const connectors = executionData?.connectors ?? [];
+  const connectors = executionData?.connectors ?? EMPTY_CONNECTORS;
   const summaryStats =
     executionData?.summaryStats ?? {
       teBeoordelen: 0,
@@ -108,7 +117,10 @@ export default function RecordDestructionPage() {
     };
   const metaItems = executionData?.metaItems ?? [];
   const taakStatus = executionData?.taak.status;
-  const canStartDestruction = !taakStatus || taakStatus === "vrijgegeven";
+  // Alleen als de API de actie toestaat (CC-13); de UI leidt zelf geen rechten af.
+  const canStartDestruction =
+    executionData?.taak.toegestaneActies?.includes("vernietiging.opdracht_geven") ?? false;
+  const [bevestigOpen, setBevestigOpen] = useState(false);
   const canViewResults = taakStatus === "resultaat" || taakStatus === "archief";
   const isExecutionRunning = taakStatus === "uitvoering";
 
@@ -159,7 +171,36 @@ export default function RecordDestructionPage() {
     }
   }, [accessToken, id]);
 
+  const kanOpnieuw =
+    selectedConnector?.toegestaneActies.includes("vernietiging.opnieuw") ?? false;
+  const effectieveActie = kanOpnieuw && selectedAction === "opnieuw" ? "opnieuw" : "hoofd";
+
+  const handleOpnieuw = useCallback(async () => {
+    if (!accessToken || !id || !selectedConnector) {
+      return;
+    }
+
+    setActionError(null);
+    setIsSubmitting(true);
+
+    try {
+      await retryVernietiging(accessToken, id, selectedConnector.id);
+      await refreshExecution();
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "Opnieuw starten is mislukt."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [accessToken, id, refreshExecution, selectedConnector]);
+
   const handlePrimaryAction = useCallback(async () => {
+    if (effectieveActie === "opnieuw") {
+      await handleOpnieuw();
+      return;
+    }
+
     if (canViewResults) {
       navigate(`/taak/${taakId}/taakuitvoering/${id}/resultaat`);
       return;
@@ -169,8 +210,29 @@ export default function RecordDestructionPage() {
       return;
     }
 
-    if (!accessToken || !id) {
+    if (!accessToken || !id || !executionData) {
       setActionError("Vernietigingsopdracht kan pas nadat de taak via de API is geladen.");
+      return;
+    }
+
+    // Eerst bevestigen, met de aantallen per stekker (CC-13).
+    setBevestigOpen(true);
+  }, [
+    accessToken,
+    canStartDestruction,
+    canViewResults,
+    effectieveActie,
+    executionData,
+    handleOpnieuw,
+    id,
+    navigate,
+    taakId,
+  ]);
+
+  const handleBevestigdeOpdracht = useCallback(async () => {
+    setBevestigOpen(false);
+
+    if (!accessToken || !id || !executionData) {
       return;
     }
 
@@ -178,7 +240,7 @@ export default function RecordDestructionPage() {
     setIsSubmitting(true);
 
     try {
-      await startVernietigingsopdracht(accessToken, id);
+      await startVernietigingsopdracht(accessToken, id, executionData.taak.versie);
       await refreshExecution();
     } catch (error) {
       setActionError(
@@ -191,15 +253,7 @@ export default function RecordDestructionPage() {
     }
 
     setIsSubmitting(false);
-  }, [
-    accessToken,
-    canStartDestruction,
-    canViewResults,
-    id,
-    navigate,
-    refreshExecution,
-    taakId,
-  ]);
+  }, [accessToken, executionData, id, refreshExecution]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -243,12 +297,19 @@ export default function RecordDestructionPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handlePrimaryAction]);
 
+  // Zonder uitvoeringsgegevens: een mislukte API-aanroep in het rode foutvlak, anders de lege stand.
   if (!selectedConnector) {
     return (
       <ContentPanel>
-        <div className="flex flex-1 items-center justify-center p-6 text-sm text-slate-500">
-          Geen uitvoeringsgegevens gevonden voor deze taak.
-        </div>
+        {actionError ? (
+          <div className="border-b border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {actionError}
+          </div>
+        ) : (
+          <div className="flex flex-1 items-center justify-center p-6 text-sm text-slate-500">
+            Geen uitvoeringsgegevens gevonden voor deze taak.
+          </div>
+        )}
       </ContentPanel>
     );
   }
@@ -316,7 +377,11 @@ export default function RecordDestructionPage() {
             <ActionPanelButtonGroup>
               <ActionPanelButton
                 label={
-                  isSubmitting
+                  effectieveActie === "opnieuw"
+                    ? isSubmitting
+                      ? "Opnieuw starten..."
+                      : "Opnieuw proberen"
+                    : isSubmitting
                     ? "Opdracht geven..."
                     : canViewResults
                       ? "Resultaat bekijken"
@@ -328,7 +393,7 @@ export default function RecordDestructionPage() {
                 disabled={
                   isSubmitting ||
                   isLoadingExecution ||
-                  (!canStartDestruction && !canViewResults)
+                  (effectieveActie === "hoofd" && !canStartDestruction && !canViewResults)
                 }
                 onClick={() => {
                   void handlePrimaryAction();
@@ -359,15 +424,23 @@ export default function RecordDestructionPage() {
                 icon={<ArrowRight size={18} />}
                 tone="primary"
                 density="compact"
-                selected
-                onClick={() => undefined}
+                selected={effectieveActie === "hoofd"}
+                onClick={() => setSelectedAction("hoofd")}
               />
 
-              {actionError ? (
-                <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm leading-5 text-rose-700">
-                  {actionError}
-                </p>
+              {kanOpnieuw && selectedConnector ? (
+                <ActionPanelChoice
+                  title={`Opnieuw proberen voor ${selectedConnector.naam}`}
+                  description=""
+                  icon={<RotateCcw size={18} />}
+                  tone="warning"
+                  density="compact"
+                  selected={effectieveActie === "opnieuw"}
+                  onClick={() => setSelectedAction("opnieuw")}
+                />
               ) : null}
+
+              <ActieFoutmelding melding={actionError} />
             </div>
           </ActionPanelSection>
         </ActionPanel>
@@ -498,6 +571,33 @@ export default function RecordDestructionPage() {
           </div>
         </div>
       </ContentPanel>
+
+      <ConfirmDialog
+        open={bevestigOpen}
+        title="Vernietigingsopdracht geven?"
+        description="Je start de technische vernietiging bij de gekoppelde stekkers. Dit kan niet worden teruggedraaid."
+        confirmLabel="Ja, vernietigingsopdracht geven"
+        onCancel={() => setBevestigOpen(false)}
+        onConfirm={() => {
+          void handleBevestigdeOpdracht();
+        }}
+      >
+        <ul className="mt-4 space-y-2">
+          {(executionData?.opdrachtOverzicht ?? []).map((stekker) => (
+            <li
+              key={stekker.naam}
+              className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+            >
+              <span className="font-medium">{stekker.naam}</span>
+              <span>
+                {stekker.aantalKandidaten.toLocaleString("nl-NL")} kandidaten in{" "}
+                {stekker.aantalBatches.toLocaleString("nl-NL")}{" "}
+                {stekker.aantalBatches === 1 ? "batch" : "batches"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </ConfirmDialog>
     </>
   );
 }

@@ -8,119 +8,95 @@ import {
 import { ConfigService } from "@nestjs/config";
 import type { Prisma } from "@prisma/client";
 import { PrismaService } from "../../shared/db/prisma.service.js";
+import { WorkflowService } from "../workflow/workflow.service.js";
+import {
+  claimJobs,
+  claimSelecties,
+  ClaimVerlorenFout,
+  geefSelectieVrij,
+  leesLeaseMs,
+  maakWorkerId,
+  verlengClaim,
+  type ClaimSoort,
+  type SelectieWerk,
+} from "./claim.js";
+import { bepaalVervolg, leesRetryConfig, type RetryConfig } from "./retrybeleid.js";
+import {
+  StekkerClient,
+  type StekkerKandidaat,
+  type StekkerSelectie,
+  type StekkerVerbinding,
+} from "../stekker/stekker-client.js";
+import { leesPollConfig, UitvoeringVerwerker } from "./uitvoering.js";
+import { VerklaringMaker } from "../verklaring/verklaring-maker.js";
+import { archiefAdapterVan, ArchiveringVerwerker } from "../archief/archivering.js";
+import {
+  correlatieId,
+  describeError,
+  logRegel,
+  jobNaFout,
+  jobVerwerkt,
+  parseDate,
+  SYSTEEM,
+  verbindingVan,
+  vervolgToelichting,
+} from "./worker-hulp.js";
 
 type SelectieStartPayload = {
   selectieId: string;
   peildatum?: string | null;
 };
 
-type VernietigingStartPayload = {
-  taakinstantieId: string;
-  selectieId: string;
-  kandidaten: Array<{
-    kandidaatId: string;
-    bronId: string;
-  }>;
-};
-
-type StekkerSelectieResponse = {
-  selectieId?: string;
-  selectiestatus?: string;
-  status?: string;
-  peildatum?: string;
-  selectietijdstip?: string;
-  totaalKandidaten?: number;
-  totaalObjecten?: number;
-  totaalBetrokkenen?: number;
-  stekkerversie?: string;
-  configuratieversie?: string;
-  apiVersie?: string;
-  foutmelding?: string;
-};
-
-type StekkerKandidaat = {
-  vernietigingskandidaatId?: string;
-  omschrijving?: string;
-  classificatieschema?: string;
-  classificatiesleutel?: string;
-  classificatieomschrijving?: string;
-  selectielijst?: string;
-  grondslag?: string;
-  grondslagAfwijkend?: string;
-  resultaat?: string;
-  bewaartermijn?: string;
-  waardering?: string;
-  begindatum?: string;
-  einddatum?: string;
-  vernietigingsdatum?: string;
-  aantalObjecten?: number;
-  aantalBetrokkenen?: number;
-  bronIdNaam?: string;
-  bronId?: string;
-  relatieType?: string;
-  relatieId?: string;
-};
-
-type StekkerObjectenResponse = {
-  selectieId: string;
-  offset: number;
-  limit: number;
-  totaal: number;
-  items: StekkerKandidaat[];
-};
-
-type StekkerVernietigingResponse = {
-  vernietigingId: string;
-  selectieId: string;
-  status: string;
-  starttijd?: string;
-  eindtijd?: string;
-  totaalKandidaten?: number;
-  totaalObjecten?: number;
-  totaalBatches?: number;
-  ontvangenBatches?: number;
-  succesvolVernietigd?: number;
-  mislukt?: number;
-  overgeslagen?: number;
-  gewijzigd?: number;
-  nietGevonden?: number;
-  aantalWaarschuwingen?: number;
-  aantalFouten?: number;
-};
-
-type StekkerVernietigingResultaat = {
-  vernietigingskandidaatId?: string;
-  bronId?: string;
-  resultaat?: string;
-  foutcode?: string;
-  foutmelding?: string;
-  bronstatus?: string;
-  batchNummer?: number;
-  logReference?: string;
-  correlatieId?: string;
-};
-
-type StekkerBatchResultaat = {
-  batchNummer: number;
-  resultaten: StekkerVernietigingResultaat[];
-};
-
 @Injectable()
 export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SelectieWorkerService.name);
   private intervalHandle: NodeJS.Timeout | null = null;
-  private running = false;
+  private running: Promise<void> | null = null;
+  private readonly retry: RetryConfig;
+  private readonly workerId: string;
+  private readonly leaseMs: number;
+  private readonly uitvoering: UitvoeringVerwerker;
+  private readonly verklaringMaker: VerklaringMaker;
+  private readonly archivering: ArchiveringVerwerker;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(ConfigService) private readonly config: ConfigService
-  ) {}
+    @Inject(ConfigService) private readonly config: ConfigService,
+    @Inject(StekkerClient) private readonly stekker: StekkerClient,
+    @Inject(WorkflowService) private readonly workflow: WorkflowService
+  ) {
+    this.retry = leesRetryConfig((sleutel) => this.config.get<string>(sleutel));
+    this.workerId = maakWorkerId(this.config.get<string>("WORKER_ID"));
+    this.leaseMs = leesLeaseMs(this.config.get<string>("WORKER_LEASE_MS"));
+    this.verklaringMaker = new VerklaringMaker(this.prisma, this.config);
+    this.archivering = new ArchiveringVerwerker(this.prisma, this.workflow, () => archiefAdapterVan(this.config));
+    this.uitvoering = new UitvoeringVerwerker(
+      this.prisma,
+      this.stekker,
+      this.workflow,
+      this.retry,
+      leesPollConfig((sleutel) => this.config.get<string>(sleutel)),
+      {
+        workerId: this.workerId,
+        claim: (limiet) => this.claim(limiet),
+        verleng: (soort, id) => this.verleng(soort, id),
+        claimdeJobs: (queue, jobNaam, limiet) => this.claimdeJobs(queue, jobNaam, limiet),
+        rondJobAf: (tx, jobId, data) => this.rondJobAf(tx, jobId, data),
+      }
+    );
+  }
 
+  // In de API draait de worker standaard niet (CC-7): de worker is een eigen proces
+  // (src/worker.ts). SELECTIE_WORKER_ENABLED=true zet hem toch in het API-proces aan,
+  // bijvoorbeeld voor lokale ontwikkeling met één proces.
   onModuleInit() {
-    const enabled = this.config.get<string>("SELECTIE_WORKER_ENABLED") !== "false";
+    if (this.config.get<string>("SELECTIE_WORKER_ENABLED") === "true") {
+      this.start();
+    }
+  }
 
-    if (!enabled) {
-      this.logger.log("Selectieworker staat uit via SELECTIE_WORKER_ENABLED=false.");
+  start() {
+    if (this.intervalHandle) {
       return;
     }
 
@@ -131,14 +107,19 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
       void this.tick();
     }, intervalMs);
     void this.tick();
-    this.logger.log(`Selectieworker gestart met interval ${intervalMs}ms.`);
+    this.logger.log(
+      `Worker ${this.workerId} gestart met interval ${intervalMs}ms en lease ${this.leaseMs}ms.`
+    );
   }
 
-  onModuleDestroy() {
+  // Bij afsluiten (SIGTERM): geen nieuwe rondes, en de lopende ronde netjes afmaken.
+  async onModuleDestroy() {
     if (this.intervalHandle) {
       clearInterval(this.intervalHandle);
       this.intervalHandle = null;
     }
+
+    await this.running;
   }
 
   private async tick() {
@@ -146,33 +127,90 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    this.running = true;
+    this.running = this.verwerkRonde()
+      .catch((error: unknown) => {
+        this.logger.warn(`Worker-ronde mislukt: ${describeError(error)}`);
+      })
+      .finally(() => {
+        this.running = null;
+      });
+    await this.running;
+  }
 
-    try {
-      await this.processStartJobs();
-      await this.pollRunningSelecties();
-      await this.importReadySelecties();
-      await this.processVernietigingStartJobs();
-      await this.pollRunningVernietigingen();
-    } catch (error) {
-      this.logger.warn(`Selectieworker tick mislukt: ${describeError(error)}`);
-    } finally {
-      this.running = false;
+  // Eén volledige verwerkingsronde; ook direct aanroepbaar vanuit tests.
+  async verwerkRonde() {
+    await this.processStartJobs();
+    await this.pollRunningSelecties();
+    await this.importReadySelecties();
+    await this.uitvoering.verwerkRonde();
+    await this.verwerkVerklaringJobs();
+    await this.verwerkArchiefJobs();
+  }
+
+  // Vernietigingsverklaring maken (CC-17), met hetzelfde retrybeleid als de stekkerjobs:
+  // is Gotenberg even weg, dan volgt een nieuwe poging met backoff.
+  private async verwerkVerklaringJobs() {
+    for (const job of await this.claimdeJobs("verklaring", "verklaring:genereer", 2)) {
+      const { taakinstantieId } = job.payload as { taakinstantieId: string };
+
+      try {
+        await this.metLease("outbox", job.id, () => this.verklaringMaker.genereer(taakinstantieId, SYSTEEM));
+        await this.prisma.client.$transaction((tx) => this.rondJobAf(tx, job.id, jobVerwerkt(job.pogingen)));
+      } catch (error) {
+        if (error instanceof ClaimVerlorenFout) {
+          this.logger.warn(error.message);
+          continue;
+        }
+
+        const vervolg = bepaalVervolg(error, job.pogingen + 1, this.retry, new Date());
+        const melding = `${describeError(error)}${vervolgToelichting(vervolg)}`;
+
+        await this.prisma.client
+          .$transaction((tx) => this.rondJobAf(tx, job.id, jobNaFout(job.pogingen, vervolg, melding)))
+          .catch((opslagFout: unknown) => {
+            this.logger.error(logRegel(`verklaring:genereer: fout kon niet worden vastgelegd: ${describeError(opslagFout)}`, job));
+          });
+        this.logger.warn(logRegel(`verklaring:genereer mislukt (${vervolg.status}): ${melding}`, job));
+      }
+    }
+  }
+
+  // Archiveren van het dossier (CC-18). Lukt het na de nieuwe pogingen niet, dan staat de
+  // archivering op FAILED en kan de recordmanager opnieuw archiveren.
+  private async verwerkArchiefJobs() {
+    for (const job of await this.claimdeJobs("archief", "archief:archiveer", 2)) {
+      const { archiveringId } = job.payload as { archiveringId: string };
+
+      try {
+        await this.metLease("outbox", job.id, () => this.archivering.archiveer(archiveringId, SYSTEEM));
+        await this.prisma.client.$transaction((tx) => this.rondJobAf(tx, job.id, jobVerwerkt(job.pogingen)));
+      } catch (error) {
+        if (error instanceof ClaimVerlorenFout) {
+          this.logger.warn(error.message);
+          continue;
+        }
+
+        const vervolg = bepaalVervolg(error, job.pogingen + 1, this.retry, new Date());
+        const melding = `${describeError(error)}${vervolgToelichting(vervolg)}`;
+
+        await this.prisma.client
+          .$transaction((tx) => this.rondJobAf(tx, job.id, jobNaFout(job.pogingen, vervolg, melding)))
+          .catch((opslagFout: unknown) => {
+            this.logger.error(logRegel(`archief:archiveer: fout kon niet worden vastgelegd: ${describeError(opslagFout)}`, job));
+          });
+
+        if (vervolg.status === "MISLUKT") {
+          await this.archivering.mislukt(archiveringId, melding, SYSTEEM).catch((opslagFout: unknown) => {
+            this.logger.error(logRegel(`archief:archiveer: status kon niet worden vastgelegd: ${describeError(opslagFout)}`, job));
+          });
+        }
+        this.logger.warn(logRegel(`archief:archiveer mislukt (${vervolg.status}): ${melding}`, job));
+      }
     }
   }
 
   private async processStartJobs() {
-    const jobs = await this.prisma.client.outbox.findMany({
-      where: {
-        queue: "selectie",
-        jobNaam: "selectie:start",
-        verzondenOp: null,
-      },
-      orderBy: {
-        aangemaaktOp: "asc",
-      },
-      take: 10,
-    });
+    const jobs = await this.claimdeJobs("selectie", "selectie:start", 10);
 
     for (const job of jobs) {
       const payload = job.payload as SelectieStartPayload;
@@ -184,14 +222,17 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
             stekkerConfiguratie: true,
           },
         });
-        const response = await this.postSelectie(
-          selectie.stekkerConfiguratie.baseUrl,
-          payload.peildatum
+        const response = await this.metLease("outbox", job.id, () =>
+          this.stekker.startSelectie(
+            verbindingVan(selectie.stekkerConfiguratie),
+            formatDateOnly(payload.peildatum),
+            correlatieId(job.taakinstantieId, job.id)
+          )
         );
-        const status = normalizeStatus(response);
+        const status = cockpitSelectieStatus(response);
 
-        await this.prisma.client.$transaction([
-          this.prisma.client.selectie.update({
+        await this.prisma.client.$transaction(async (tx) => {
+          await tx.selectie.update({
             where: { id: selectie.id },
             data: {
               externSelectieId: response.selectieId,
@@ -208,53 +249,47 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
               configuratieversie:
                 response.configuratieversie ?? selectie.configuratieversie,
               apiVersie: response.apiVersie,
-              fout: status === "FAILED" ? response.foutmelding ?? null : null,
+              fout: status === "FAILED" ? selectieFoutmelding(response) : null,
             },
-          }),
-          this.prisma.client.outbox.update({
-            where: { id: job.id },
-            data: {
-              verzondenOp: new Date(),
-            },
-          }),
-        ]);
+          });
+          await this.rondJobAf(tx, job.id, jobVerwerkt(job.pogingen));
+        });
       } catch (error) {
+        if (error instanceof ClaimVerlorenFout) {
+          this.logger.warn(error.message);
+          continue;
+        }
+
+        const vervolg = bepaalVervolg(error, job.pogingen + 1, this.retry, new Date());
+        const melding = `${describeError(error)}${vervolgToelichting(vervolg)}`;
+
         await this.prisma.client
-          .$transaction([
-            this.prisma.client.selectie.update({
+          .$transaction(async (tx) => {
+            await tx.selectie.update({
               where: { id: payload.selectieId },
-              data: {
-                status: "FAILED",
-                fout: describeError(error),
-              },
-            }),
-            this.prisma.client.outbox.update({
-              where: { id: job.id },
-              data: {
-                verzondenOp: new Date(),
-              },
-            }),
-          ])
-          .catch(() => undefined);
-        this.logger.warn(`selectie:start ${job.id} mislukt: ${describeError(error)}`);
+              // Bij een geplande nieuwe poging blijft de selectie AANGEVRAAGD; de fout is zichtbaar.
+              data: vervolg.status === "MISLUKT" ? { status: "FAILED", fout: melding } : { fout: melding },
+            });
+            await this.rondJobAf(tx, job.id, jobNaFout(job.pogingen, vervolg, melding));
+          })
+          .catch((opslagFout: unknown) => {
+            this.logger.error(logRegel(`selectie:start: fout kon niet worden vastgelegd: ${describeError(opslagFout)}`, job));
+          });
+        this.logger.warn(logRegel(`selectie:start mislukt (${vervolg.status}): ${melding}`, job));
       }
     }
   }
 
   private async pollRunningSelecties() {
+    await this.metGeclaimdeSelecties("poll-selectie", 20, (selecties) => this.pollSelecties(selecties));
+  }
+
+  private async pollSelecties(ids: string[]) {
     const selecties = await this.prisma.client.selectie.findMany({
-      where: {
-        externSelectieId: {
-          not: null,
-        },
-        status: {
-          in: ["AANGEVRAAGD", "RUNNING"],
-        },
-      },
+      where: { id: { in: ids } },
       include: {
         stekkerConfiguratie: true,
       },
-      take: 20,
     });
 
     for (const selectie of selecties) {
@@ -262,12 +297,30 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
         continue;
       }
 
+      // Time-out per selectie (CC-16): na selectieMs zonder resultaat wordt het FAILED.
+      const timeoutMs = leesSelectieTimeoutMs(selectie.stekkerConfiguratie.timeouts);
+      const gestart = selectie.selectietijdstip?.getTime();
+
+      if (gestart !== undefined && Date.now() - gestart > timeoutMs) {
+        const melding = `Selectie niet binnen ${formatDuur(timeoutMs)} klaar bij de stekker (time-out). Herkansen kan via de cockpit.`;
+        await this.prisma.client.selectie.update({
+          where: { id: selectie.id },
+          data: { status: "FAILED", fout: melding },
+        });
+        this.logger.warn(logRegel(melding, pollJob(selectie)));
+        continue;
+      }
+
       try {
-        const response = await this.getSelectie(
-          selectie.stekkerConfiguratie.baseUrl,
-          selectie.externSelectieId
+        const externSelectieId = selectie.externSelectieId;
+        const response = await this.metLease("selectie", selectie.id, () =>
+          this.stekker.getSelectie(
+            verbindingVan(selectie.stekkerConfiguratie),
+            externSelectieId,
+            correlatieId(selectie.taakinstantieId, `poll-selectie-${selectie.id}`)
+          )
         );
-        const status = normalizeStatus(response);
+        const status = cockpitSelectieStatus(response);
 
         await this.prisma.client.selectie.update({
           where: { id: selectie.id },
@@ -285,34 +338,45 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
             configuratieversie:
               response.configuratieversie ?? selectie.configuratieversie,
             apiVersie: response.apiVersie ?? selectie.apiVersie,
-            fout: status === "FAILED" ? response.foutmelding ?? null : null,
+            fout: status === "FAILED" ? selectieFoutmelding(response) : null,
+            pollFouten: 0,
+            volgendePollOp: null,
           },
         });
       } catch (error) {
+        if (error instanceof ClaimVerlorenFout) {
+          this.logger.warn(error.message);
+          continue;
+        }
+
+        // Een haperende statusvraag maakt de selectie niet direct FAILED (CC-16): tijdelijke
+        // fouten opnieuw met backoff, definitieve fouten (4xx) of te veel op rij wel.
+        const vervolg = bepaalVervolg(error, selectie.pollFouten + 1, this.retry, new Date());
+        const melding = `Status opvragen mislukt: ${describeError(error)}${vervolgToelichting(vervolg)}`;
+
         await this.prisma.client.selectie
           .update({
             where: { id: selectie.id },
-            data: {
-              status: "FAILED",
-              fout: describeError(error),
-            },
+            data:
+              vervolg.status === "MISLUKT"
+                ? { status: "FAILED", fout: melding, pollFouten: selectie.pollFouten + 1 }
+                : { fout: melding, pollFouten: selectie.pollFouten + 1, volgendePollOp: vervolg.volgendePogingOp },
           })
-          .catch(() => undefined);
-        this.logger.warn(
-          `poll selectie ${selectie.id} mislukt: ${describeError(error)}`
-        );
+          .catch((opslagFout: unknown) => {
+            this.logger.error(logRegel(`poll selectie: fout kon niet worden vastgelegd: ${describeError(opslagFout)}`, pollJob(selectie)));
+          });
+        this.logger.warn(logRegel(`poll selectie mislukt (${vervolg.status}): ${melding}`, pollJob(selectie)));
       }
     }
   }
 
   private async importReadySelecties() {
+    await this.metGeclaimdeSelecties("import-selectie", 5, (selecties) => this.importSelecties(selecties));
+  }
+
+  private async importSelecties(ids: string[]) {
     const selecties = await this.prisma.client.selectie.findMany({
-      where: {
-        externSelectieId: {
-          not: null,
-        },
-        status: "READY",
-      },
+      where: { id: { in: ids } },
       include: {
         stekkerConfiguratie: true,
         taakinstantie: {
@@ -321,7 +385,6 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
           },
         },
       },
-      take: 5,
     });
 
     for (const selectie of selecties) {
@@ -333,7 +396,8 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
         const imported = await this.importSelectieKandidaten({
           selectieId: selectie.id,
           externSelectieId: selectie.externSelectieId,
-          baseUrl: selectie.stekkerConfiguratie.baseUrl,
+          verbinding: verbindingVan(selectie.stekkerConfiguratie),
+          correlatieId: correlatieId(selectie.taakinstantie.id, `import-selectie-${selectie.id}`),
         });
 
         await this.prisma.client.$transaction(async (tx) => {
@@ -346,27 +410,32 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
             },
           });
 
+          // Alle actieve selecties geïmporteerd? Vervangen selecties tellen niet mee.
           const remaining = await tx.selectie.count({
             where: {
               taakinstantieId: selectie.taakinstantie.id,
               status: {
-                not: "GEIMPORTEERD",
+                notIn: ["GEIMPORTEERD", "VERVANGEN"],
               },
             },
           });
 
           if (remaining === 0) {
-            await tx.taakinstantie.update({
-              where: { id: selectie.taakinstantie.id },
-              data: {
-                status: "beoordeling",
-                stapSinds: new Date(),
-                gestartOp: new Date(),
-              },
+            await this.workflow.transition(tx, {
+              taakinstantieId: selectie.taakinstantie.id,
+              actie: "selectie.voltooid",
+              actor: SYSTEEM,
+              details: { laatsteSelectieId: selectie.id },
+              extraData: { gestartOp: new Date() },
             });
           }
         });
       } catch (error) {
+        if (error instanceof ClaimVerlorenFout) {
+          this.logger.warn(error.message);
+          continue;
+        }
+
         await this.prisma.client.selectie.update({
           where: { id: selectie.id },
           data: {
@@ -375,7 +444,10 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
           },
         });
         this.logger.warn(
-          `import selectie ${selectie.id} mislukt: ${describeError(error)}`
+          logRegel(`import selectie mislukt: ${describeError(error)}`, {
+            id: `import-selectie-${selectie.id}`,
+            taakinstantieId: selectie.taakinstantie.id,
+          })
         );
       }
     }
@@ -384,7 +456,8 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
   private async importSelectieKandidaten(input: {
     selectieId: string;
     externSelectieId: string;
-    baseUrl: string;
+    verbinding: StekkerVerbinding;
+    correlatieId: string;
   }) {
     const limit = 500;
     let offset = 0;
@@ -392,12 +465,16 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
     let total: number | null = null;
 
     do {
-      const page = await this.getObjecten(input.baseUrl, input.externSelectieId, {
-        offset,
-        limit,
-      });
+      const page = await this.metLease("selectie", input.selectieId, () =>
+        this.stekker.getKandidaten(
+          input.verbinding,
+          input.externSelectieId,
+          { offset, limit },
+          input.correlatieId
+        )
+      );
 
-      total = page.totaal;
+      total = page.totaal ?? null;
 
       if (page.items.length > 0) {
         await this.prisma.client.$transaction(
@@ -432,437 +509,106 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
     return imported;
   }
 
-  private async processVernietigingStartJobs() {
-    const jobs = await this.prisma.client.outbox.findMany({
-      where: {
-        queue: "vernietiging",
-        jobNaam: "vernietiging:start",
-        verzondenOp: null,
-      },
-      orderBy: {
-        aangemaaktOp: "asc",
-      },
-      take: 5,
+  // Claimt open jobs (FOR UPDATE SKIP LOCKED + lease) en laadt ze in volgorde.
+  private async claimdeJobs(queue: string, jobNaam: string, limiet: number) {
+    const ids = await claimJobs(this.prisma, queue, jobNaam, this.claim(limiet));
+
+    if (ids.length === 0) {
+      return [];
+    }
+
+    return this.prisma.client.outbox.findMany({
+      where: { id: { in: ids } },
+      orderBy: { aangemaaktOp: "asc" },
+    });
+  }
+
+  // Legt het einde van een job vast, maar alleen als de claim nog van deze worker is.
+  // Anders rolt de transactie terug: een andere worker heeft de job overgenomen.
+  private async rondJobAf(
+    tx: Prisma.TransactionClient,
+    jobId: string,
+    data: ReturnType<typeof jobVerwerkt> | ReturnType<typeof jobNaFout>
+  ) {
+    const { count } = await tx.outbox.updateMany({
+      where: { id: jobId, geclaimdDoor: this.workerId },
+      data: { ...data, geclaimdTot: null, geclaimdDoor: null },
     });
 
-    for (const job of jobs) {
-      const payload = job.payload as unknown as VernietigingStartPayload;
-
-      try {
-        const selectie = await this.prisma.client.selectie.findUniqueOrThrow({
-          where: { id: payload.selectieId },
-          include: {
-            stekkerConfiguratie: true,
-          },
-        });
-
-        if (!selectie.externSelectieId) {
-          throw new Error("Selectie mist externSelectieId voor vernietiging.");
-        }
-
-        if (payload.kandidaten.length === 0) {
-          throw new Error("Vernietigingsopdracht bevat geen kandidaten.");
-        }
-
-        const vernietiging = await this.postVernietiging(
-          selectie.stekkerConfiguratie.baseUrl,
-          {
-            selectieId: selectie.externSelectieId,
-            cockpitTaakId: payload.taakinstantieId,
-            besluitReferentie: `taak-${payload.taakinstantieId}`,
-            vernietigingsdossierId: payload.taakinstantieId,
-          },
-          `vernietiging-start-${payload.selectieId}`
-        );
-        const batches = chunk(payload.kandidaten, 100);
-
-        for (const [index, batch] of batches.entries()) {
-          await this.postVernietigingBatch(
-            selectie.stekkerConfiguratie.baseUrl,
-            vernietiging.vernietigingId,
-            {
-              batchNummer: index + 1,
-              objecten: batch.map((kandidaat) => ({
-                vernietigingskandidaatId: kandidaat.kandidaatId,
-                bronId: kandidaat.bronId,
-              })),
-            },
-            `vernietiging-batch-${vernietiging.vernietigingId}-${index + 1}`
-          );
-        }
-
-        const vrijgegeven = await this.postVernietigingVrijgeven(
-          selectie.stekkerConfiguratie.baseUrl,
-          vernietiging.vernietigingId,
-          {
-            aantalBatches: batches.length,
-            aantalKandidaten: payload.kandidaten.length,
-          },
-          `vernietiging-vrijgeven-${vernietiging.vernietigingId}`
-        );
-        const resultaten = isVernietigingAfgerond(vrijgegeven.status)
-          ? await this.importVernietigingResultaten(
-              selectie.stekkerConfiguratie.baseUrl,
-              vrijgegeven.vernietigingId
-            )
-          : null;
-        const resultaatPayload = {
-          ...vrijgegeven,
-          ...(resultaten ? { resultaten } : {}),
-        };
-
-        await this.prisma.client.$transaction([
-          this.prisma.client.selectie.update({
-            where: { id: selectie.id },
-            data: {
-              externVernietigingId: vrijgegeven.vernietigingId,
-              vernietigingStatus: vrijgegeven.status,
-              vernietigingGestartOp: parseDate(vrijgegeven.starttijd),
-              vernietigingAfgerondOp: parseDate(vrijgegeven.eindtijd),
-              vernietigingResultaat: resultaatPayload as Prisma.InputJsonValue,
-              fout:
-                vrijgegeven.status === "FAILED"
-                  ? "Vernietiging mislukt."
-                  : selectie.fout,
-            },
-          }),
-          this.prisma.client.outbox.update({
-            where: { id: job.id },
-            data: {
-              verzondenOp: new Date(),
-            },
-          }),
-        ]);
-
-        await this.updateTaakStatusNaVernietiging(payload.taakinstantieId);
-      } catch (error) {
-        await this.prisma.client.selectie
-          .update({
-            where: { id: payload.selectieId },
-            data: {
-              vernietigingStatus: "FAILED",
-              fout: describeError(error),
-            },
-          })
-          .catch(() => undefined);
-        this.logger.warn(
-          `vernietiging:start ${job.id} mislukt: ${describeError(error)}`
-        );
-      }
+    if (count === 0) {
+      throw new ClaimVerlorenFout("job", jobId);
     }
   }
 
-  private async pollRunningVernietigingen() {
-    const selecties = await this.prisma.client.selectie.findMany({
-      where: {
-        externVernietigingId: {
-          not: null,
-        },
-        vernietigingStatus: {
-          in: ["IDLE", "RUNNING"],
-        },
-      },
-      include: {
-        stekkerConfiguratie: true,
-      },
-      take: 20,
-    });
+  private async metGeclaimdeSelecties(werk: SelectieWerk, limiet: number, verwerk: (ids: string[]) => Promise<void>) {
+    const ids = await claimSelecties(this.prisma, werk, this.claim(limiet));
 
-    for (const selectie of selecties) {
-      if (!selectie.externVernietigingId) {
-        continue;
-      }
-
-      try {
-        const response = await this.getVernietiging(
-          selectie.stekkerConfiguratie.baseUrl,
-          selectie.externVernietigingId
-        );
-        const resultaten =
-          isVernietigingAfgerond(response.status)
-            ? await this.importVernietigingResultaten(
-                selectie.stekkerConfiguratie.baseUrl,
-                selectie.externVernietigingId
-              )
-            : null;
-
-        await this.prisma.client.selectie.update({
-          where: { id: selectie.id },
-          data: {
-            vernietigingStatus: response.status,
-            vernietigingGestartOp:
-              parseDate(response.starttijd) ?? selectie.vernietigingGestartOp,
-            vernietigingAfgerondOp:
-              parseDate(response.eindtijd) ?? selectie.vernietigingAfgerondOp,
-            vernietigingResultaat: {
-              ...response,
-              ...(resultaten ? { resultaten } : {}),
-            } as Prisma.InputJsonValue,
-          },
-        });
-
-        await this.updateTaakStatusNaVernietiging(selectie.taakinstantieId);
-      } catch (error) {
-        this.logger.warn(
-          `poll vernietiging ${selectie.id} mislukt: ${describeError(error)}`
-        );
-      }
-    }
-  }
-
-  private async importVernietigingResultaten(baseUrl: string, vernietigingId: string) {
-    const batches = await this.getVernietigingBatches(baseUrl, vernietigingId);
-
-    return batches.flatMap((batch) =>
-      batch.resultaten.map((resultaat) => ({
-        ...resultaat,
-        batchNummer: resultaat.batchNummer ?? batch.batchNummer,
-      }))
-    );
-  }
-
-  private async updateTaakStatusNaVernietiging(taakinstantieId: string) {
-    const open = await this.prisma.client.selectie.count({
-      where: {
-        taakinstantieId,
-        kandidaten: {
-          some: {
-            beoordeling: "AKKOORD",
-          },
-        },
-        OR: [
-          {
-            vernietigingStatus: null,
-          },
-          {
-            vernietigingStatus: {
-              in: ["IDLE", "RUNNING"],
-            },
-          },
-        ],
-      },
-    });
-
-    if (open > 0) {
+    if (ids.length === 0) {
       return;
     }
 
-    await this.prisma.client.taakinstantie.updateMany({
-      where: {
-        id: taakinstantieId,
-        status: "uitvoering",
-      },
-      data: {
-        status: "resultaat",
-        stapSinds: new Date(),
-        afgerondOp: new Date(),
-      },
-    });
-  }
-
-  private async postSelectie(baseUrl: string, peildatum?: string | null) {
-    const dateOnly = formatDateOnly(peildatum);
-
-    return this.requestSelectie(`${baseUrl}/selecties`, {
-      method: "POST",
-      body: JSON.stringify(dateOnly ? { peildatum: dateOnly } : {}),
-    });
-  }
-
-  private async getSelectie(baseUrl: string, selectieId: string) {
-    return this.requestSelectie(
-      `${baseUrl}/selecties/${encodeURIComponent(selectieId)}`,
-      {
-        method: "GET",
+    try {
+      await verwerk(ids);
+    } finally {
+      for (const id of ids) {
+        await geefSelectieVrij(this.prisma, id, this.workerId).catch((error: unknown) => {
+          this.logger.warn(`claim op selectie ${id} niet vrijgegeven: ${describeError(error)}`);
+        });
       }
-    );
-  }
-
-  private async getObjecten(
-    baseUrl: string,
-    selectieId: string,
-    paging: { offset: number; limit: number }
-  ) {
-    return this.requestJson<StekkerObjectenResponse>(
-      `${baseUrl}/selecties/${encodeURIComponent(
-        selectieId
-      )}/objecten?offset=${paging.offset}&limit=${paging.limit}`,
-      {
-        method: "GET",
-      }
-    );
-  }
-
-  private async postVernietiging(
-    baseUrl: string,
-    body: {
-      selectieId: string;
-      cockpitTaakId: string;
-      besluitReferentie: string;
-      vernietigingsdossierId: string;
-    },
-    idempotencyKey: string
-  ) {
-    return this.requestVernietiging(`${baseUrl}/vernietigingen`, {
-      method: "POST",
-      headers: mutationHeaders(idempotencyKey),
-      body: JSON.stringify(body),
-    });
-  }
-
-  private async postVernietigingBatch(
-    baseUrl: string,
-    vernietigingId: string,
-    body: {
-      batchNummer: number;
-      objecten: Array<{
-        vernietigingskandidaatId: string;
-        bronId: string;
-      }>;
-    },
-    idempotencyKey: string
-  ) {
-    return this.requestJson<unknown>(
-      `${baseUrl}/vernietigingen/${encodeURIComponent(
-        vernietigingId
-      )}/batches`,
-      {
-        method: "POST",
-        headers: mutationHeaders(idempotencyKey),
-        body: JSON.stringify(body),
-      }
-    );
-  }
-
-  private async postVernietigingVrijgeven(
-    baseUrl: string,
-    vernietigingId: string,
-    body: {
-      aantalBatches: number;
-      aantalKandidaten: number;
-    },
-    idempotencyKey: string
-  ) {
-    return this.requestVernietiging(
-      `${baseUrl}/vernietigingen/${encodeURIComponent(
-        vernietigingId
-      )}/vrijgeven`,
-      {
-        method: "POST",
-        headers: mutationHeaders(idempotencyKey),
-        body: JSON.stringify(body),
-      }
-    );
-  }
-
-  private async getVernietiging(baseUrl: string, vernietigingId: string) {
-    return this.requestVernietiging(
-      `${baseUrl}/vernietigingen/${encodeURIComponent(vernietigingId)}`,
-      {
-        method: "GET",
-      }
-    );
-  }
-
-  private async getVernietigingBatches(baseUrl: string, vernietigingId: string) {
-    return this.requestJson<StekkerBatchResultaat[]>(
-      `${baseUrl}/vernietigingen/${encodeURIComponent(
-        vernietigingId
-      )}/batches`,
-      {
-        method: "GET",
-      }
-    );
-  }
-
-  private async requestSelectie(url: string, init: RequestInit) {
-    return this.requestJson<StekkerSelectieResponse>(url, init);
-  }
-
-  private async requestVernietiging(url: string, init: RequestInit) {
-    return this.requestJson<StekkerVernietigingResponse>(url, init);
-  }
-
-  private async requestJson<T>(url: string, init: RequestInit) {
-    const response = await fetch(url, {
-      ...init,
-      headers: {
-        ...(init.headers as Record<string, string> | undefined),
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-    });
-
-    const body = (await response.json()) as T;
-
-    if (!response.ok) {
-      throw new Error(
-        `${response.status} ${response.statusText}: ${JSON.stringify(body)}`
-      );
     }
-
-    return body;
   }
+
+  private verleng(soort: ClaimSoort, id: string) {
+    return verlengClaim(this.prisma, soort, id, this.workerId, this.leaseMs);
+  }
+
+  // Een (mogelijk trage) externe aanroep binnen een geclaimde stap: de lease vooraf en
+  // achteraf verlengen, zodat de aanroep zelf en het vastleggen erna elk een volle lease
+  // hebben. Is de claim intussen van een ander, dan ClaimVerlorenFout.
+  private async metLease<T>(soort: ClaimSoort, id: string, aanroep: () => Promise<T>) {
+    await this.verleng(soort, id);
+    const resultaat = await aanroep();
+    await this.verleng(soort, id);
+    return resultaat;
+  }
+
+  private claim(limiet: number) {
+    return { worker: this.workerId, leaseMs: this.leaseMs, nu: new Date(), limiet };
+  }
+
 }
 
-function normalizeStatus(response: StekkerSelectieResponse) {
-  const rawStatus = response.selectiestatus ?? response.status;
-  const status = rawStatus?.trim().toUpperCase().replace(/[\s-]+/g, "_");
+const STANDAARD_SELECTIE_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
-  if (response.foutmelding && !status) {
-    return "FAILED";
-  }
+// stekker_configuratie.timeouts.selectieMs, standaard 24 uur.
+export function leesSelectieTimeoutMs(timeouts: unknown) {
+  const waarde =
+    timeouts && typeof timeouts === "object" && !Array.isArray(timeouts)
+      ? (timeouts as Record<string, unknown>).selectieMs
+      : undefined;
 
-  switch (status) {
-    case "GEIMPORTEERD":
-    case "READY":
-    case "COMPLETED":
-    case "COMPLETE":
-    case "VOLTOOID":
-      return "READY";
-    case "AANGEVRAAGD":
-    case "QUEUED":
-    case "PENDING":
-      return "AANGEVRAAGD";
-    case "RUNNING":
-    case "BEZIG":
-    case "PROCESSING":
-      return "RUNNING";
-    case "FAILED":
-    case "FAIL":
-    case "ERROR":
-    case "FOUT":
-    case "MISLUKT":
-    case "FETCH_FAILED":
-      return "FAILED";
-    default:
-      return response.foutmelding ? "FAILED" : (rawStatus ?? "RUNNING");
-  }
+  return typeof waarde === "number" && Number.isFinite(waarde) && waarde > 0 ? waarde : STANDAARD_SELECTIE_TIMEOUT_MS;
 }
 
-function isVernietigingAfgerond(status: string) {
-  return status === "COMPLETED" || status === "PARTIAL" || status === "FAILED";
+function formatDuur(ms: number) {
+  const minuten = Math.round(ms / 60_000);
+  return minuten >= 60 && minuten % 60 === 0 ? `${minuten / 60} uur` : `${minuten} minuten`;
 }
 
-function mutationHeaders(idempotencyKey: string) {
-  return {
-    "Idempotency-Key": idempotencyKey,
-    "X-Correlation-ID": idempotencyKey,
-  };
+// Logcontext van een statusvraag, met dezelfde correlatie-id als naar de stekker.
+function pollJob(selectie: { id: string; taakinstantieId: string }) {
+  return { id: `poll-selectie-${selectie.id}`, taakinstantieId: selectie.taakinstantieId };
 }
 
-function parseDate(value?: string | null) {
-  if (!value) {
-    return null;
-  }
+// Spec-status naar de interne selectiestatus van de cockpit
+// (AANGEVRAAGD/RUNNING/READY/GEIMPORTEERD/FAILED). De spec kent IDLE als 'nog niet gestart'.
+function cockpitSelectieStatus(selectie: StekkerSelectie) {
+  return selectie.status === "IDLE" ? "AANGEVRAAGD" : selectie.status;
+}
 
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  return date;
+// De spec geeft geen foutmelding bij een mislukte selectie, alleen aantalFouten.
+function selectieFoutmelding(selectie: StekkerSelectie) {
+  return `Selectie mislukt bij de stekker (aantalFouten: ${selectie.aantalFouten ?? "onbekend"}).`;
 }
 
 function formatDateOnly(value?: string | null) {
@@ -916,59 +662,3 @@ function requiredString(value: string | undefined, field: string) {
   return value.trim();
 }
 
-function chunk<T>(items: T[], size: number) {
-  const chunks: T[][] = [];
-
-  for (let index = 0; index < items.length; index += size) {
-    chunks.push(items.slice(index, index + size));
-  }
-
-  return chunks;
-}
-
-function describeError(error: unknown) {
-  if (error instanceof Error) {
-    const cause = formatErrorCause(error.cause);
-
-    return cause ? `${error.message}: ${cause}` : error.message;
-  }
-
-  return "Onbekende fout.";
-}
-
-function formatErrorCause(cause: unknown): string | null {
-  if (!cause) {
-    return null;
-  }
-
-  if (cause instanceof Error) {
-    return cause.message;
-  }
-
-  if (typeof cause === "object") {
-    const details = cause as {
-      code?: unknown;
-      errno?: unknown;
-      syscall?: unknown;
-      address?: unknown;
-      port?: unknown;
-      message?: unknown;
-    };
-    const parts = [
-      details.code,
-      details.errno,
-      details.syscall,
-      details.address,
-      details.port,
-      details.message,
-    ]
-      .filter((part): part is string | number => {
-        return typeof part === "string" || typeof part === "number";
-      })
-      .map(String);
-
-    return parts.length > 0 ? parts.join(" ") : JSON.stringify(cause);
-  }
-
-  return String(cause);
-}

@@ -1,0 +1,297 @@
+# E2E-testomgeving: cockpit-API, PostgreSQL, teststekker (met OAuth2) en een nep-IdP.
+# Alleen voor tests; gebruik via `npm run test:e2e` (start, test en ruimt op).
+#
+# De teststekker wordt gebouwd uit een checkout van Vernietigingscockpit-stekker-test.
+# Standaard naast deze repo; anders STEKKER_REPO zetten (in CI: vastgepinde commit).
+
+name: vernietigingscockpit-e2e
+
+# Wachtwoorden en secrets komen uit .env naast dit bestand (niet in git). scripts/e2e.mjs
+# maakt dat bestand bij de eerste run aan met willekeurige waarden.
+
+# Alleen voor `prisma generate` tijdens de build; er wordt geen verbinding gemaakt.
+x-prisma-generate: &prisma-generate postgresql://prisma:prisma@localhost:5432/prisma?schema=public
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cockpit
+      POSTGRES_PASSWORD: ${E2E_DB_WACHTWOORD:?maak .env met npm run test:e2e}
+      POSTGRES_DB: cockpit
+    ports:
+      - "55433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cockpit -d cockpit"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  idp:
+    image: node:22-alpine
+    command: ["node", "/e2e/nep-idp.mjs"]
+    volumes:
+      - ../../apps/cockpit-api/test/e2e:/e2e:ro
+    environment:
+      IDP_ISSUER: http://idp:8080/realms/vc
+      IDP_CLIENT_ID: cockpit-stekker
+      IDP_CLIENT_SECRET: ${E2E_STEKKER_GEHEIM:?maak .env met npm run test:e2e}
+      IDP_STEKKER_AUDIENCE: teststekker
+    ports:
+      - "39701:8080"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  stekker: &stekker
+    build:
+      context: ${STEKKER_REPO:-../../../Vernietigingscockpit-stekker-test}
+    environment: &stekker-env
+      AUTH_ENABLED: "true"
+      AUTH_ISSUER: http://idp:8080/realms/vc
+      AUTH_JWKS_URL: http://idp:8080/realms/vc/protocol/openid-connect/certs
+      AUTH_AUDIENCE: teststekker
+      SELECTIE_PROCESSING_DELAY_MS: "300"
+      VERNIETIGING_PROCESSING_DELAY_MS: "200"
+      LOG_REQUESTS: "false"
+    ports:
+      - "39702:3000"
+    depends_on:
+      idp:
+        condition: service_healthy
+
+  # Scenario B: elke POST /vernietigingen geeft 403 (blijvende fout).
+  stekker-403:
+    <<: *stekker
+    ports: []
+    environment:
+      <<: *stekker-env
+      SCENARIO_HTTP_FAIL_FIRST_N: "1000"
+      SCENARIO_HTTP_FAIL_STATUS: "403"
+      SCENARIO_HTTP_FAIL_ENDPOINTS: POST /vernietigingen
+
+  # Scenario B': de eerste twee POST /vernietigingen geven 503 (tijdelijke fout).
+  stekker-503:
+    <<: *stekker
+    ports: []
+    environment:
+      <<: *stekker-env
+      SCENARIO_HTTP_FAIL_FIRST_N: "2"
+      SCENARIO_HTTP_FAIL_STATUS: "503"
+      SCENARIO_HTTP_FAIL_ENDPOINTS: POST /vernietigingen
+
+  # Scenario C: de eerste POST op batches en op vrijgeven wordt verwerkt, maar het antwoord
+  # gaat verloren (503 ná verwerking). De cockpit moet herhalen zonder iets dubbel te doen.
+  stekker-na:
+    <<: *stekker
+    ports:
+      - "39705:3000"
+    environment:
+      <<: *stekker-env
+      SCENARIO_HTTP_FAIL_FIRST_N: "1"
+      SCENARIO_HTTP_FAIL_STATUS: "503"
+      SCENARIO_HTTP_FAIL_MODE: na
+      SCENARIO_HTTP_FAIL_ENDPOINTS: POST /vernietigingen/{vernietigingId}/batches,POST /vernietigingen/{vernietigingId}/vrijgeven
+
+  # Trage stekker (elke aanroep 800 ms) voor de worker-kill-test.
+  stekker-traag:
+    <<: *stekker
+    ports:
+      - "39706:3000"
+    environment:
+      <<: *stekker-env
+      SCENARIO_HTTP_DELAY_MS: "800"
+
+  # Scenario F: een hangende stekker. Elke aanroep duurt 3 s; met een kortere time-out in de
+  # stekkerconfiguratie krijgt de cockpit geen antwoord op tijd.
+  stekker-hangt:
+    <<: *stekker
+    ports:
+      - "39707:3000"
+    environment:
+      <<: *stekker-env
+      SCENARIO_HTTP_DELAY_MS: "3000"
+
+  # Scenario G: afwijkende resultaten (deterministisch per kandidaat).
+  stekker-afwijkend:
+    <<: *stekker
+    ports:
+      - "39708:3000"
+    environment:
+      <<: *stekker-env
+      SCENARIO_FAILED_PERCENTAGE: "10"
+      SCENARIO_CHANGED_PERCENTAGE: "10"
+      SCENARIO_NOT_FOUND_PERCENTAGE: "10"
+      SCENARIO_SKIPPED_PERCENTAGE: "10"
+
+  # Scenario H: 15.000 kandidaten (dataset uit scripts/e2e.mjs).
+  stekker-groot:
+    <<: *stekker
+    ports: []
+    volumes:
+      - ../../apps/cockpit-api/test/e2e/data:/data:ro
+    environment:
+      <<: *stekker-env
+      STEKKER_CSV_PATH: /data/groot-15000.csv
+      STEKKER_DATASOURCE_NAME: groot-15000
+      SELECTIE_PROCESSING_DELAY_MS: "0"
+
+  # PDF-generatie voor de vernietigingsverklaring (CC-17), zoals in productie.
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:3000/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      # Zelfde migratie-image als in productie: migraties, daarna de loginrol voor de API.
+      target: cockpit-migrate
+      args:
+        PRISMA_GENERATE_DATABASE_URL: *prisma-generate
+    environment:
+      DATABASE_URL: postgresql://cockpit:${E2E_DB_WACHTWOORD:?maak .env met npm run test:e2e}@db:5432/cockpit?schema=public&sslmode=disable
+      APP_DB_USER: cockpit_api
+      APP_DB_PASSWORD: ${E2E_DB_APP_WACHTWOORD:?maak .env met npm run test:e2e}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: cockpit-api
+      args:
+        PRISMA_GENERATE_DATABASE_URL: *prisma-generate
+    image: vernietigingscockpit-api:e2e
+    environment:
+      PORT: "3000"
+      # De API draait als applicatierol: op de auditlogs alleen SELECT en INSERT.
+      DATABASE_URL: postgresql://cockpit_api:${E2E_DB_APP_WACHTWOORD:?maak .env met npm run test:e2e}@db:5432/cockpit?schema=public&sslmode=disable
+      OIDC_ISSUER: http://idp:8080/realms/vc
+      OIDC_AUDIENCE: cockpit-api
+      CORS_ORIGIN: http://localhost
+      SELECTIE_WORKER_ENABLED: "false"
+      # De tests doen veel verzoeken als dezelfde gebruiker; de anonieme limiet (60/min per IP)
+      # blijft standaard, zodat de test hem kan controleren.
+      RATE_LIMIT_GEBRUIKER_PER_MINUUT: "100000"
+    ports:
+      - "39700:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      idp:
+        condition: service_healthy
+      stekker:
+        condition: service_healthy
+      stekker-403:
+        condition: service_healthy
+      stekker-503:
+        condition: service_healthy
+      stekker-na:
+        condition: service_healthy
+      stekker-traag:
+        condition: service_healthy
+      stekker-groot:
+        condition: service_healthy
+      stekker-hangt:
+        condition: service_healthy
+      stekker-afwijkend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/v1/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  # Twee workers naast elkaar (praktijktest D): werk mag maar één keer gebeuren.
+  worker-1: &worker
+    # Zelfde image als de API (wordt bij api gebouwd).
+    image: vernietigingscockpit-api:e2e
+    pull_policy: never
+    command: ["node", "dist/worker.js"]
+    environment:
+      WORKER_ID: worker-1
+      DATABASE_URL: postgresql://cockpit_api:${E2E_DB_APP_WACHTWOORD:?maak .env met npm run test:e2e}@db:5432/cockpit?schema=public&sslmode=disable
+      SELECTIE_WORKER_INTERVAL_MS: "300"
+      # Korte lease: na een worker-kill neemt een herstarte worker het werk snel over.
+      WORKER_LEASE_MS: "5000"
+      # Korte backoff en statusvragen, zodat de scenario's snel verlopen.
+      WORKER_BACKOFF_START_MS: "300"
+      WORKER_BACKOFF_MAX_MS: "2000"
+      WORKER_POLL_START_MS: "300"
+      WORKER_POLL_MAX_MS: "1000"
+      # Waarde bij secret_ref 'STEKKER_SECRET' in de stekkerconfiguratie (zie test/e2e).
+      STEKKER_SECRET: ${E2E_STEKKER_GEHEIM:?maak .env met npm run test:e2e}
+      GOTENBERG_URL: http://gotenberg:3000
+      ARCHIEF_PAD: /archief
+    volumes:
+      - archief:/archief
+    depends_on:
+      api:
+        condition: service_healthy
+      gotenberg:
+        condition: service_healthy
+
+  worker-2:
+    <<: *worker
+    environment:
+      WORKER_ID: worker-2
+      DATABASE_URL: postgresql://cockpit_api:${E2E_DB_APP_WACHTWOORD:?maak .env met npm run test:e2e}@db:5432/cockpit?schema=public&sslmode=disable
+      SELECTIE_WORKER_INTERVAL_MS: "300"
+      WORKER_LEASE_MS: "5000"
+      WORKER_BACKOFF_START_MS: "300"
+      WORKER_BACKOFF_MAX_MS: "2000"
+      WORKER_POLL_START_MS: "300"
+      WORKER_POLL_MAX_MS: "1000"
+      STEKKER_SECRET: ${E2E_STEKKER_GEHEIM:?maak .env met npm run test:e2e}
+      GOTENBERG_URL: http://gotenberg:3000
+      ARCHIEF_PAD: /archief
+
+  # Telt POST-aanroepen naar de stekker, zodat de test kan bewijzen dat er niets dubbel gebeurt.
+  stekker-teller:
+    image: node:22-alpine
+    command: ["node", "/e2e/tel-proxy.mjs"]
+    volumes:
+      - ../../apps/cockpit-api/test/e2e:/e2e:ro
+    environment:
+      DOEL: http://stekker:3000
+    ports:
+      - "39703:8080"
+    depends_on:
+      stekker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/__tellingen').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  stekker-traag-teller:
+    image: node:22-alpine
+    command: ["node", "/e2e/tel-proxy.mjs"]
+    volumes:
+      - ../../apps/cockpit-api/test/e2e:/e2e:ro
+    environment:
+      DOEL: http://stekker-traag:3000
+    ports:
+      - "39704:8080"
+    depends_on:
+      stekker-traag:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/__tellingen').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  # Gedeeld door beide workers: een archivering kan door elk van beide worden uitgevoerd.
+  archief:

@@ -1,0 +1,52 @@
+# Aanvulling voor een server met Traefik (bijv. de cloud-VM). Samen gebruiken met
+# docker-compose.yml:
+#
+#   docker compose -f infrastructure/acceptatie/docker-compose.yml \
+#     -f infrastructure/acceptatie/docker-compose.vm.yml up -d --build --wait
+#
+# Web, API en Keycloak publiceren dan geen eigen poorten meer; Traefik routeert op de
+# domeinnamen uit .env en verzorgt TLS. Vereist Docker Compose 2.24 of nieuwer (`!reset`).
+
+x-traefik: &traefik-netwerk
+  networks:
+    - default
+    - traefik
+
+services:
+  keycloak:
+    <<: *traefik-netwerk
+    ports: !reset []
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: ${TRAEFIK_NETWORK:?zet TRAEFIK_NETWORK in .env}
+      traefik.http.routers.vc-acc-auth.rule: Host(`${ACC_AUTH_HOST:?zet ACC_AUTH_HOST in .env}`)
+      traefik.http.routers.vc-acc-auth.entrypoints: ${TRAEFIK_ENTRYPOINT:?zet TRAEFIK_ENTRYPOINT in .env}
+      traefik.http.routers.vc-acc-auth.tls.certresolver: ${TRAEFIK_CERTRESOLVER:?zet TRAEFIK_CERTRESOLVER in .env}
+      traefik.http.services.vc-acc-auth.loadbalancer.server.port: "8080"
+
+  api:
+    <<: *traefik-netwerk
+    ports: !reset []
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: ${TRAEFIK_NETWORK}
+      traefik.http.routers.vc-acc-api.rule: Host(`${ACC_API_HOST:?zet ACC_API_HOST in .env}`)
+      traefik.http.routers.vc-acc-api.entrypoints: ${TRAEFIK_ENTRYPOINT}
+      traefik.http.routers.vc-acc-api.tls.certresolver: ${TRAEFIK_CERTRESOLVER}
+      traefik.http.services.vc-acc-api.loadbalancer.server.port: "3000"
+
+  web:
+    <<: *traefik-netwerk
+    ports: !reset []
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: ${TRAEFIK_NETWORK}
+      traefik.http.routers.vc-acc-web.rule: Host(`${ACC_WEB_HOST:?zet ACC_WEB_HOST in .env}`)
+      traefik.http.routers.vc-acc-web.entrypoints: ${TRAEFIK_ENTRYPOINT}
+      traefik.http.routers.vc-acc-web.tls.certresolver: ${TRAEFIK_CERTRESOLVER}
+      traefik.http.services.vc-acc-web.loadbalancer.server.port: "8080"
+
+networks:
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK}

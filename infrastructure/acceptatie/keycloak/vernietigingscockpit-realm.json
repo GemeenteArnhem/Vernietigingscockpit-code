@@ -1,0 +1,165 @@
+{
+  "realm": "vernietigingscockpit",
+  "enabled": true,
+  "sslRequired": "none",
+  "displayName": "Vernietigingscockpit (acceptatie)",
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 3600,
+  "roles": {
+    "realm": [
+      {
+        "name": "recordmanager",
+        "description": "Cockpitrol recordmanager"
+      },
+      {
+        "name": "proceseigenaar",
+        "description": "Cockpitrol proceseigenaar"
+      },
+      {
+        "name": "archivaris",
+        "description": "Cockpitrol archivaris"
+      },
+      {
+        "name": "functioneel_beheerder",
+        "description": "Cockpitrol functioneel_beheerder"
+      },
+      {
+        "name": "auditor",
+        "description": "Cockpitrol auditor"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "cockpit-web",
+      "name": "Vernietigingscockpit (web)",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "redirectUris": [
+        "http://localhost:8480/*"
+      ],
+      "webOrigins": [
+        "http://localhost:8480"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8480/*"
+      },
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email",
+        "basic"
+      ],
+      "protocolMappers": [
+        {
+          "name": "audience cockpit-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "cockpit-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "cockpit-stekker",
+      "name": "Cockpit naar stekker (client credentials)",
+      "enabled": true,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "defaultClientScopes": [
+        "basic"
+      ],
+      "protocolMappers": [
+        {
+          "name": "audience teststekker",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "teststekker",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "rm1",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Rita",
+      "lastName": "Recordmanager",
+      "email": "rita.recordmanager@example.local",
+      "realmRoles": [
+        "recordmanager"
+      ]
+    },
+    {
+      "username": "po1",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Peter",
+      "lastName": "Proceseigenaar",
+      "email": "peter.proceseigenaar@example.local",
+      "realmRoles": [
+        "proceseigenaar"
+      ]
+    },
+    {
+      "username": "arch1",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Anna",
+      "lastName": "Archivaris",
+      "email": "anna.archivaris@example.local",
+      "realmRoles": [
+        "archivaris"
+      ]
+    },
+    {
+      "username": "auditor1",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Arie",
+      "lastName": "Auditor",
+      "email": "arie.auditor@example.local",
+      "realmRoles": [
+        "auditor"
+      ]
+    },
+    {
+      "username": "beheerder1",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Bea",
+      "lastName": "Beheerder",
+      "email": "bea.beheerder@example.local",
+      "realmRoles": [
+        "functioneel_beheerder"
+      ]
+    },
+    {
+      "username": "service-account-cockpit-stekker",
+      "enabled": true,
+      "serviceAccountClientId": "cockpit-stekker"
+    }
+  ]
+}

@@ -321,12 +321,19 @@ export default function RecordSelectionPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [effectiveSelectedAction, handlePrimaryAction, selectedConnectorNeedsRetry]);
 
+  // Zonder stekkergegevens: een mislukte API-aanroep in het rode foutvlak, anders de lege stand.
   if (!selectedConnector) {
     return (
       <ContentPanel>
-        <div className="flex flex-1 items-center justify-center p-6 text-sm text-slate-500">
-          Geen stekkers gekoppeld aan deze taakuitvoering.
-        </div>
+        {apiError ? (
+          <div className="border-b border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {apiError}
+          </div>
+        ) : (
+          <div className="flex flex-1 items-center justify-center p-6 text-sm text-slate-500">
+            Geen stekkers gekoppeld aan deze taakuitvoering.
+          </div>
+        )}
       </ContentPanel>
     );
   }

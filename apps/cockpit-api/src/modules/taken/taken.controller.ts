@@ -3,119 +3,194 @@ import {
   Controller,
   Get,
   Header,
+  Headers,
+  HttpCode,
   Inject,
   Param,
   Patch,
   Post,
   Query,
-  ServiceUnavailableException,
+  Res,
   StreamableFile,
 } from "@nestjs/common";
 import { Roles } from "../auth/roles.decorator.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import type { AuthUser } from "../auth/auth-user.js";
-import { CurrentMedewerkerService } from "../auth/current-medewerker.service.js";
-import { PrismaService } from "../../shared/db/prisma.service.js";
-import { mapTaakinstantieMetActies, taakinstantieSelect } from "./taken.dto.js";
-import { taakinstantieActies } from "../workflow/toegestane-acties.js";
-import type { StartSelectieInput } from "./taken.service.js";
-import { TakenService } from "./taken.service.js";
+import { etagVoorVersie, leesIfMatch } from "../workflow/if-match.js";
+import type { StartSelectieInput } from "./taken-hulp.js";
+import { TaakToegangService } from "./taak-toegang.service.js";
+import { SelectieService } from "./selectie.service.js";
+import { BeoordelingService } from "./beoordeling.service.js";
+import { BesluitvormingService } from "./besluitvorming.service.js";
+import { UitvoeringService } from "./uitvoering.service.js";
+import { DossierService } from "./dossier.service.js";
+import type { KandidatenQuery } from "./kandidaten-lijst.js";
 import type { UpdateKandidaatBeoordelingInput } from "./beoordeling.dto.js";
 import type { UpdateProceseigenaarAccorderingInput } from "./accordering.dto.js";
+import { UUID, ZodPipe } from "../../shared/http/validatie.js";
+import {
+  accorderingBesluitSchema,
+  bulkBeoordelingSchema,
+  bulkBesluitSchema,
+  kandidaatBeoordelingSchema,
+  kandidaatIdsSchema,
+  kandidatenQuerySchema,
+  scopeSchema,
+  startSelectieSchema,
+} from "@vernietigingscockpit/api-contract";
 
 @Controller("taken")
 export class TakenController {
   constructor(
-    @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(CurrentMedewerkerService)
-    private readonly currentMedewerker: CurrentMedewerkerService,
-    @Inject(TakenService) private readonly takenService: TakenService
+    @Inject(TaakToegangService) private readonly toegang: TaakToegangService,
+    @Inject(SelectieService) private readonly selectie: SelectieService,
+    @Inject(BeoordelingService) private readonly beoordeling: BeoordelingService,
+    @Inject(BesluitvormingService) private readonly besluitvorming: BesluitvormingService,
+    @Inject(UitvoeringService) private readonly uitvoering: UitvoeringService,
+    @Inject(DossierService) private readonly dossier: DossierService
   ) {}
 
   @Get()
   @Roles("recordmanager", "proceseigenaar", "archivaris", "auditor")
-  async getTaken(
+  getTaken(
     @CurrentUser() user: AuthUser,
-    @Query("scope") scope: "mijn" | "alle" = "mijn"
+    @Query("scope", new ZodPipe(scopeSchema)) scope: "mijn" | "alle"
   ) {
-    try {
-      const medewerkerId = await this.currentMedewerker.findForUser(user);
-      const where = await this.buildAccessWhere(user, scope);
-      const taken = await this.getTakenForDashboard(where);
-
-      return taken.map((taak) =>
-        mapTaakinstantieMetActies(
-          taak,
-          taakinstantieActies(taak, {
-            roles: user.roles,
-            medewerkerId,
-          })
-        )
-      );
-    } catch (error) {
-      this.throwDatabaseUnavailable(error);
-      throw error;
-    }
+    return this.toegang.getTaken(user, scope);
   }
 
   @Get(":id")
   @Roles("recordmanager", "proceseigenaar", "archivaris", "auditor")
-  async getTaak(@CurrentUser() user: AuthUser, @Param("id") id: string) {
-    const medewerkerId = await this.currentMedewerker.findForUser(user);
-    const taak = await this.prisma.client.taakinstantie.findFirstOrThrow({
-      where: {
-        id,
-        ...(await this.buildDetailAccessWhere(user)),
-      },
-      select: taakinstantieSelect,
-    });
-
-    return mapTaakinstantieMetActies(
-      taak,
-      taakinstantieActies(taak, {
-        roles: user.roles,
-        medewerkerId,
-      })
-    );
+  async getTaak(
+    @CurrentUser() user: AuthUser,
+    @Param("id", UUID) id: string,
+    @Res({ passthrough: true }) res: { setHeader(naam: string, waarde: string): void }
+  ) {
+    const { versie, taak } = await this.toegang.getTaak(user, id);
+    res.setHeader("ETag", etagVoorVersie(versie));
+    return taak;
   }
 
   @Get(":id/selectie")
   @Roles("recordmanager", "proceseigenaar", "archivaris", "auditor")
-  getSelectie(@CurrentUser() user: AuthUser, @Param("id") id: string) {
-    return this.takenService.getSelectie(user, id);
+  getSelectie(@CurrentUser() user: AuthUser, @Param("id", UUID) id: string) {
+    return this.selectie.getSelectie(user, id);
   }
 
+  // Kandidaten per pagina, met zoeken, filteren en sorteren op de server (CC-10).
   @Get(":id/kandidaten")
   @Roles("recordmanager", "proceseigenaar", "archivaris", "auditor")
-  getKandidaten(@CurrentUser() user: AuthUser, @Param("id") id: string) {
-    return this.takenService.getKandidaten(user, id);
+  getKandidaten(
+    @CurrentUser() user: AuthUser,
+    @Param("id", UUID) id: string,
+    @Query(new ZodPipe(kandidatenQuerySchema)) query: KandidatenQuery
+  ) {
+    return this.beoordeling.getKandidaten(user, id, query);
+  }
+
+  // Alle id's die aan de filters voldoen ("alles selecteren" over pagina's heen).
+  @Get(":id/kandidaten/ids")
+  @Roles("recordmanager", "proceseigenaar", "archivaris", "auditor")
+  getKandidaatIds(
+    @CurrentUser() user: AuthUser,
+    @Param("id", UUID) id: string,
+    @Query(new ZodPipe(kandidatenQuerySchema)) query: KandidatenQuery
+  ) {
+    return this.beoordeling.getKandidaatIds(user, id, query);
+  }
+
+  // Gedeelde waarden van een selectie, voor het detailpaneel bij bulkselectie.
+  @Post(":id/kandidaten/samenvatting")
+  @HttpCode(200)
+  @Roles("recordmanager", "proceseigenaar", "archivaris", "auditor")
+  getKandidatenSamenvatting(
+    @CurrentUser() user: AuthUser,
+    @Param("id", UUID) id: string,
+    @Body(new ZodPipe(kandidaatIdsSchema)) body: { ids: string[] }
+  ) {
+    return this.beoordeling.getKandidatenSamenvatting(user, id, body.ids);
+  }
+
+  // Bulkbeoordeling door de recordmanager: één verzoek voor de hele selectie.
+  @Patch(":id/kandidaten")
+  @Roles("recordmanager")
+  bulkBeoordeling(
+    @CurrentUser() user: AuthUser,
+    @Param("id", UUID) id: string,
+    @Headers("if-match") ifMatch: string | undefined,
+    @Body(new ZodPipe(bulkBeoordelingSchema)) body: UpdateKandidaatBeoordelingInput & { ids: string[] }
+  ) {
+    return this.beoordeling.bulkBeoordeling(user, id, leesIfMatch(ifMatch), body);
+  }
+
+  @Patch(":id/kandidaten/accordering/proceseigenaar")
+  @Roles("proceseigenaar")
+  bulkBesluitProceseigenaar(
+    @CurrentUser() user: AuthUser,
+    @Param("id", UUID) id: string,
+    @Headers("if-match") ifMatch: string | undefined,
+    @Body(new ZodPipe(bulkBesluitSchema)) body: UpdateProceseigenaarAccorderingInput & { ids: string[] }
+  ) {
+    return this.besluitvorming.bulkBesluit(user, id, leesIfMatch(ifMatch), body, "proceseigenaar");
+  }
+
+  @Patch(":id/kandidaten/accordering/archivaris")
+  @Roles("archivaris")
+  bulkBesluitArchivaris(
+    @CurrentUser() user: AuthUser,
+    @Param("id", UUID) id: string,
+    @Headers("if-match") ifMatch: string | undefined,
+    @Body(new ZodPipe(bulkBesluitSchema)) body: UpdateProceseigenaarAccorderingInput & { ids: string[] }
+  ) {
+    return this.besluitvorming.bulkBesluit(user, id, leesIfMatch(ifMatch), body, "archivaris");
   }
 
   @Get(":id/vernietigingsresultaten")
   @Roles("recordmanager", "proceseigenaar", "archivaris", "auditor")
   getVernietigingsresultaten(
     @CurrentUser() user: AuthUser,
-    @Param("id") id: string
+    @Param("id", UUID) id: string
   ) {
-    return this.takenService.getVernietigingsresultaten(user, id);
+    return this.uitvoering.getVernietigingsresultaten(user, id);
   }
 
   @Get(":id/uitvoering")
   @Roles("recordmanager", "proceseigenaar", "archivaris", "auditor")
-  getUitvoering(@CurrentUser() user: AuthUser, @Param("id") id: string) {
-    return this.takenService.getUitvoering(user, id);
+  getUitvoering(@CurrentUser() user: AuthUser, @Param("id", UUID) id: string) {
+    return this.uitvoering.getUitvoering(user, id);
   }
 
   @Get(":id/verklaring")
   @Roles("recordmanager", "proceseigenaar", "archivaris", "auditor")
-  getVerklaring(@CurrentUser() user: AuthUser, @Param("id") id: string) {
-    return this.takenService.getVerklaring(user, id);
+  getVerklaring(@CurrentUser() user: AuthUser, @Param("id", UUID) id: string) {
+    return this.dossier.getVerklaring(user, id);
   }
 
-  @Post(":id/verklaring/genereren")
+  // Archiveren (CC-18): de recordmanager vraagt het aan; de worker voert het uit.
+  @Post(":id/archiveren")
+  @HttpCode(202)
   @Roles("recordmanager")
-  genereerVerklaring(@CurrentUser() user: AuthUser, @Param("id") id: string) {
-    return this.takenService.genereerVerklaring(user, id);
+  archiveren(
+    @CurrentUser() user: AuthUser,
+    @Param("id", UUID) id: string,
+    @Headers("if-match") ifMatch: string | undefined
+  ) {
+    return this.dossier.archiveren(user, id, leesIfMatch(ifMatch));
+  }
+
+  @Get(":id/archivering")
+  @Roles("recordmanager", "proceseigenaar", "archivaris", "auditor")
+  getArchivering(@CurrentUser() user: AuthUser, @Param("id", UUID) id: string) {
+    return this.dossier.getArchivering(user, id);
+  }
+
+  // De verklaring maakt de worker bij de overgang naar resultaat (CC-17). Opnieuw maken
+  // is een beheeractie (bijv. na een fout bij Gotenberg); er is geen knop in de UI.
+  @Post(":id/verklaring/opnieuw")
+  @HttpCode(202)
+  @Roles("functioneel_beheerder")
+  verklaringOpnieuw(@Param("id", UUID) id: string) {
+    return this.dossier.verklaringOpnieuw(id);
   }
 
   @Get(":id/verklaring.pdf")
@@ -127,9 +202,9 @@ export class TakenController {
   @Roles("recordmanager", "proceseigenaar", "archivaris", "auditor")
   async getVerklaringPdf(
     @CurrentUser() user: AuthUser,
-    @Param("id") id: string
+    @Param("id", UUID) id: string
   ) {
-    return new StreamableFile(await this.takenService.getVerklaringPdf(user, id));
+    return new StreamableFile(await this.dossier.getVerklaringPdf(user, id));
   }
 
   @Get(":id/verklaring/bijlage.csv")
@@ -141,30 +216,30 @@ export class TakenController {
   @Roles("recordmanager", "proceseigenaar", "archivaris", "auditor")
   getVerklaringBijlageCsv(
     @CurrentUser() user: AuthUser,
-    @Param("id") id: string
+    @Param("id", UUID) id: string
   ) {
-    return this.takenService.getVerklaringBijlageCsv(user, id);
+    return this.dossier.getVerklaringBijlageCsv(user, id);
   }
 
   @Post(":id/selectie")
   @Roles("recordmanager")
   startSelectie(
     @CurrentUser() user: AuthUser,
-    @Param("id") id: string,
-    @Body() body: StartSelectieInput
+    @Param("id", UUID) id: string,
+    @Body(new ZodPipe(startSelectieSchema)) body: StartSelectieInput
   ) {
-    return this.takenService.startSelectie(user, id, body);
+    return this.selectie.startSelectie(user, id, body);
   }
 
   @Patch(":id/kandidaten/:kandidaatId/beoordeling")
   @Roles("recordmanager")
   updateKandidaatBeoordeling(
     @CurrentUser() user: AuthUser,
-    @Param("id") id: string,
-    @Param("kandidaatId") kandidaatId: string,
-    @Body() body: UpdateKandidaatBeoordelingInput
+    @Param("id", UUID) id: string,
+    @Param("kandidaatId", UUID) kandidaatId: string,
+    @Body(new ZodPipe(kandidaatBeoordelingSchema)) body: UpdateKandidaatBeoordelingInput
   ) {
-    return this.takenService.updateKandidaatBeoordeling(
+    return this.beoordeling.updateKandidaatBeoordeling(
       user,
       id,
       kandidaatId,
@@ -174,19 +249,23 @@ export class TakenController {
 
   @Post(":id/beoordeling/voorleggen")
   @Roles("recordmanager")
-  beoordelingVoorleggen(@CurrentUser() user: AuthUser, @Param("id") id: string) {
-    return this.takenService.beoordelingVoorleggen(user, id);
+  beoordelingVoorleggen(
+    @CurrentUser() user: AuthUser,
+    @Param("id", UUID) id: string,
+    @Headers("if-match") ifMatch: string | undefined
+  ) {
+    return this.beoordeling.beoordelingVoorleggen(user, id, leesIfMatch(ifMatch));
   }
 
   @Patch(":id/kandidaten/:kandidaatId/accordering/proceseigenaar")
   @Roles("proceseigenaar")
   updateProceseigenaarAccordering(
     @CurrentUser() user: AuthUser,
-    @Param("id") id: string,
-    @Param("kandidaatId") kandidaatId: string,
-    @Body() body: UpdateProceseigenaarAccorderingInput
+    @Param("id", UUID) id: string,
+    @Param("kandidaatId", UUID) kandidaatId: string,
+    @Body(new ZodPipe(accorderingBesluitSchema)) body: UpdateProceseigenaarAccorderingInput
   ) {
-    return this.takenService.updateProceseigenaarAccordering(
+    return this.besluitvorming.updateProceseigenaarAccordering(
       user,
       id,
       kandidaatId,
@@ -198,20 +277,21 @@ export class TakenController {
   @Roles("proceseigenaar")
   proceseigenaarBesluiten(
     @CurrentUser() user: AuthUser,
-    @Param("id") id: string
+    @Param("id", UUID) id: string,
+    @Headers("if-match") ifMatch: string | undefined
   ) {
-    return this.takenService.proceseigenaarBesluiten(user, id);
+    return this.besluitvorming.proceseigenaarBesluiten(user, id, leesIfMatch(ifMatch));
   }
 
   @Patch(":id/kandidaten/:kandidaatId/accordering/archivaris")
   @Roles("archivaris")
   updateArchivarisAccordering(
     @CurrentUser() user: AuthUser,
-    @Param("id") id: string,
-    @Param("kandidaatId") kandidaatId: string,
-    @Body() body: UpdateProceseigenaarAccorderingInput
+    @Param("id", UUID) id: string,
+    @Param("kandidaatId", UUID) kandidaatId: string,
+    @Body(new ZodPipe(accorderingBesluitSchema)) body: UpdateProceseigenaarAccorderingInput
   ) {
-    return this.takenService.updateArchivarisAccordering(
+    return this.besluitvorming.updateArchivarisAccordering(
       user,
       id,
       kandidaatId,
@@ -221,85 +301,31 @@ export class TakenController {
 
   @Post(":id/accordering/archivaris/besluiten")
   @Roles("archivaris")
-  archivarisBesluiten(@CurrentUser() user: AuthUser, @Param("id") id: string) {
-    return this.takenService.archivarisBesluiten(user, id);
+  archivarisBesluiten(
+    @CurrentUser() user: AuthUser,
+    @Param("id", UUID) id: string,
+    @Headers("if-match") ifMatch: string | undefined
+  ) {
+    return this.besluitvorming.archivarisBesluiten(user, id, leesIfMatch(ifMatch));
+  }
+
+  @Post(":id/uitvoering/:stekkerId/opnieuw")
+  @Roles("recordmanager")
+  vernietigingOpnieuw(
+    @CurrentUser() user: AuthUser,
+    @Param("id", UUID) id: string,
+    @Param("stekkerId", UUID) stekkerId: string
+  ) {
+    return this.uitvoering.vernietigingOpnieuw(user, id, stekkerId);
   }
 
   @Post(":id/vernietigingsopdracht")
   @Roles("recordmanager")
   vernietigingsopdracht(
     @CurrentUser() user: AuthUser,
-    @Param("id") id: string
+    @Param("id", UUID) id: string,
+    @Headers("if-match") ifMatch: string | undefined
   ) {
-    return this.takenService.vernietigingsopdracht(user, id);
+    return this.uitvoering.vernietigingsopdracht(user, id, leesIfMatch(ifMatch));
   }
-
-  private async buildAccessWhere(user: AuthUser, scope: "mijn" | "alle") {
-    if (scope === "alle" && user.roles.includes("auditor")) {
-      return undefined;
-    }
-
-    const medewerkerId = await this.currentMedewerker.findForUser(user);
-
-    if (!medewerkerId) {
-      return { id: { equals: "00000000-0000-0000-0000-000000000000" } };
-    }
-
-    return {
-      OR: [
-        { recordmanagerId: medewerkerId },
-        { proceseigenaarId: medewerkerId },
-        { archivarisId: medewerkerId },
-      ],
-    };
-  }
-
-  private buildDetailAccessWhere(user: AuthUser) {
-    return this.buildAccessWhere(
-      user,
-      user.roles.includes("auditor") ? "alle" : "mijn"
-    );
-  }
-
-  private async getTakenForDashboard(
-    where: Awaited<ReturnType<TakenController["buildAccessWhere"]>>
-  ) {
-    try {
-      return await this.prisma.client.taakinstantie.findMany({
-        where,
-        select: taakinstantieSelect,
-        orderBy: { stapSinds: "desc" },
-      });
-    } catch (error) {
-      this.throwDatabaseUnavailable(error);
-      throw error;
-    }
-  }
-
-  private throwDatabaseUnavailable(error: unknown): never | void {
-    if (!isDatabaseConnectionError(error)) {
-      return;
-    }
-
-    throw new ServiceUnavailableException({
-      code: "DATABASE_UNAVAILABLE",
-      message:
-        "De database is niet beschikbaar. Controleer DATABASE_URL, TLS-instellingen en IP-toegang.",
-    });
-  }
-}
-
-function isDatabaseConnectionError(error: unknown) {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  return (
-    error.message.includes(
-      "Client network socket disconnected before secure TLS connection was established"
-    ) ||
-    error.message.includes("Can't reach database server") ||
-    error.message.includes("Connection terminated") ||
-    error.message.includes("ECONNRESET")
-  );
 }

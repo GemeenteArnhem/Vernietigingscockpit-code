@@ -1,0 +1,20 @@
+{
+  "name": "@vernietigingscockpit/stekker-client",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Types voor de Stekker-API, gegenereerd uit de vastgepinde OpenAPI-spec (alleen types, geen runtimecode).",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "generate": "node scripts/genereer.mjs",
+    "check:generated": "node scripts/genereer.mjs --controleer",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.13.0"
+  }
+}

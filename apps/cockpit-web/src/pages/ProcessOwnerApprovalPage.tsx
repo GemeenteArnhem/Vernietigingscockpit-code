@@ -17,13 +17,9 @@ import ShortcutPane from "../components/ShortcutPane";
 import ConfirmDialog from "../components/ConfirmDialog";
 import RecordDetailsPanel from "../features/task-execution/components/RecordDetailsPanel";
 import ReviewRecordPanel from "../features/task-execution/review/components/ReviewRecordPanel";
-import type {
-  ReviewRecordSortDirection,
-  ReviewRecordSortKey,
-} from "../features/task-execution/review/components/ReviewRecordPanel";
 import { AppShellPortal } from "../layouts/AppShellPortalContext";
 import {
-  getReviewCandidates,
+  bulkAccordering,
   submitProceseigenaarAccordering,
   updateProceseigenaarAccordering,
   type UpdateProceseigenaarAccorderingInput,
@@ -34,19 +30,22 @@ import type {
   ReviewComment,
   ReviewDecision,
   ReviewQueueStatus,
-  ReviewRiskLevel,
   ReviewRecordContext,
 } from "../shared/types/review";
 import type { VernietigingsKandidaat } from "../shared/types/destruction";
+import ActieFoutmelding from "../components/ActieFoutmelding";
+import {
+  PAGINA_GROOTTE,
+  useKandidatenLijst,
+  useSelectieSamenvatting,
+} from "../features/task-execution/review/useKandidatenLijst";
+import { maakBulkDetails } from "../features/task-execution/review/bulkDetails";
 
-type ReviewStatusFilter =
-  | "alle"
-  | "nog-te-beoordelen"
-  | "retour"
-  | "conflict"
-  | "afgerond"
-  | "uitgesteld";
-type ReviewRiskFilter = "alle" | ReviewRiskLevel;
+// Vaste lege lijsten, zodat useMemo-afhankelijkheden niet bij elke render veranderen.
+const EMPTY_ROWS: VernietigingsKandidaat[] = [];
+const EMPTY_CONTEXTS: ReviewRecordContext[] = [];
+const EMPTY_IDS: string[] = [];
+
 type ReviewAction = "open" | "akkoord" | "retour";
 
 const BULK_SELECTION_KEY = "__bulk__";
@@ -81,16 +80,6 @@ function getQueueStatusLabel(status: ReviewQueueStatus) {
 
 function getQueueStatusBadgeClasses(status: ReviewQueueStatus) {
   return getReviewQueueStatusStyle(status).badge;
-}
-
-function getSharedValue(values: string[], multipleLabel = "Meerdere") {
-  const normalizedValues = Array.from(new Set(values.filter(Boolean)));
-
-  if (normalizedValues.length === 0) {
-    return "-";
-  }
-
-  return normalizedValues.length === 1 ? normalizedValues[0] : multipleLabel;
 }
 
 const reviewActions = [
@@ -135,63 +124,36 @@ export default function ProcessOwnerApprovalPage() {
   const { taakId, id } = useParams();
   const { accessToken } = useSessionUser();
 
-  const [search] = useState("");
-  const [activeStatusFilter] =
-    useState<ReviewStatusFilter>("alle");
-  const [activeRiskFilter] = useState<ReviewRiskFilter>("alle");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Lokale besluiten tot de volgende verversing van de pagina; daarna telt de server.
   const [decisions, setDecisions] =
     useState<Record<string, ReviewDecision>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [deferredRecords, setDeferredRecords] = useState<Record<string, boolean>>({});
   const [selectedActions, setSelectedActions] = useState<Record<string, ReviewAction>>({});
   const [manualComments, setManualComments] = useState<Record<string, ReviewComment[]>>({});
-  const [apiRows, setApiRows] = useState<VernietigingsKandidaat[] | null>(null);
-  const [apiContexts, setApiContexts] = useState<ReviewRecordContext[] | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [selectedTableIds, setSelectedTableIds] = useState<string[]>([]);
   const [isSavingAction, setIsSavingAction] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [sortKey, setSortKey] = useState<ReviewRecordSortKey>("vernietigingsdatum");
-  const [sortDirection, setSortDirection] =
-    useState<ReviewRecordSortDirection>("asc");
-  const collator = useMemo(
-    () => new Intl.Collator("nl", { numeric: true, sensitivity: "base" }),
-    []
+
+  // De server pagineert, zoekt, filtert en sorteert (CC-10); hier staat één pagina.
+  const uitgesteldeIds = useMemo(
+    () => Object.keys(deferredRecords).filter((recordId) => deferredRecords[recordId]),
+    [deferredRecords]
+  );
+  const lijst = useKandidatenLijst({ accessToken, taakId: id, uitgesteldeIds });
+  const taakVersie = lijst.data?.taakVersie ?? null;
+  const apiRows = lijst.data?.rows ?? null;
+  const serverDecisions = lijst.data?.decisions;
+  const alleDecisions = useMemo(
+    () => ({ ...(serverDecisions ?? {}), ...decisions }),
+    [decisions, serverDecisions]
   );
 
-  useEffect(() => {
-    if (!accessToken || !id) {
-      return;
-    }
-
-    let isCurrent = true;
-
-    getReviewCandidates(accessToken, id)
-      .then(({ rows, contexts, decisions: apiDecisions }) => {
-        if (!isCurrent) {
-          return;
-        }
-
-        setApiRows(rows);
-        setApiContexts(contexts);
-        setDecisions(apiDecisions);
-        setSelectedId((current) => current ?? rows[0]?.id ?? null);
-      })
-      .catch(() => {
-        if (isCurrent) {
-          setApiRows([]);
-          setApiContexts([]);
-        }
-      });
-
-    return () => {
-      isCurrent = false;
-    };
-  }, [accessToken, id]);
-
-  const sourceRows = apiRows ?? [];
-  const sourceContexts = apiContexts ?? [];
+  const sourceRows = apiRows ?? EMPTY_ROWS;
+  const sourceContexts = lijst.data?.contexts ?? EMPTY_CONTEXTS;
+  const volgnummers = lijst.data?.volgnummers;
 
   const contextById = useMemo(
     () => Object.fromEntries(sourceContexts.map((context) => [context.recordId, context])),
@@ -202,14 +164,13 @@ export default function ProcessOwnerApprovalPage() {
     () =>
       sourceRows.map((row, index) => {
         const context = contextById[row.id];
-        const computedStatus = getDecisionStatus(decisions[row.id] ?? "open");
+        const computedStatus = getDecisionStatus(alleDecisions[row.id] ?? "open");
         const isDeferred = deferredRecords[row.id] === true;
         const queueStatus = isDeferred
           ? "uitgesteld"
-          : decisions[row.id] && decisions[row.id] !== "open"
+          : alleDecisions[row.id] && alleDecisions[row.id] !== "open"
             ? computedStatus
             : context?.queueStatus ?? "nog-te-beoordelen";
-        const risk = context?.risiconiveau ?? "laag";
 
         return {
           row,
@@ -220,109 +181,50 @@ export default function ProcessOwnerApprovalPage() {
               }
             : context,
           queueStatus,
-          risk,
-          snapshotVolgnummer: index + 1,
+          snapshotVolgnummer: volgnummers?.[row.id] ?? index + 1,
         };
       }),
-    [contextById, decisions, deferredRecords, manualComments, sourceRows]
+    [alleDecisions, contextById, deferredRecords, manualComments, sourceRows, volgnummers]
   );
 
-  const visibleRows = useMemo(
+  // Al gezocht, gefilterd en gesorteerd door de server.
+  const visibleRows = queueRows;
+
+  // Zonder (zichtbare) keuze is het eerste record van de pagina geselecteerd.
+  const activeSelectedId = useMemo(
     () =>
-      queueRows
-        .filter(({ row, queueStatus, risk }) => {
-        const matchesSearch =
-          row.titel.toLowerCase().includes(search.toLowerCase()) ||
-          row.bron_id?.toLowerCase().includes(search.toLowerCase());
-        const matchesRisk = activeRiskFilter === "alle" ? true : risk === activeRiskFilter;
-        const matchesStatus =
-          activeStatusFilter === "alle" ? true : queueStatus === activeStatusFilter;
-
-        return matchesStatus && matchesSearch && matchesRisk;
-        })
-        .sort((left, right) => {
-          const leftValue =
-            sortKey === "omschrijving"
-              ? left.row.titel
-              : sortKey === "status"
-                ? getQueueStatusLabel(left.queueStatus)
-                : sortKey === "volgnummer"
-                  ? left.snapshotVolgnummer
-                  : sortKey === "code"
-                    ? left.row.code ?? ""
-                    : sortKey === "selectielijst"
-                      ? left.row.selectielijst ?? ""
-                      : sortKey === "grondslag"
-                        ? left.row.grondslag ?? ""
-                        : sortKey === "bewaartermijn"
-                          ? left.row.bewaartermijn
-                          : sortKey === "vernietigingsdatum"
-                            ? left.row.vernietigingsdatum ?? ""
-                            : sortKey === "opmerking"
-                              ? left.context?.comments.length ?? 0
-                              : sortKey === "aantalObjecten"
-                                ? left.row.aantalObjecten
-                                : sortKey === "aantalBetrokkenen"
-                                  ? left.row.aantalBetrokkenen
-                                  : sortKey === "periode"
-                                    ? `${left.row.startdatum ?? ""} / ${left.row.einddatum ?? ""}`
-                                    : sortKey === "stekker"
-                                      ? left.row.bron_systeem ?? ""
-                                      : left.row.bron_id ?? "";
-
-          const rightValue =
-            sortKey === "omschrijving"
-              ? right.row.titel
-              : sortKey === "status"
-                ? getQueueStatusLabel(right.queueStatus)
-                : sortKey === "volgnummer"
-                  ? right.snapshotVolgnummer
-                  : sortKey === "code"
-                    ? right.row.code ?? ""
-                    : sortKey === "selectielijst"
-                      ? right.row.selectielijst ?? ""
-                      : sortKey === "grondslag"
-                        ? right.row.grondslag ?? ""
-                        : sortKey === "bewaartermijn"
-                          ? right.row.bewaartermijn
-                          : sortKey === "vernietigingsdatum"
-                            ? right.row.vernietigingsdatum ?? ""
-                            : sortKey === "opmerking"
-                              ? right.context?.comments.length ?? 0
-                              : sortKey === "aantalObjecten"
-                                ? right.row.aantalObjecten
-                                : sortKey === "aantalBetrokkenen"
-                                  ? right.row.aantalBetrokkenen
-                                  : sortKey === "periode"
-                                    ? `${right.row.startdatum ?? ""} / ${right.row.einddatum ?? ""}`
-                                    : sortKey === "stekker"
-                                      ? right.row.bron_systeem ?? ""
-                                      : right.row.bron_id ?? "";
-
-          const comparison =
-            typeof leftValue === "number" && typeof rightValue === "number"
-              ? leftValue - rightValue
-              : collator.compare(String(leftValue), String(rightValue));
-
-          return sortDirection === "asc" ? comparison : -comparison;
-        }),
-    [activeRiskFilter, activeStatusFilter, collator, queueRows, search, sortDirection, sortKey]
+      visibleRows.some((item) => item.row.id === selectedId)
+        ? selectedId
+        : visibleRows[0]?.row.id ?? null,
+    [selectedId, visibleRows]
   );
 
   const selectedIndex = useMemo(
-    () => visibleRows.findIndex((item) => item.row.id === selectedId),
-    [selectedId, visibleRows]
+    () => visibleRows.findIndex((item) => item.row.id === activeSelectedId),
+    [activeSelectedId, visibleRows]
   );
 
   const selectedItem = useMemo(
-    () => visibleRows.find((item) => item.row.id === selectedId) ?? visibleRows[0],
-    [selectedId, visibleRows]
+    () => visibleRows.find((item) => item.row.id === activeSelectedId) ?? visibleRows[0],
+    [activeSelectedId, visibleRows]
   );
 
   const previousRecord = selectedIndex > 0 ? visibleRows[selectedIndex - 1] : undefined;
   const nextRecord =
     selectedIndex >= 0 && selectedIndex < visibleRows.length - 1
       ? visibleRows[selectedIndex + 1]
+      : undefined;
+
+  // Bij het eerste of laatste record van een pagina: door naar de vorige of volgende pagina.
+  const naarVolgende = nextRecord
+    ? () => setSelectedId(nextRecord.row.id)
+    : lijst.heeftVolgendePagina
+      ? () => lijst.naarPagina(lijst.pagina + 1)
+      : undefined;
+  const naarVorige = previousRecord
+    ? () => setSelectedId(previousRecord.row.id)
+    : lijst.heeftVorigePagina
+      ? () => lijst.naarPagina(lijst.pagina - 1)
       : undefined;
   const isBulkMode = selectedTableIds.length > 1;
   const selectedBulkItems = useMemo(
@@ -347,123 +249,13 @@ export default function ProcessOwnerApprovalPage() {
       ),
     [selectedBulkItems]
   );
-  const bulkStatusLabels = Array.from(
-    new Set(selectedBulkItems.map((item) => getQueueStatusLabel(item.queueStatus)))
+  const bulkSamenvatting = useSelectieSamenvatting(
+    accessToken,
+    id,
+    isBulkMode ? selectedTableIds : EMPTY_IDS
   );
-  const bulkVolgnummers = selectedBulkItems
-    .map((item) => item.snapshotVolgnummer)
-    .filter((volgnummer) => volgnummer > 0);
   const bulkDetails = isBulkMode
-    ? [
-        {
-          label: "Omschrijving",
-          labelTitle: "Titel vernietigen informatieobjecten binnen de taak",
-          value: `${selectedBulkItems.length} geselecteerde records`,
-          stacked: true,
-        },
-        {
-          label: "Code",
-          labelTitle:
-            "De VNG code of BAC van de te vernietigen informatieobjecten binnen de taak. Voor selectielijst vanaf 2017, Zaaktype gebruiken.",
-          value: getSharedValue(selectedBulkItems.map((item) => item.row.code ?? "-"), "Meerdere codes"),
-        },
-        {
-          label: "Selectielijst",
-          labelTitle:
-            "Selectielijst die van toepassing is, betreft jaartal van de selectielijst.",
-          value: getSharedValue(
-            selectedBulkItems.map((item) => item.row.selectielijst ?? "-"),
-            "Meerdere selectielijsten"
-          ),
-        },
-        {
-          label: "Grondslag",
-          labelTitle:
-            "De categorie/grondslag uit de vignerende selectielijst op basis waarvan de informatieobjecten vernietigd dienen te worden",
-          value: getSharedValue(
-            selectedBulkItems.map((item) => item.row.grondslag ?? "-"),
-            "Meerdere grondslagen"
-          ),
-        },
-        {
-          label: "Bewaartermijn",
-          labelTitle:
-            "De periode dat de informatieobjecten moeten worden bewaard conform de vigerende selectielijst",
-          value: getSharedValue(
-            selectedBulkItems.map((item) => `${item.row.bewaartermijn} jaar`),
-            "Meerdere termijnen"
-          ),
-        },
-        {
-          label: "Vernietigingsdatum",
-          labelTitle:
-            "Jaar en maand waarin het dossier/informatieobject vernietigd moet worden. Format: jjjj-mm",
-          value:
-            selectedBulkItems.length > 0
-              ? `${selectedBulkItems[0]?.row.vernietigingsdatum ?? "-"} t/m ${
-                  selectedBulkItems[selectedBulkItems.length - 1]?.row.vernietigingsdatum ?? "-"
-                }`
-              : "-",
-        },
-        {
-          label: "Periode",
-          labelTitle:
-            "Gehele periode waar de stukken binnen deze taak in vallen. Format jjjj-mm / jjjj-mm",
-          value: getSharedValue(
-            selectedBulkItems.map(
-              (item) => `${item.row.startdatum ?? "-"} / ${item.row.einddatum ?? "-"}`
-            ),
-            "Meerdere periodes"
-          ),
-        },
-        {
-          label: "Status",
-          labelTitle:
-            "Status van beoordeling: Akkoord, Retour, Uitgesloten, Uitgesteld",
-          value: bulkStatusLabels.join(", "),
-        },
-        {
-          label: "Aantal objecten",
-          labelTitle: "Aantal objecten",
-          value: selectedBulkItems
-            .reduce((total, item) => total + item.row.aantalObjecten, 0)
-            .toLocaleString("nl-NL"),
-        },
-        {
-          label: "Aantal betrokkenen",
-          labelTitle: "Aantal betrokkenen",
-          value: selectedBulkItems
-            .reduce((total, item) => total + item.row.aantalBetrokkenen, 0)
-            .toLocaleString("nl-NL"),
-        },
-        {
-          label: "Stekker",
-          labelTitle: "Naam van de stekker waar de informatieobjecten uit komt.",
-          value: getSharedValue(
-            selectedBulkItems.map((item) => item.row.bron_systeem ?? "-"),
-            "Meerdere stekkers"
-          ),
-        },
-        {
-          label: "Bron-ID",
-          labelTitle: "Identificatie van het informatieobject uit de stekker",
-          value: `${selectedBulkItems.length} records`,
-        },
-        {
-          label: "ID",
-          labelTitle: "Cockpit identicatienummer.",
-          value: "Meerdere records",
-        },
-        {
-          label: "Volgnummer",
-          labelTitle:
-            "Een nummer binnen de taak die voor vernietiging in aanmerking komen",
-          value:
-            bulkVolgnummers.length > 0
-              ? `${Math.min(...bulkVolgnummers)} t/m ${Math.max(...bulkVolgnummers)}`
-              : "-",
-        },
-      ]
+    ? maakBulkDetails(selectedBulkItems, selectedTableIds.length, bulkSamenvatting, getQueueStatusLabel)
     : [];
 
   const selectedDecision = isBulkMode
@@ -476,21 +268,16 @@ export default function ProcessOwnerApprovalPage() {
     : selectedItem
       ? notes[selectedItem.row.id] ?? ""
       : "";
-  const completedCount = queueRows.filter((item) => {
-    const decision = decisions[item.row.id] ?? "open";
-    return decision !== "open";
-  }).length;
-  const allReviewed = queueRows.length > 0 && completedCount === queueRows.length;
-  const hasRetour = queueRows.some((item) => item.queueStatus === "retour");
-  const summaryStats = useMemo(
-    () => ({
-      teBeoordelen: queueRows.filter((item) => item.queueStatus === "nog-te-beoordelen").length,
-      akkoord: queueRows.filter((item) => item.queueStatus === "afgerond").length,
-      retour: queueRows.filter((item) => item.queueStatus === "retour").length,
-      uitgesloten: queueRows.filter((item) => item.queueStatus === "conflict").length,
-    }),
-    [queueRows]
-  );
+  const tellingen = lijst.data?.tellingen;
+  // Over de hele lijst, niet alleen deze pagina.
+  const allReviewed = (tellingen?.totaal ?? 0) > 0 && tellingen?.opgenomen === 0;
+  const hasRetour = (tellingen?.retour ?? 0) > 0;
+  const summaryStats = {
+    teBeoordelen: tellingen?.opgenomen ?? 0,
+    akkoord: tellingen?.akkoord ?? 0,
+    retour: tellingen?.retour ?? 0,
+    uitgesloten: tellingen?.uitgesloten ?? 0,
+  };
   const reviewTableRows = useMemo(
     () =>
       visibleRows.map((item) => ({
@@ -530,11 +317,17 @@ export default function ProcessOwnerApprovalPage() {
       setIsSavingAction(true);
 
       try {
-        await Promise.all(
-          actionTargetIds.map((kandidaatId) =>
-            updateProceseigenaarAccordering(accessToken, id, kandidaatId, input)
-          )
-        );
+        // Meerdere records: één verzoek voor de hele selectie (CC-10).
+        if (actionTargetIds.length > 1 && taakVersie !== null) {
+          await bulkAccordering(accessToken, id, taakVersie, actionTargetIds, input, "proceseigenaar");
+        } else {
+          await Promise.all(
+            actionTargetIds.map((kandidaatId) =>
+              updateProceseigenaarAccordering(accessToken, id, kandidaatId, input)
+            )
+          );
+        }
+        lijst.ververs();
       } catch (error) {
         setActionError(
           error instanceof Error
@@ -616,6 +409,11 @@ export default function ProcessOwnerApprovalPage() {
       return;
     }
 
+    if (lijst.heeftVolgendePagina) {
+      lijst.naarPagina(lijst.pagina + 1);
+      return;
+    }
+
     if (allReviewed) {
       setConfirmOpen(true);
     }
@@ -653,14 +451,14 @@ export default function ProcessOwnerApprovalPage() {
         void executeAction(selectedDecision);
       }
 
-      if (key === "a" && previousRecord) {
+      if (key === "a" && naarVorige) {
         event.preventDefault();
-        setSelectedId(previousRecord.row.id);
+        naarVorige();
       }
 
-      if (key === "d" && nextRecord) {
+      if (key === "d" && naarVolgende) {
         event.preventDefault();
-        setSelectedId(nextRecord.row.id);
+        naarVolgende();
       }
     });
 
@@ -674,7 +472,7 @@ export default function ProcessOwnerApprovalPage() {
   };
 
   const handleSubmitDecision = async () => {
-    if (!accessToken || !id || !taakId) {
+    if (!accessToken || !id || taakVersie === null || !taakId) {
       setActionError("Accordering afronden kan pas nadat de taak via de API is geladen.");
       setConfirmOpen(false);
       return;
@@ -684,7 +482,7 @@ export default function ProcessOwnerApprovalPage() {
     setIsSavingAction(true);
 
     try {
-      const result = await submitProceseigenaarAccordering(accessToken, id);
+      const result = await submitProceseigenaarAccordering(accessToken, id, taakVersie);
       setConfirmOpen(false);
 
       if (result.status === "beoordeling") {
@@ -710,15 +508,15 @@ export default function ProcessOwnerApprovalPage() {
       <AppShellPortal slot="detail">
         {selectedItem ? (
           <RecordDetailsPanel
-            record={isBulkMode ? { titel: `Selectie van ${selectedBulkItems.length} records` } : selectedItem.row}
+            record={isBulkMode ? { titel: `Selectie van ${selectedTableIds.length} records` } : selectedItem.row}
             comments={isBulkMode ? bulkComments : selectedItem.context?.comments ?? []}
-            currentIndex={isBulkMode ? 0 : selectedIndex >= 0 ? selectedIndex + 1 : 0}
-            totalCount={isBulkMode ? 0 : visibleRows.length}
-            onPrevious={isBulkMode ? undefined : previousRecord ? () => setSelectedId(previousRecord.row.id) : undefined}
-            onNext={isBulkMode ? undefined : nextRecord ? () => setSelectedId(nextRecord.row.id) : undefined}
+            currentIndex={isBulkMode ? 0 : selectedIndex >= 0 ? lijst.pagina * PAGINA_GROOTTE + selectedIndex + 1 : 0}
+            totalCount={isBulkMode ? 0 : lijst.server.totaal}
+            onPrevious={isBulkMode ? undefined : naarVorige}
+            onNext={isBulkMode ? undefined : naarVolgende}
             heading={isBulkMode ? "Selectie" : "Record"}
             showTabs
-            counterLabel={isBulkMode ? `${selectedBulkItems.length} geselecteerd` : undefined}
+            counterLabel={isBulkMode ? `${selectedTableIds.length} geselecteerd` : undefined}
             detailsNotice={
               isBulkMode
                 ? "Je hebt meerdere records geselecteerd. Hieronder staat een samenvatting van de selectie. Waar waarden verschillen, tonen we dit expliciet."
@@ -893,11 +691,7 @@ export default function ProcessOwnerApprovalPage() {
                 />
               </div>
 
-              {actionError ? (
-                <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm leading-5 text-rose-700">
-                  {actionError}
-                </p>
-              ) : null}
+              <ActieFoutmelding melding={actionError} />
             </>
           )}
         </ActionPanel>
@@ -918,8 +712,8 @@ export default function ProcessOwnerApprovalPage() {
       <ReviewRecordPanel
         record={selectedItem?.row}
         context={selectedItem?.context}
-        currentIndex={selectedIndex >= 0 ? selectedIndex + 1 : 0}
-        totalCount={visibleRows.length}
+        currentIndex={selectedIndex >= 0 ? lijst.pagina * PAGINA_GROOTTE + selectedIndex + 1 : 0}
+        totalCount={lijst.server.totaal}
         activeStep="ACCORDERING_PO"
         showRecordSections={false}
         summaryStats={summaryStats}
@@ -928,15 +722,13 @@ export default function ProcessOwnerApprovalPage() {
         onSelectedTableIdsChange={setSelectedTableIds}
         activeRecordId={selectedItem?.row.id ?? null}
         onActiveRecordChange={setSelectedId}
-        sortKey={sortKey}
-        sortDirection={sortDirection}
-        onSortChange={(key, direction) => {
-          setSortKey(key);
-          setSortDirection(direction);
-        }}
+        sortKey={lijst.sortKey}
+        sortDirection={lijst.sortDirection}
+        onSortChange={lijst.zetSortering}
+        server={lijst.server}
         enableCrossPageBulkSelection
-        onPrevious={previousRecord ? () => setSelectedId(previousRecord.row.id) : undefined}
-        onNext={nextRecord ? () => setSelectedId(nextRecord.row.id) : undefined}
+        onPrevious={naarVorige}
+        onNext={naarVolgende}
       />
 
       <ConfirmDialog

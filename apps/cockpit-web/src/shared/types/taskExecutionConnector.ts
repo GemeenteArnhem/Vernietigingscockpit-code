@@ -32,4 +32,6 @@ export type TaskExecutionDestructionConnector = Omit<
   "selectieStatus"
 > & {
   vernietigingsStatus: TaskExecutionConnectorDestructionStatus;
+  // Door de API bepaald, bijv. "vernietiging.opnieuw"; de UI leidt zelf geen rechten af.
+  toegestaneActies: string[];
 };

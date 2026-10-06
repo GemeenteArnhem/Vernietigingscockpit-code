@@ -4,19 +4,22 @@ import {
   Inject,
   Injectable,
 } from "@nestjs/common";
-import { createHash, randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import type { AuthUser } from "../auth/auth-user.js";
 import { CurrentMedewerkerService } from "../auth/current-medewerker.service.js";
 import { PrismaService } from "../../shared/db/prisma.service.js";
 import {
   mapTaakdefinitie,
+  mapTaakdefinitieMetActies,
   taakdefinitieSelect,
 } from "./taakdefinities.dto.js";
+import { taakdefinitieActies, taakinstantieActies } from "../workflow/toegestane-acties.js";
 import {
   mapTaakinstantie,
   taakinstantieSelect,
 } from "../taken/taken.dto.js";
+import { schrijfAuditEvent, schrijfConfiguratieEvent } from "../audit/audit-keten.js";
+import type { ApiTaakdefinitie, ApiTaakinstantie } from "@vernietigingscockpit/api-contract";
 
 type TaakdefinitieStekkerInput = {
   stekkerId: string;
@@ -48,7 +51,88 @@ export class TaakdefinitiesService {
     private readonly currentMedewerker: CurrentMedewerkerService
   ) {}
 
-  async createTaakdefinitie(user: AuthUser, input: CreateTaakdefinitieInput) {
+  async getTaakdefinities(user: AuthUser, scope: "mijn" | "alle"): Promise<ApiTaakdefinitie[]> {
+    const medewerkerId = await this.currentMedewerker.findForUser(user);
+    const where = await this.buildAccessWhere(user, scope);
+    const taakdefinities = await this.prisma.client.taakdefinitie.findMany({
+      where,
+      select: taakdefinitieSelect,
+      orderBy: { naam: "asc" },
+    });
+
+    return taakdefinities.map((taakdefinitie) =>
+      mapTaakdefinitieMetActies(
+        taakdefinitie,
+        taakdefinitieActies(taakdefinitie, {
+          roles: user.roles,
+          medewerkerId,
+        }),
+        (instantie) =>
+          taakinstantieActies(instantie, {
+            roles: user.roles,
+            medewerkerId,
+          })
+      )
+    );
+  }
+
+  async getTaakdefinitie(user: AuthUser, id: string): Promise<ApiTaakdefinitie> {
+    const medewerkerId = await this.currentMedewerker.findForUser(user);
+    const taakdefinitie = await this.prisma.client.taakdefinitie.findFirstOrThrow({
+      where: {
+        id,
+        ...(await this.buildDetailAccessWhere(user)),
+      },
+      select: taakdefinitieSelect,
+    });
+
+    return mapTaakdefinitieMetActies(
+      taakdefinitie,
+      taakdefinitieActies(taakdefinitie, {
+        roles: user.roles,
+        medewerkerId,
+      }),
+      (instantie) =>
+        taakinstantieActies(instantie, {
+          roles: user.roles,
+          medewerkerId,
+        })
+    );
+  }
+
+  private async buildAccessWhere(user: AuthUser, scope: "mijn" | "alle") {
+    const canSeeAll =
+      user.roles.includes("auditor") ||
+      user.roles.includes("functioneel_beheerder");
+
+    if (scope === "alle" && canSeeAll) {
+      return undefined;
+    }
+
+    const medewerkerId = await this.currentMedewerker.findForUser(user);
+
+    if (!medewerkerId) {
+      return { id: { equals: "00000000-0000-0000-0000-000000000000" } };
+    }
+
+    return {
+      OR: [
+        { recordmanagerId: medewerkerId },
+        { proceseigenaarId: medewerkerId },
+        { archivarisId: medewerkerId },
+      ],
+    };
+  }
+
+  private buildDetailAccessWhere(user: AuthUser) {
+    const canSeeAll =
+      user.roles.includes("auditor") ||
+      user.roles.includes("functioneel_beheerder");
+
+    return this.buildAccessWhere(user, canSeeAll ? "alle" : "mijn");
+  }
+
+  async createTaakdefinitie(user: AuthUser, input: CreateTaakdefinitieInput): Promise<ApiTaakdefinitie> {
     const currentMedewerkerId = await this.currentMedewerker.findForUser(user);
 
     if (!currentMedewerkerId) {
@@ -95,10 +179,10 @@ export class TaakdefinitiesService {
         select: { id: true },
       });
 
-      await this.createConfiguratieEvent(tx, user, {
+      await schrijfConfiguratieEvent(tx, { type: "user", user, rol: "recordmanager" }, {
         entiteitType: "taakdefinitie",
         entiteitId: created.id,
-        actie: "TAAKDEFINITIE_AANGEMAAKT",
+        actie: "TASK_DEFINITION_CREATED",
         details: {
           naam: data.naam,
           categorie: data.categorie,
@@ -120,7 +204,7 @@ export class TaakdefinitiesService {
     user: AuthUser,
     taakdefinitieId: string,
     input: CreateTaakinstantieInput
-  ) {
+  ): Promise<ApiTaakinstantie> {
     const currentMedewerkerId = await this.currentMedewerker.findForUser(user);
 
     if (!currentMedewerkerId) {
@@ -160,10 +244,12 @@ export class TaakdefinitiesService {
         select: { id: true },
       });
 
-      await this.createConfiguratieEvent(tx, user, {
+      // Begin van de auditketen van deze taak (ADR-0003).
+      await schrijfAuditEvent(tx, { type: "user", user, rol: "recordmanager" }, {
+        taakinstantieId: created.id,
         entiteitType: "taakinstantie",
         entiteitId: created.id,
-        actie: "TAAK_INSTANTIE_AANGEMAAKT",
+        actie: "TASK_CREATED",
         details: {
           taakdefinitieId: definition.id,
           naam,
@@ -201,9 +287,13 @@ export class TaakdefinitiesService {
       throw new BadRequestException("frequentie heeft een onbekende waarde.");
     }
 
-    if (recordmanagerId === archivarisId || proceseigenaarId === archivarisId) {
+    if (
+      recordmanagerId === proceseigenaarId ||
+      recordmanagerId === archivarisId ||
+      proceseigenaarId === archivarisId
+    ) {
       throw new BadRequestException(
-        "Functiescheiding: archivaris mag niet gelijk zijn aan recordmanager of proceseigenaar."
+        "Functiescheiding: recordmanager, proceseigenaar en archivaris moeten drie verschillende personen zijn."
       );
     }
 
@@ -281,52 +371,6 @@ export class TaakdefinitiesService {
         "Een of meer stekkers bestaan niet of zijn niet actief."
       );
     }
-  }
-
-  private async createConfiguratieEvent(
-    tx: Prisma.TransactionClient,
-    user: AuthUser,
-    event: {
-      actie: string;
-      entiteitType: string;
-      entiteitId: string;
-            details: Prisma.InputJsonValue;
-    }
-  ) {
-    const previous = await tx.configuratieEvent.findFirst({
-      orderBy: { id: "desc" },
-      select: { hash: true },
-    });
-    const correlatieId = randomUUID();
-    const hash = createHash("sha256")
-      .update(
-        JSON.stringify({
-          vorigeHash: previous?.hash ?? null,
-          actorId: user.sub,
-          actie: event.actie,
-          entiteitType: event.entiteitType,
-          entiteitId: event.entiteitId,
-          details: event.details,
-          correlatieId,
-        })
-      )
-      .digest("hex");
-
-    await tx.configuratieEvent.create({
-      data: {
-        actorType: "user",
-        actorId: user.sub,
-        actorNaam: user.name ?? user.username,
-        rol: user.roles.includes("recordmanager") ? "recordmanager" : undefined,
-        actie: event.actie,
-        entiteitType: event.entiteitType,
-        entiteitId: event.entiteitId,
-        details: event.details,
-        correlatieId,
-        vorigeHash: previous?.hash,
-        hash,
-      },
-    });
   }
 }
 

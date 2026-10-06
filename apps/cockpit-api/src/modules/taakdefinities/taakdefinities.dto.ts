@@ -2,6 +2,7 @@ import {
   mapTaakinstantie,
   mapTaakinstantieMetActies,
 } from "../taken/taken.dto.js";
+import { ACTIEVE_SELECTIE } from "../taken/actieve-selectie.js";
 
 type MedewerkerSummaryRecord = {
   id: string;
@@ -126,6 +127,7 @@ export const taakdefinitieSelect = {
         select: medewerkerSummarySelect,
       },
       selecties: {
+        where: ACTIEVE_SELECTIE,
         select: {
           status: true,
           totaalKandidaten: true,

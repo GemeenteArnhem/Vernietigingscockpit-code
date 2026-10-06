@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import StatusBadge from "../../../../components/StatusBadge";
 import type { VernietigingsKandidaat } from "../../../../shared/types/destruction";
@@ -188,12 +188,6 @@ export default function ReviewResultTable({
 
   const totalPages = Math.max(1, Math.ceil(filteredAndSortedRows.length / pageSize));
   const safeCurrentPage = Math.min(currentPage, totalPages);
-
-  useEffect(() => {
-    if (currentPage !== safeCurrentPage) {
-      setCurrentPage(safeCurrentPage);
-    }
-  }, [currentPage, safeCurrentPage]);
 
   const startIndex = (safeCurrentPage - 1) * pageSize;
   const endIndex = Math.min(startIndex + pageSize, filteredAndSortedRows.length);
@@ -473,7 +467,7 @@ export default function ReviewResultTable({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              onClick={() => setCurrentPage(Math.max(1, safeCurrentPage - 1))}
               disabled={safeCurrentPage === 1}
               className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -499,7 +493,7 @@ export default function ReviewResultTable({
 
             <button
               type="button"
-              onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+              onClick={() => setCurrentPage(Math.min(totalPages, safeCurrentPage + 1))}
               disabled={safeCurrentPage === totalPages}
               className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
             >

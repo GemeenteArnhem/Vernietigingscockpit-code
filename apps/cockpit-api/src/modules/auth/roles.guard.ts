@@ -4,7 +4,7 @@ import type { Request } from "express";
 import type { AppRole } from "./app-role.js";
 import type { AuthUser } from "./auth-user.js";
 import { IS_PUBLIC_KEY } from "./public.decorator.js";
-import { ROLES_KEY } from "./roles.decorator.js";
+import { ANY_AUTHENTICATED_KEY, ROLES_KEY } from "./roles.decorator.js";
 
 type AuthenticatedRequest = Request & {
   user?: AuthUser;
@@ -24,16 +24,26 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const anyAuthenticated = this.reflector.getAllAndOverride<boolean>(ANY_AUTHENTICATED_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (anyAuthenticated) {
+      return Boolean(request.user);
+    }
+
     const requiredRoles = this.reflector.getAllAndOverride<AppRole[]>(
       ROLES_KEY,
       [context.getHandler(), context.getClass()]
     );
 
+    // Default-deny (CC-11): zonder expliciete rollen is een endpoint niet bereikbaar.
     if (!requiredRoles || requiredRoles.length === 0) {
-      return true;
+      return false;
     }
 
-    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const userRoles = request.user?.roles ?? [];
 
     return requiredRoles.some((role) => userRoles.includes(role));

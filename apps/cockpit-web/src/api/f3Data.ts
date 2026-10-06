@@ -25,267 +25,46 @@ import type {
   TaskDefinitionInstance,
   TaskDefinitionRecord,
 } from "../shared/types/taskDefinition";
+import type {
+  AccorderingBesluitInvoer,
+  ApiArchivering,
+  ApiArchiveringStand,
+  ApiBijgewerkt,
+  ApiGedeeld,
+  ApiKandidaat,
+  ApiKandidaatAccordering,
+  ApiKandidaatBeoordeling,
+  ApiKandidaatIds,
+  ApiKandidatenPagina,
+  ApiSelectieSamenvatting,
+  ApiSelectieStekker,
+  ApiStamgegevensMedewerker,
+  ApiStekkerOptie,
+  ApiTaakSelectie,
+  ApiTaakStatus,
+  ApiTaakdefinitie,
+  ApiTaakinstantie,
+  ApiUitvoering,
+  ApiUitvoeringStekker,
+  ApiVerklaring,
+  ApiVernietigingsopdracht,
+  ApiVernietigingsresultaat,
+  ApiVernietigingsresultaten,
+  KandidaatBeoordelingInvoer,
+  KandidatenSortering,
+  KandidatenStatusFilter,
+  KandidatenZoekIn,
+  TaakdefinitieInvoer,
+} from "@vernietigingscockpit/api-contract";
 import { apiDownload, apiRequest } from "./apiClient";
 
-type ApiMedewerker = {
-  id: string;
-  naam: string;
-  email?: string;
-  rollen?: string[];
-};
-
-type ApiStekker = {
-  id: string;
-  naam: string;
-  omschrijving?: string | null;
-};
-
-type ApiVerantwoordelijken = {
-  recordmanager: ApiMedewerker;
-  proceseigenaar: ApiMedewerker;
-  archivaris: ApiMedewerker;
-};
-
-type ApiTaakdefinitie = {
-  id: string;
-  naam: string;
-  omschrijving?: string | null;
-  categorie: string;
-  frequentie: string;
-  verantwoordelijken: ApiVerantwoordelijken;
-  stekkers: ApiStekker[];
-  instanties?: ApiTaakinstantie[];
-  toegestaneActies?: string[];
-};
-
-export type CreateTaskDefinitionInput = {
-  naam: string;
-  omschrijving?: string;
-  categorie: string;
-  frequentie: "jaarlijks" | "kwartaal" | "maandelijks" | "ad_hoc";
-  startmaand: number | null;
-  recordmanagerId: string;
-  proceseigenaarId: string;
-  archivarisId: string;
-  stekkers: Array<{
-    stekkerId: string;
-    selectieparameters: Record<string, unknown>;
-  }>;
-};
-
-export type StamgegevensMedewerker = {
-  id: string;
-  naam: string;
-  email: string;
-  rollen: string[];
-  afdeling?: {
-    naam: string;
-    code: string;
-  } | null;
-};
-
-export type StekkerOption = {
-  id: string;
-  naam: string;
-  omschrijving?: string | null;
-  actief: boolean;
-  laatsteConfiguratie?: {
-    versie: number;
-    baseUrl: string;
-    authType: string;
-    verwachteApiMajor: number;
-  } | null;
-};
-
-type ApiTellingen = {
-  totaalKandidaten: number;
-  totaalObjecten: number;
-  totaalBetrokkenen: number;
-};
-
-type ApiTaakinstantie = {
-  id: string;
-  naam: string;
-  status: string;
-  stapSinds: string;
-  peildatum?: string | null;
-  gestartOp?: string | null;
-  taakdefinitie?: ApiTaakdefinitie;
-  verantwoordelijken: ApiVerantwoordelijken;
-  tellingen: ApiTellingen;
-  toegestaneActies?: string[];
-};
-
-type ApiTaakSelectie = {
-  taak: {
-    id: string;
-    naam: string;
-    status: string;
-    peildatum?: string | null;
-    taakdefinitie: {
-      id: string;
-      naam: string;
-    };
-  };
-  stekkers: ApiSelectieStekker[];
-};
-
-type ApiSelectieStekker = {
-  stekker: {
-    id: string;
-    naam: string;
-    omschrijving?: string | null;
-    actief: boolean;
-  };
-  configuratie?: {
-    id: string;
-    versie: number;
-    baseUrl: string;
-    verwachteApiMajor: number;
-  } | null;
-  selectie?: {
-    id: string;
-    externSelectieId?: string | null;
-    status: string;
-    peildatum?: string | null;
-    selectietijdstip?: string | null;
-    totaalKandidaten: number;
-    totaalObjecten: number;
-    totaalBetrokkenen: number;
-    geimporteerd: number;
-    fout?: string | null;
-  } | null;
-};
-
-type ApiReviewCandidates = {
-  taak: {
-    id: string;
-    naam: string;
-    status: string;
-    stapSinds: string;
-    verantwoordelijken: ApiVerantwoordelijken;
-  };
-  kandidaten: ApiReviewCandidate[];
-};
-
-type ApiReviewCandidate = {
-  id: string;
-  kandidaatId: string;
-  bronId: string;
-  bronIdNaam?: string | null;
-  omschrijving: string;
-  classificatiesleutel?: string | null;
-  selectielijst?: string | null;
-  grondslag?: string | null;
-  bewaartermijn?: string | null;
-  begindatum?: string | null;
-  einddatum?: string | null;
-  vernietigingsdatum?: string | null;
-  aantalObjecten: number;
-  aantalBetrokkenen: number;
-  beoordeling: string;
-  uitsluitReden?: string | null;
-  toelichting?: string | null;
-  stekker: {
-    naam: string;
-  };
-};
-
-type ApiDestructionResults = {
-  taak: ApiReviewCandidates["taak"];
-  resultaten: ApiDestructionResult[];
-};
-
-type ApiVernietigingsverklaring = {
-  id?: string;
-  beschikbaar: boolean;
-  taak: ApiReviewCandidates["taak"];
-  versie: number;
-  status: string;
-  gegenereerdOp: string;
-  bijlage: {
-    bestandsnaam: string;
-    contentType: string;
-    aantalRegels: number;
-    sha256: string;
-  };
-  tellingen: {
-    success: number;
-    failed: number;
-    notFound: number;
-    skipped: number;
-    changed: number;
-    aantalObjecten: number;
-    aantalBetrokkenen: number;
-  };
-};
-
-type ApiDestructionExecution = {
-  taak: ApiReviewCandidates["taak"];
-  stekkers: ApiDestructionExecutionStekker[];
-};
-
-type ApiDestructionExecutionStekker = {
-  id: string;
-  naam: string;
-  versie?: string | null;
-  stekkerStatus: string;
-  selectieId: string;
-  externSelectieId?: string | null;
-  externVernietigingId?: string | null;
-  vernietigingStatus?: string | null;
-  vernietigingGestartOp?: string | null;
-  vernietigingAfgerondOp?: string | null;
-  aantalKandidaten: number;
-  aantalObjecten: number;
-  fout?: string | null;
-  resultaatTellingen: {
-    success: number;
-    failed: number;
-    notFound: number;
-    skipped: number;
-    changed: number;
-  };
-};
-
-type ApiDestructionResult = {
-  id: string;
-  kandidaatId: string;
-  bronId: string;
-  bronIdNaam?: string | null;
-  omschrijving: string;
-  classificatiesleutel?: string | null;
-  selectielijst?: string | null;
-  grondslag?: string | null;
-  bewaartermijn?: string | null;
-  begindatum?: string | null;
-  einddatum?: string | null;
-  vernietigingsdatum?: string | null;
-  aantalObjecten: number;
-  aantalBetrokkenen: number;
-  vernietigingsstatus: string;
-  foutcode?: string | null;
-  foutmelding?: string | null;
-  bronstatus?: string | null;
-  logReference?: string | null;
-  correlatieId?: string | null;
-  stekker: {
-    naam: string;
-  };
-};
-
-type ApiKandidaatBeoordeling = "AKKOORD" | "UITGESLOTEN";
-
-export type UpdateKandidaatBeoordelingInput = {
-  beoordeling: ApiKandidaatBeoordeling;
-  uitsluitReden?: string | null;
-  toelichting?: string | null;
-};
-
-export type UpdateProceseigenaarAccorderingInput = {
-  besluit: "AKKOORD" | "RETOUR";
-  toelichting?: string | null;
-};
+// Antwoord- en invoertypes komen uit het gedeelde contract met de API (CC-19).
+export type { ApiArchivering };
+export type StamgegevensMedewerker = ApiStamgegevensMedewerker;
+export type StekkerOption = ApiStekkerOptie;
+export type CreateTaskDefinitionInput = TaakdefinitieInvoer;
+export type UpdateKandidaatBeoordelingInput = KandidaatBeoordelingInvoer;
+export type UpdateProceseigenaarAccorderingInput = AccorderingBesluitInvoer;
 
 export async function getDashboardTasks(
   accessToken: string,
@@ -393,18 +172,53 @@ export async function startTaskSelection(
   return mapTaskSelection(selectie);
 }
 
-export async function getReviewCandidates(
+// Zoekvraag voor de kandidatenlijst; de waarden volgen het invoerschema van de API.
+export type KandidatenLijstQuery = {
+  offset: number;
+  limit: number;
+  zoek?: string;
+  zoekIn?: KandidatenZoekIn;
+  status?: KandidatenStatusFilter;
+  ids?: string[];
+  selectielijst?: string;
+  stekker?: string;
+  bewaartermijn?: string;
+  sort?: KandidatenSortering;
+  richting?: "asc" | "desc";
+};
+
+function kandidatenQueryString(query: KandidatenLijstQuery) {
+  const parameters = new URLSearchParams();
+
+  for (const [sleutel, waarde] of Object.entries(query)) {
+    if (waarde === undefined || waarde === "") {
+      continue;
+    }
+
+    parameters.set(sleutel, Array.isArray(waarde) ? waarde.join(",") : String(waarde));
+  }
+
+  return parameters.toString();
+}
+
+// Eén pagina van de kandidatenlijst (CC-10), in dezelfde vorm als de schermen gewend zijn.
+export async function getReviewCandidatesPagina(
   accessToken: string,
-  taskInstanceId: string
+  taskInstanceId: string,
+  query: KandidatenLijstQuery
 ) {
-  const response = await apiRequest<ApiReviewCandidates>(
-    `/taken/${taskInstanceId}/kandidaten`,
+  const response = await apiRequest<ApiKandidatenPagina>(
+    `/taken/${taskInstanceId}/kandidaten?${kandidatenQueryString(query)}`,
     {
       accessToken,
     }
   );
 
   return {
+    taakVersie: response.taak.versie,
+    pagina: response.pagina,
+    tellingen: response.tellingen,
+    facetten: response.facetten,
     rows: response.kandidaten.map(mapReviewCandidate),
     contexts: response.kandidaten.map((candidate) =>
       mapReviewContext(candidate, response.taak)
@@ -415,14 +229,113 @@ export async function getReviewCandidates(
         mapApiBeoordelingToDecision(candidate.beoordeling),
       ])
     ) as Record<string, ReviewDecision>,
+    volgnummers: Object.fromEntries(
+      response.kandidaten.map((candidate) => [candidate.id, candidate.volgnummer])
+    ) as Record<string, number>,
   };
+}
+
+// Alle kandidaat-id's die aan dezelfde zoekopdracht en filters voldoen.
+export async function getReviewCandidateIds(
+  accessToken: string,
+  taskInstanceId: string,
+  query: Omit<KandidatenLijstQuery, "offset" | "limit">
+) {
+  const response = await apiRequest<ApiKandidaatIds>(
+    `/taken/${taskInstanceId}/kandidaten/ids?${kandidatenQueryString({ ...query, offset: 0, limit: 1 })}`,
+    { accessToken }
+  );
+
+  return response.ids;
+}
+
+// Samenvatting van een (bulk)selectie, al opgemaakt zoals het detailpaneel waarden toont.
+export async function getReviewSelectionSummary(
+  accessToken: string,
+  taskInstanceId: string,
+  ids: string[]
+) {
+  const samenvatting = await apiRequest<ApiSelectieSamenvatting>(
+    `/taken/${taskInstanceId}/kandidaten/samenvatting`,
+    {
+      accessToken,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    }
+  );
+  const gedeeld = <T,>(veld: ApiGedeeld<T>, meerdere: string, opmaak: (waarde: T) => string) =>
+    veld.verschillend ? meerdere : veld.waarde === null ? "-" : opmaak(veld.waarde);
+
+  return {
+    aantal: samenvatting.aantal,
+    code: gedeeld(samenvatting.code, "Meerdere codes", (waarde) => waarde),
+    selectielijst: gedeeld(samenvatting.selectielijst, "Meerdere selectielijsten", (waarde) => waarde),
+    grondslag: gedeeld(samenvatting.grondslag, "Meerdere grondslagen", (waarde) => waarde),
+    bewaartermijn: gedeeld(samenvatting.bewaartermijn, "Meerdere termijnen", (waarde) => `${parseRetentionYears(waarde)} jaar`),
+    stekker: gedeeld(samenvatting.stekker, "Meerdere stekkers", (waarde) => waarde),
+    periode: gedeeld(
+      samenvatting.periode,
+      "Meerdere periodes",
+      ([van, tot]) => `${formatMonthYear(van)} / ${formatMonthYear(tot)}`
+    ),
+    vernietigingsdatum: samenvatting.vernietigingsdatum.van
+      ? `${formatYearMonth(samenvatting.vernietigingsdatum.van)} t/m ${formatYearMonth(samenvatting.vernietigingsdatum.tot)}`
+      : "-",
+    volgnummer:
+      samenvatting.volgnummer.van !== null
+        ? `${samenvatting.volgnummer.van} t/m ${samenvatting.volgnummer.tot}`
+        : "-",
+    beslissingen: samenvatting.statussen.map(mapApiBeoordelingToDecision),
+    aantalObjecten: samenvatting.aantalObjecten,
+    aantalBetrokkenen: samenvatting.aantalBetrokkenen,
+  };
+}
+
+export type SelectieSamenvatting = Awaited<ReturnType<typeof getReviewSelectionSummary>>;
+
+// Weergave van een bewaartermijn zoals in de tabel ("7 jaar"), voor de filterkeuzes.
+export function formatBewaartermijnLabel(value: string) {
+  return `${parseRetentionYears(value)} jaar`;
+}
+
+// Bulkbesluiten (CC-10): één verzoek voor de hele selectie, met de taakversie (If-Match).
+export async function bulkKandidaatBeoordeling(
+  accessToken: string,
+  taskInstanceId: string,
+  taakVersie: number,
+  ids: string[],
+  input: UpdateKandidaatBeoordelingInput
+) {
+  return apiRequest<ApiBijgewerkt>(`/taken/${taskInstanceId}/kandidaten`, {
+    accessToken,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...ifMatch(taakVersie) },
+    body: JSON.stringify({ ...input, ids }),
+  });
+}
+
+export async function bulkAccordering(
+  accessToken: string,
+  taskInstanceId: string,
+  taakVersie: number,
+  ids: string[],
+  input: UpdateProceseigenaarAccorderingInput,
+  rol: "proceseigenaar" | "archivaris"
+) {
+  return apiRequest<ApiBijgewerkt>(`/taken/${taskInstanceId}/kandidaten/accordering/${rol}`, {
+    accessToken,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...ifMatch(taakVersie) },
+    body: JSON.stringify({ ...input, ids }),
+  });
 }
 
 export async function getDestructionResults(
   accessToken: string,
   taskInstanceId: string
 ) {
-  const response = await apiRequest<ApiDestructionResults>(
+  const response = await apiRequest<ApiVernietigingsresultaten>(
     `/taken/${taskInstanceId}/vernietigingsresultaten`,
     {
       accessToken,
@@ -441,11 +354,22 @@ export async function getDestructionResults(
   };
 }
 
+export async function retryVernietiging(
+  accessToken: string,
+  taskInstanceId: string,
+  stekkerId: string
+) {
+  await apiRequest(`/taken/${taskInstanceId}/uitvoering/${stekkerId}/opnieuw`, {
+    method: "POST",
+    accessToken,
+  });
+}
+
 export async function getDestructionExecution(
   accessToken: string,
   taskInstanceId: string
 ) {
-  const response = await apiRequest<ApiDestructionExecution>(
+  const response = await apiRequest<ApiUitvoering>(
     `/taken/${taskInstanceId}/uitvoering`,
     {
       accessToken,
@@ -456,6 +380,14 @@ export async function getDestructionExecution(
   return {
     taak: response.taak,
     connectors,
+    // Voor de bevestiging vóór de vernietigingsopdracht: wat er per stekker wordt aangeboden.
+    opdrachtOverzicht: response.stekkers
+      .filter((stekker) => stekker.aantalKandidaten > 0)
+      .map((stekker) => ({
+        naam: stekker.naam,
+        aantalKandidaten: stekker.aantalKandidaten,
+        aantalBatches: Math.ceil(stekker.aantalKandidaten / (stekker.batchGrootte ?? 100)),
+      })),
     metaItems: mapResultMetaItems(response.taak),
     summaryStats: {
       teBeoordelen: connectors.filter(
@@ -478,7 +410,7 @@ export async function getVernietigingsverklaring(
   accessToken: string,
   taskInstanceId: string
 ) {
-  return apiRequest<ApiVernietigingsverklaring>(
+  return apiRequest<ApiVerklaring>(
     `/taken/${taskInstanceId}/verklaring`,
     {
       accessToken,
@@ -486,16 +418,19 @@ export async function getVernietigingsverklaring(
   );
 }
 
-export async function genereerVernietigingsverklaring(
-  accessToken: string,
-  taskInstanceId: string
-) {
-  return apiRequest<ApiVernietigingsverklaring>(
-    `/taken/${taskInstanceId}/verklaring/genereren`,
-    {
-      accessToken,
-      method: "POST",
-    }
+// Archiveren aanvragen (CC-18); de worker voert het uit.
+export async function archiveerTaak(accessToken: string, taskInstanceId: string, taakVersie: number) {
+  return apiRequest<ApiArchivering>(`/taken/${taskInstanceId}/archiveren`, {
+    accessToken,
+    method: "POST",
+    headers: ifMatch(taakVersie),
+  });
+}
+
+export async function getArchivering(accessToken: string, taskInstanceId: string) {
+  return apiRequest<ApiArchiveringStand>(
+    `/taken/${taskInstanceId}/archivering`,
+    { accessToken }
   );
 }
 
@@ -523,13 +458,7 @@ export async function updateKandidaatBeoordeling(
   kandidaatId: string,
   input: UpdateKandidaatBeoordelingInput
 ) {
-  return apiRequest<{
-    id: string;
-    beoordeling: string;
-    uitsluitReden?: string | null;
-    toelichting?: string | null;
-    versie: number;
-  }>(`/taken/${taskInstanceId}/kandidaten/${kandidaatId}/beoordeling`, {
+  return apiRequest<ApiKandidaatBeoordeling>(`/taken/${taskInstanceId}/kandidaten/${kandidaatId}/beoordeling`, {
     accessToken,
     method: "PATCH",
     headers: {
@@ -541,15 +470,13 @@ export async function updateKandidaatBeoordeling(
 
 export async function submitBeoordelingVoorAccordering(
   accessToken: string,
-  taskInstanceId: string
+  taskInstanceId: string,
+  taakVersie: number
 ) {
-  return apiRequest<{
-    id: string;
-    status: string;
-    stapSinds: string;
-  }>(`/taken/${taskInstanceId}/beoordeling/voorleggen`, {
+  return apiRequest<ApiTaakStatus>(`/taken/${taskInstanceId}/beoordeling/voorleggen`, {
     accessToken,
     method: "POST",
+    headers: ifMatch(taakVersie),
   });
 }
 
@@ -559,12 +486,7 @@ export async function updateProceseigenaarAccordering(
   kandidaatId: string,
   input: UpdateProceseigenaarAccorderingInput
 ) {
-  return apiRequest<{
-    id: string;
-    beoordeling: string;
-    toelichting?: string | null;
-    versie: number;
-  }>(
+  return apiRequest<ApiKandidaatAccordering>(
     `/taken/${taskInstanceId}/kandidaten/${kandidaatId}/accordering/proceseigenaar`,
     {
       accessToken,
@@ -579,15 +501,13 @@ export async function updateProceseigenaarAccordering(
 
 export async function submitProceseigenaarAccordering(
   accessToken: string,
-  taskInstanceId: string
+  taskInstanceId: string,
+  taakVersie: number
 ) {
-  return apiRequest<{
-    id: string;
-    status: string;
-    stapSinds: string;
-  }>(`/taken/${taskInstanceId}/accordering/proceseigenaar/besluiten`, {
+  return apiRequest<ApiTaakStatus>(`/taken/${taskInstanceId}/accordering/proceseigenaar/besluiten`, {
     accessToken,
     method: "POST",
+    headers: ifMatch(taakVersie),
   });
 }
 
@@ -597,12 +517,7 @@ export async function updateArchivarisAccordering(
   kandidaatId: string,
   input: UpdateProceseigenaarAccorderingInput
 ) {
-  return apiRequest<{
-    id: string;
-    beoordeling: string;
-    toelichting?: string | null;
-    versie: number;
-  }>(
+  return apiRequest<ApiKandidaatAccordering>(
     `/taken/${taskInstanceId}/kandidaten/${kandidaatId}/accordering/archivaris`,
     {
       accessToken,
@@ -617,32 +532,32 @@ export async function updateArchivarisAccordering(
 
 export async function submitArchivarisAccordering(
   accessToken: string,
-  taskInstanceId: string
+  taskInstanceId: string,
+  taakVersie: number
 ) {
-  return apiRequest<{
-    id: string;
-    status: string;
-    stapSinds: string;
-  }>(`/taken/${taskInstanceId}/accordering/archivaris/besluiten`, {
+  return apiRequest<ApiTaakStatus>(`/taken/${taskInstanceId}/accordering/archivaris/besluiten`, {
     accessToken,
     method: "POST",
+    headers: ifMatch(taakVersie),
   });
 }
 
 export async function startVernietigingsopdracht(
   accessToken: string,
-  taskInstanceId: string
+  taskInstanceId: string,
+  taakVersie: number
 ) {
-  return apiRequest<{
-    id: string;
-    status: string;
-    stapSinds: string;
-    totaalKandidaten: number;
-    aantalOpdrachten: number;
-  }>(`/taken/${taskInstanceId}/vernietigingsopdracht`, {
+  return apiRequest<ApiVernietigingsopdracht>(`/taken/${taskInstanceId}/vernietigingsopdracht`, {
     accessToken,
     method: "POST",
+    headers: ifMatch(taakVersie),
   });
+}
+
+// Statuswijzigingen sturen de geladen taakversie mee. Is de taak intussen gewijzigd,
+// dan weigert de API (412) en moet de pagina opnieuw geladen worden.
+function ifMatch(taakVersie: number) {
+  return { "If-Match": `"${taakVersie}"` };
 }
 
 function mapTaakToDashboardRecord(taak: ApiTaakinstantie): DashboardTaskRecord {
@@ -763,7 +678,7 @@ function mapTaskSelection(selectie: ApiTaakSelectie) {
   };
 }
 
-function mapReviewCandidate(candidate: ApiReviewCandidate): VernietigingsKandidaat {
+function mapReviewCandidate(candidate: ApiKandidaat): VernietigingsKandidaat {
   return {
     id: candidate.id,
     titel: candidate.omschrijving,
@@ -787,8 +702,8 @@ function mapReviewCandidate(candidate: ApiReviewCandidate): VernietigingsKandida
 }
 
 function mapReviewContext(
-  candidate: ApiReviewCandidate,
-  task: ApiReviewCandidates["taak"]
+  candidate: ApiKandidaat,
+  task: ApiKandidatenPagina["taak"]
 ): ReviewRecordContext {
   return {
     recordId: candidate.id,
@@ -839,7 +754,7 @@ function mapReviewContext(
   };
 }
 
-function mapDestructionResult(result: ApiDestructionResult): DestructionResultRow {
+function mapDestructionResult(result: ApiVernietigingsresultaat): DestructionResultRow {
   return {
     id: result.id,
     titel: result.omschrijving,
@@ -861,7 +776,7 @@ function mapDestructionResult(result: ApiDestructionResult): DestructionResultRo
 }
 
 function mapDestructionExecutionConnector(
-  item: ApiDestructionExecutionStekker
+  item: ApiUitvoeringStekker
 ): TaskExecutionDestructionConnector {
   const destructionStatus = mapExecutionDestructionStatus(
     item.vernietigingStatus,
@@ -895,12 +810,13 @@ function mapDestructionExecutionConnector(
         ? `${item.aantalObjecten.toLocaleString("nl-NL")} objecten`
         : `${item.aantalKandidaten.toLocaleString("nl-NL")} kandidaten`,
     melding: mapDestructionExecutionMessage(item, destructionStatus),
+    toegestaneActies: item.toegestaneActies ?? [],
   };
 }
 
 function mapDestructionResultContext(
-  result: ApiDestructionResult,
-  task: ApiDestructionResults["taak"]
+  result: ApiVernietigingsresultaat,
+  task: ApiVernietigingsresultaten["taak"]
 ): DestructionResultContext {
   const status = mapDestructionStatus(result.vernietigingsstatus);
 
@@ -931,7 +847,7 @@ function mapDestructionResultContext(
 }
 
 function mapResultMetaItems(
-  task: ApiDestructionResults["taak"]
+  task: ApiVernietigingsresultaten["taak"]
 ): TaskExecutionHeaderMetaItem[] {
   return [
     { label: "Recordmanager", value: task.verantwoordelijken.recordmanager.naam },
@@ -952,7 +868,7 @@ function mapResultSummaryStats(
   };
 }
 
-function mapDestructionStatus(value: string): DestructionResultStatus {
+function mapDestructionStatus(value: string | null): DestructionResultStatus {
   if (
     value === "SUCCESS" ||
     value === "FAILED" ||
@@ -1035,7 +951,7 @@ function mapDestructionExecutionProgress(
 }
 
 function mapDestructionExecutionMessage(
-  item: ApiDestructionExecutionStekker,
+  item: ApiUitvoeringStekker,
   status: TaskExecutionConnectorDestructionStatus
 ) {
   if (item.fout) {

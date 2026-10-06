@@ -1,10 +1,12 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { createHash, randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import type { AuthUser } from "../auth/auth-user.js";
 import type { AppRole } from "../auth/app-role.js";
 import { isAppRole } from "../auth/app-role.js";
 import { PrismaService } from "../../shared/db/prisma.service.js";
+import { schrijfConfiguratieEvent } from "../audit/audit-keten.js";
+import { mapAfdeling, mapMedewerker } from "./stamgegevens.dto.js";
+import type { ApiStamgegevensMedewerker } from "@vernietigingscockpit/api-contract";
 
 type AfdelingImportInput = {
   code?: string;
@@ -30,6 +32,29 @@ export type StamgegevensImportInput = {
 @Injectable()
 export class StamgegevensService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+
+  async getAfdelingen() {
+    const afdelingen = await this.prisma.client.afdeling.findMany({
+      orderBy: { naam: "asc" },
+    });
+
+    return afdelingen.map(mapAfdeling);
+  }
+
+  async getMedewerkers(rol?: AppRole): Promise<ApiStamgegevensMedewerker[]> {
+    const medewerkers = await this.prisma.client.medewerker.findMany({
+      where: {
+        actief: true,
+        ...(rol ? { rollen: { has: rol } } : {}),
+      },
+      include: {
+        afdeling: true,
+      },
+      orderBy: { naam: "asc" },
+    });
+
+    return medewerkers.map(mapMedewerker);
+  }
 
   async importStamgegevens(user: AuthUser, input: StamgegevensImportInput) {
     const afdelingen = (input.afdelingen ?? []).map(validateAfdeling);
@@ -118,8 +143,8 @@ export class StamgegevensService {
         });
       }
 
-      await this.createConfiguratieEvent(tx, user, {
-        actie: "STAMGEGEVENS_GEIMPORTEERD",
+      await schrijfConfiguratieEvent(tx, { type: "user", user, rol: "functioneel_beheerder" }, {
+        actie: "MASTER_DATA_IMPORTED",
         entiteitType: "stamgegevens",
         entiteitId: "stamgegevens",
         details: {
@@ -132,54 +157,6 @@ export class StamgegevensService {
         afdelingen: afdelingen.length,
         medewerkers: medewerkers.length,
       };
-    });
-  }
-
-  private async createConfiguratieEvent(
-    tx: Prisma.TransactionClient,
-    user: AuthUser,
-    event: {
-      actie: string;
-      entiteitType: string;
-      entiteitId: string;
-      details: Prisma.InputJsonValue;
-    }
-  ) {
-    const previous = await tx.configuratieEvent.findFirst({
-      orderBy: { id: "desc" },
-      select: { hash: true },
-    });
-    const correlatieId = randomUUID();
-    const hash = createHash("sha256")
-      .update(
-        JSON.stringify({
-          vorigeHash: previous?.hash ?? null,
-          actorId: user.sub,
-          actie: event.actie,
-          entiteitType: event.entiteitType,
-          entiteitId: event.entiteitId,
-          details: event.details,
-          correlatieId,
-        })
-      )
-      .digest("hex");
-
-    await tx.configuratieEvent.create({
-      data: {
-        actorType: "user",
-        actorId: user.sub,
-        actorNaam: user.name ?? user.username,
-        rol: user.roles.includes("functioneel_beheerder")
-          ? "functioneel_beheerder"
-          : undefined,
-        actie: event.actie,
-        entiteitType: event.entiteitType,
-        entiteitId: event.entiteitId,
-        details: event.details,
-        correlatieId,
-        vorigeHash: previous?.hash,
-        hash,
-      },
     });
   }
 }

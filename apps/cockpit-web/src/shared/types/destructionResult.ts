@@ -6,7 +6,6 @@ export type DestructionResultStatus =
   | "CHANGED";
 
 export type DestructionResultAction =
-  | "verklaring-genereren"
   | "verklaring-downloaden"
   | "resultaat-exporteren"
   | "archiveren";

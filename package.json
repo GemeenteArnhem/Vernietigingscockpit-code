@@ -2,8 +2,8 @@
   "name": "vernietigingscockpit-code",
   "private": true,
   "workspaces": [
-    "apps/*",
-    "packages/*"
+    "packages/*",
+    "apps/*"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
@@ -11,7 +11,11 @@
     "build:api": "npm run build --workspace @vernietigingscockpit/cockpit-api",
     "dev:web": "npm run dev --workspace @vernietigingscockpit/cockpit-web",
     "dev:api": "npm run start:dev --workspace @vernietigingscockpit/cockpit-api",
-    "lint": "npm run lint --workspace @vernietigingscockpit/cockpit-web"
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:integratie": "npm run test:integratie --workspace @vernietigingscockpit/cockpit-api",
+    "test:e2e": "node scripts/e2e.mjs"
   },
   "devDependencies": {
     "autoprefixer": "^10.5.0",

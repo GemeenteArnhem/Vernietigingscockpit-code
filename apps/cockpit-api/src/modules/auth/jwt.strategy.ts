@@ -17,6 +17,7 @@ type JwtPayload = {
   preferred_username?: string;
   name?: string;
   email?: string;
+  email_verified?: boolean;
   realm_access?: RealmAccess;
 };
 
@@ -48,6 +49,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
       username: payload.preferred_username,
       name: payload.name,
       email: payload.email,
+      emailVerified: payload.email_verified === true,
       roles,
       issuer: payload.iss,
       audience: payload.aud,

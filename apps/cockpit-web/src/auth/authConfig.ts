@@ -1,6 +1,8 @@
 import type { WebStorageStateStore } from "oidc-client-ts";
 
-export const authEnabled = import.meta.env.VITE_AUTH_ENABLED === "true";
+// Inloggen staat altijd aan in een productiebuild (CC-13). Alleen in ontwikkelmodus
+// (vite dev) kan VITE_AUTH_ENABLED het uitzetten voor een ontwikkelgebruiker.
+export const authEnabled = import.meta.env.DEV ? import.meta.env.VITE_AUTH_ENABLED === "true" : true;
 
 export type AppRole =
   | "recordmanager"

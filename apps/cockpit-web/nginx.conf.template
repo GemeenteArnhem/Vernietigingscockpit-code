@@ -1,0 +1,27 @@
+server {
+  listen 8080;
+  server_name _;
+
+  root /usr/share/nginx/html;
+  index index.html;
+
+  # Security-headers (CC-13). De CSP wordt bij containerstart ingevuld met de origins van
+  # Keycloak en de API (zie 40-cockpit-csp.sh); de lettertypen komen van fonts.bunny.net.
+  add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.bunny.net; font-src 'self' data: https://fonts.bunny.net; img-src 'self' data: blob:; connect-src 'self' __CSP_CONNECT__; frame-src __CSP_OIDC__; form-action 'self' __CSP_OIDC__; frame-ancestors 'none'; base-uri 'self'; object-src 'none'" always;
+  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+  add_header X-Frame-Options "DENY" always;
+  add_header X-Content-Type-Options "nosniff" always;
+  add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+  add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+  server_tokens off;
+
+  location = /healthz {
+    access_log off;
+    default_type text/plain;
+    return 200 "ok\n";
+  }
+
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+}

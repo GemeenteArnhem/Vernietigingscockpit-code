@@ -64,18 +64,18 @@ export default function TaskDefinitionCreatePage() {
   const [proceseigenaarId, setProceseigenaarId] = useState("");
   const [archivarisId, setArchivarisId] = useState("");
   const [selectedStekkerIds, setSelectedStekkerIds] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Token waarvoor de stamgegevens zijn geladen; laden = er is een token, maar nog niet voor dit token geladen.
+  const [geladenVoorToken, setGeladenVoorToken] = useState<string | null>(null);
+  const loading = Boolean(accessToken) && geladenVoorToken !== accessToken;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!accessToken) {
-      setLoading(false);
       return;
     }
 
     let isCurrent = true;
-    setLoading(true);
 
     Promise.all([
       getMedewerkers(accessToken, "recordmanager"),
@@ -107,7 +107,7 @@ export default function TaskDefinitionCreatePage() {
       })
       .finally(() => {
         if (isCurrent) {
-          setLoading(false);
+          setGeladenVoorToken(accessToken);
         }
       });
 

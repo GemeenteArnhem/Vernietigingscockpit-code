@@ -1,0 +1,21 @@
+{
+  "name": "@vernietigingscockpit/api-contract",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Gedeeld contract tussen cockpit-api en cockpit-web: zod-invoerschema's en antwoordtypes (CC-19).",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  }
+}

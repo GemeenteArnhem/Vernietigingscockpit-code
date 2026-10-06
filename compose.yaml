@@ -1,4 +1,22 @@
 services:
+  # Eenmalig bij elke `docker compose up` (CC-14): migraties en de loginrol van de API,
+  # als eigenaar van de database. De API start pas als dit is gelukt.
+  cockpit-migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: cockpit-migrate
+      args:
+        PRISMA_GENERATE_DATABASE_URL: ${PRISMA_GENERATE_DATABASE_URL:?PRISMA_GENERATE_DATABASE_URL is required}
+    image: vernietigingscockpit-migrate:local
+    environment:
+      DATABASE_URL: ${MIGRATE_DATABASE_URL:?MIGRATE_DATABASE_URL is required}
+      APP_DB_USER: ${APP_DB_USER:?APP_DB_USER is required}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?APP_DB_PASSWORD is required}
+    networks:
+      - database
+    restart: "no"
+
   cockpit-api:
     build:
       context: .
@@ -8,6 +26,9 @@ services:
         PRISMA_GENERATE_DATABASE_URL: ${PRISMA_GENERATE_DATABASE_URL:?PRISMA_GENERATE_DATABASE_URL is required}
     image: vernietigingscockpit-api:local
     container_name: ${API_CONTAINER_NAME:-cockpit-api}
+    depends_on:
+      cockpit-migrate:
+        condition: service_completed_successfully
     environment:
       PORT: "3000"
       API_HEALTHCHECK_URL: ${API_HEALTHCHECK_URL:?API_HEALTHCHECK_URL is required}
@@ -15,11 +36,8 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       OIDC_ISSUER: ${OIDC_ISSUER:?OIDC_ISSUER is required}
       OIDC_AUDIENCE: ${OIDC_AUDIENCE:-cockpit-api}
-      GOTENBERG_URL: ${GOTENBERG_URL:-}
-      GOTENBERG_USERNAME: ${GOTENBERG_USERNAME:-}
-      GOTENBERG_PASSWORD: ${GOTENBERG_PASSWORD:-}
-      SELECTIE_WORKER_ENABLED: ${SELECTIE_WORKER_ENABLED:-true}
-      SELECTIE_WORKER_INTERVAL_MS: ${SELECTIE_WORKER_INTERVAL_MS:-5000}
+      # De worker draait als eigen service (cockpit-worker), niet in de API.
+      SELECTIE_WORKER_ENABLED: "false"
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=${TRAEFIK_NETWORK:-traefik}"
@@ -43,13 +61,42 @@ services:
       start_period: 10s
       retries: 3
 
+  # Worker (CC-7): hetzelfde image, eigen proces. Opschalen kan veilig
+  # (docker compose up --scale cockpit-worker=2): werk wordt geclaimd met een lease.
+  cockpit-worker:
+    image: vernietigingscockpit-api:local
+    depends_on:
+      - cockpit-api
+    command: ["node", "dist/worker.js"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      SELECTIE_WORKER_INTERVAL_MS: ${SELECTIE_WORKER_INTERVAL_MS:-5000}
+      WORKER_LEASE_MS: ${WORKER_LEASE_MS:-300000}
+      # Archivering (CC-18): het dossierpakket per taak komt in dit volume.
+      ARCHIEF_PAD: /archief
+      # De worker maakt de vernietigingsverklaring (PDF/A-2b) via Gotenberg (CC-17).
+      GOTENBERG_URL: ${GOTENBERG_URL:-}
+      GOTENBERG_USERNAME: ${GOTENBERG_USERNAME:-}
+      GOTENBERG_PASSWORD: ${GOTENBERG_PASSWORD:-}
+      WORKER_POLL_START_MS: ${WORKER_POLL_START_MS:-2000}
+      WORKER_POLL_MAX_MS: ${WORKER_POLL_MAX_MS:-60000}
+      # OAuth2-secret van de teststekker; de naam staat in stekker_configuratie.secret_ref.
+      KC_STEKKER_CLIENT_SECRET: ${KC_STEKKER_CLIENT_SECRET:-}
+    networks:
+      - traefik
+      - database
+    volumes:
+      - archief:/archief
+    restart: unless-stopped
+    stop_grace_period: 60s
+
   cockpit-web:
     build:
       context: .
       dockerfile: Dockerfile
       target: cockpit-web
       args:
-        VITE_AUTH_ENABLED: ${WEB_AUTH_ENABLED:-false}
+        VITE_AUTH_ENABLED: ${WEB_AUTH_ENABLED:-true}
         VITE_OIDC_AUTHORITY: ${WEB_OIDC_AUTHORITY:?WEB_OIDC_AUTHORITY is required}
         VITE_OIDC_CLIENT_ID: ${WEB_OIDC_CLIENT_ID:-cockpit-web}
         VITE_OIDC_REDIRECT_URI: ${WEB_OIDC_REDIRECT_URI:?WEB_OIDC_REDIRECT_URI is required}
@@ -60,6 +107,9 @@ services:
     container_name: ${WEB_CONTAINER_NAME:-cockpit-web}
     environment:
       WEB_HEALTHCHECK_URL: ${WEB_HEALTHCHECK_URL:?WEB_HEALTHCHECK_URL is required}
+      # Voor de Content-Security-Policy, ingevuld bij het starten van de container.
+      WEB_OIDC_AUTHORITY: ${WEB_OIDC_AUTHORITY:?WEB_OIDC_AUTHORITY is required}
+      WEB_API_BASE_URL: ${WEB_API_BASE_URL:?WEB_API_BASE_URL is required}
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=${TRAEFIK_NETWORK:-traefik}"
@@ -79,6 +129,11 @@ services:
       timeout: 3s
       start_period: 5s
       retries: 3
+
+volumes:
+  # Gearchiveerde vernietigingsdossiers (CC-18). Neem dit volume op in de back-up.
+  archief:
+    name: ${ARCHIEF_VOLUME:-cockpit-archief}
 
 networks:
   traefik:

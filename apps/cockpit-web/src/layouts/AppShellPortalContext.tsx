@@ -1,7 +1,5 @@
 import {
   useCallback,
-  createContext,
-  useContext,
   useEffect,
   useMemo,
   useState,
@@ -9,35 +7,14 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-type AppShellSlot = "detail" | "action" | "shortcut";
-
-type SlotContainers = {
-  detail: HTMLDivElement | null;
-  action: HTMLDivElement | null;
-  shortcut: HTMLDivElement | null;
-};
-
-type SlotCounts = {
-  detail: number;
-  action: number;
-  shortcut: number;
-};
-
-type AppShellPortalContextValue = {
-  containers: SlotContainers;
-  hasDetailPane: boolean;
-  hasActionPane: boolean;
-  hasShortcutPane: boolean;
-  registerSlot: (slot: AppShellSlot) => void;
-  unregisterSlot: (slot: AppShellSlot) => void;
-  setSlotContainer: (
-    slot: AppShellSlot,
-    node: HTMLDivElement | null
-  ) => void;
-};
-
-const AppShellPortalContext =
-  createContext<AppShellPortalContextValue | null>(null);
+import {
+  AppShellPortalContext,
+  useAppShellPortalContext,
+  type AppShellPortalContextValue,
+  type AppShellSlot,
+  type SlotContainers,
+  type SlotCounts,
+} from "./appShellPortalState";
 
 function isPaneEmpty(children: ReactNode) {
   return children === null || children === undefined || children === false;
@@ -107,18 +84,6 @@ export function AppShellPortalProvider({
       {children}
     </AppShellPortalContext.Provider>
   );
-}
-
-export function useAppShellPortalContext() {
-  const context = useContext(AppShellPortalContext);
-
-  if (!context) {
-    throw new Error(
-      "useAppShellPortalContext must be used within AppShellPortalProvider."
-    );
-  }
-
-  return context;
 }
 
 export function AppShellPortal({

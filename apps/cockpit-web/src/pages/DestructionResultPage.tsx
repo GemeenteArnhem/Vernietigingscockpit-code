@@ -12,7 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 import ActionPanel, {
   ActionPanelButton,
@@ -29,8 +29,10 @@ import { AppShellPortal } from "../layouts/AppShellPortalContext";
 import {
   downloadVernietigingsverklaringPdf,
   downloadVernietigingsresultatenCsv,
-  genereerVernietigingsverklaring,
+  archiveerTaak,
+  getArchivering,
   getDestructionResults,
+  type ApiArchivering,
   getVernietigingsverklaring,
 } from "../api/f3Data";
 import { useSessionUser } from "../auth/useSessionUser";
@@ -41,6 +43,7 @@ import type {
   DestructionResultRow,
   DestructionResultStatus,
 } from "../shared/types/destructionResult";
+import ActieFoutmelding from "../components/ActieFoutmelding";
 
 type ResultSortKey = "omschrijving" | "vernietigingsstatus";
 type ResultSortDirection = "asc" | "desc";
@@ -62,13 +65,9 @@ const EMPTY_SUMMARY_STATS = {
   uitgesloten: 0,
 };
 
+// De verklaring maakt de worker automatisch bij de overgang naar resultaat (CC-17);
+// er is geen knop meer om hem te genereren.
 const RESULT_ACTIONS: DestructionResultActionOption[] = [
-  {
-    id: "verklaring-genereren",
-    title: "Verklaring genereren",
-    description: "Maak een nieuwe versie van de verklaring en CSV-bijlage.",
-    tone: "primary",
-  },
   {
     id: "verklaring-downloaden",
     title: "Verklaring downloaden",
@@ -80,6 +79,14 @@ const RESULT_ACTIONS: DestructionResultActionOption[] = [
     title: "Resultaat exporteren",
     description: "Download de CSV-bijlage met alle vernietigingsresultaten.",
     tone: "neutral",
+  },
+  // Archiveren (CC-18): verklaring, CSV-bijlage en auditlog naar het archief; daarna is
+  // de taak afgerond. Alleen zichtbaar als de API het toestaat.
+  {
+    id: "archiveren",
+    title: "Archiveren",
+    description: "Archiveer de verklaring, de CSV-bijlage en het auditlog en rond de taak af.",
+    tone: "primary",
   },
 ];
 
@@ -601,7 +608,7 @@ function ResultTable({
 
 export default function DestructionResultPage() {
   const [selectedAction, setSelectedAction] = useState<DestructionResultAction>(
-    "verklaring-genereren"
+    "verklaring-downloaden"
   );
   const [isExecutingAction, setIsExecutingAction] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -616,6 +623,13 @@ export default function DestructionResultPage() {
   const [apiMetaItems, setApiMetaItems] = useState<Array<{ label: string; value: string }>>([]);
   const [apiTaskName, setApiTaskName] = useState<string | null>(null);
   const [verklaringBeschikbaar, setVerklaringBeschikbaar] = useState(false);
+  const [apiTaak, setApiTaak] = useState<{
+    versie: number;
+    toegestaneActies: string[];
+    archivering: ApiArchivering | null;
+  } | null>(null);
+  const [herladen, setHerladen] = useState(0);
+  const navigate = useNavigate();
   const collator = useMemo(
     () => new Intl.Collator("nl", { numeric: true, sensitivity: "base" }),
     []
@@ -639,6 +653,11 @@ export default function DestructionResultPage() {
         setApiSummaryStats(summaryStats);
         setApiMetaItems(metaItems);
         setApiTaskName(taak.naam);
+        setApiTaak({
+          versie: taak.versie,
+          toegestaneActies: taak.toegestaneActies ?? [],
+          archivering: taak.archivering ?? null,
+        });
         setSelectedId((current) => current ?? rows[0]?.id ?? null);
       })
       .catch(() => {
@@ -651,30 +670,38 @@ export default function DestructionResultPage() {
         }
       });
 
-    getVernietigingsverklaring(accessToken, id)
-      .then((verklaring) => {
-        if (!isCurrent) {
-          return;
-        }
-
-        setVerklaringBeschikbaar(verklaring.beschikbaar);
-        setSelectedAction(
-          verklaring.beschikbaar
-            ? "verklaring-downloaden"
-            : "verklaring-genereren"
-        );
-      })
-      .catch(() => {
-        if (isCurrent) {
-          setVerklaringBeschikbaar(false);
-          setSelectedAction("verklaring-genereren");
-        }
-      });
-
     return () => {
       isCurrent = false;
     };
-  }, [accessToken, id]);
+  }, [accessToken, herladen, id]);
+
+  // Zolang de worker de verklaring nog maakt: elke paar seconden kijken of hij er is.
+  useEffect(() => {
+    if (!accessToken || !id || verklaringBeschikbaar) {
+      return;
+    }
+
+    let isCurrent = true;
+    const controleer = () => {
+      getVernietigingsverklaring(accessToken, id)
+        .then((verklaring) => {
+          if (isCurrent && verklaring.beschikbaar) {
+            setVerklaringBeschikbaar(true);
+            // Met de verklaring kan ook archiveren: de taakgegevens opnieuw ophalen.
+            setHerladen((teller) => teller + 1);
+          }
+        })
+        .catch(() => undefined);
+    };
+
+    controleer();
+    const interval = window.setInterval(controleer, 3000);
+
+    return () => {
+      isCurrent = false;
+      window.clearInterval(interval);
+    };
+  }, [accessToken, id, verklaringBeschikbaar]);
 
   const resultRows = useMemo(() => apiRows ?? [], [apiRows]);
   const contextById = useMemo<Record<string, DestructionResultContext>>(
@@ -732,16 +759,16 @@ export default function DestructionResultPage() {
     () =>
       RESULT_ACTIONS.filter((action) => {
         if (action.id === "archiveren") {
-          return false;
-        }
-
-        if (action.id === "verklaring-genereren") {
-          return !verklaringBeschikbaar;
+          return apiTaak?.toegestaneActies.includes("archiveren") ?? false;
         }
 
         return verklaringBeschikbaar;
-      }),
-    [verklaringBeschikbaar]
+      }).map((action) =>
+        action.id === "archiveren" && apiTaak?.archivering?.status === "FAILED"
+          ? { ...action, title: "Opnieuw archiveren" }
+          : action
+      ),
+    [apiTaak, verklaringBeschikbaar]
   );
   const selectedActionConfig = useMemo(
     () =>
@@ -775,10 +802,30 @@ export default function DestructionResultPage() {
     setIsExecutingAction(true);
 
     try {
-      if (selectedActionConfig.id === "verklaring-genereren") {
-        await genereerVernietigingsverklaring(accessToken, id);
-        setVerklaringBeschikbaar(true);
-        setSelectedAction("verklaring-downloaden");
+      if (selectedActionConfig.id === "archiveren") {
+        if (!apiTaak) {
+          throw new Error("Archiveren kan pas nadat de taak via de API is geladen.");
+        }
+
+        // De worker archiveert; wachten tot het gelukt of mislukt is.
+        await archiveerTaak(accessToken, id, apiTaak.versie);
+        let stand = await getArchivering(accessToken, id);
+        for (let poging = 0; poging < 60 && stand.archivering?.status === "PENDING"; poging += 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, 2000));
+          stand = await getArchivering(accessToken, id);
+        }
+
+        if (stand.archivering?.status === "SUCCESS") {
+          navigate("/dashboard");
+          return;
+        }
+
+        setHerladen((teller) => teller + 1);
+        throw new Error(
+          stand.archivering?.status === "FAILED"
+            ? `Archiveren is mislukt: ${stand.archivering.fout ?? "onbekende fout"}`
+            : "Archiveren duurt langer dan verwacht; ververs de pagina later."
+        );
       } else if (selectedActionConfig.id === "resultaat-exporteren") {
         const download = await downloadVernietigingsresultatenCsv(accessToken, id);
 
@@ -803,7 +850,7 @@ export default function DestructionResultPage() {
     } finally {
       setIsExecutingAction(false);
     }
-  }, [accessToken, id, selectedActionConfig, selectedRow]);
+  }, [accessToken, apiTaak, id, navigate, selectedActionConfig, selectedRow]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -990,8 +1037,7 @@ export default function DestructionResultPage() {
                     icon={
                       action.id === "verklaring-downloaden" ? (
                         <Download size={18} />
-                      ) : action.id === "resultaat-exporteren" ||
-                        action.id === "verklaring-genereren" ? (
+                      ) : action.id === "resultaat-exporteren" ? (
                         <FileOutput size={18} />
                       ) : (
                         <Archive size={18} />
@@ -1004,11 +1050,7 @@ export default function DestructionResultPage() {
                   />
                 ))}
 
-                {actionError ? (
-                  <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm leading-5 text-rose-700">
-                    {actionError}
-                  </p>
-                ) : null}
+                <ActieFoutmelding melding={actionError} />
               </div>
             </ActionPanelSection>
           )}

@@ -123,7 +123,8 @@ export default function ApprovalRecordTable({
   approvalCommentValue,
   onApprovalCommentChange,
 }: Props) {
-  const columns = useDropdown();
+  // Destructureren: zo leest de render alleen state, en wordt de ref alleen doorgegeven.
+  const { open: columnsOpen, setOpen: setColumnsOpen, ref: columnsRef } = useDropdown();
   const [visibleColumns, setVisibleColumns] =
     useState<Record<ApprovalColumnKey, boolean>>(DEFAULT_COLUMNS);
   const [pageSize, setPageSize] = useState(10);
@@ -284,12 +285,6 @@ export default function ApprovalRecordTable({
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const safeCurrentPage = Math.min(currentPage, totalPages);
 
-  useEffect(() => {
-    if (currentPage !== safeCurrentPage) {
-      setCurrentPage(safeCurrentPage);
-    }
-  }, [currentPage, safeCurrentPage]);
-
   const startIndex = (safeCurrentPage - 1) * pageSize;
   const endIndex = Math.min(startIndex + pageSize, filteredRows.length);
   const currentRows = filteredRows.slice(startIndex, endIndex);
@@ -314,12 +309,12 @@ export default function ApprovalRecordTable({
           </p>
         </div>
 
-        <div className="relative" ref={columns.ref}>
+        <div className="relative" ref={columnsRef}>
           <button
             type="button"
-            onClick={() => columns.setOpen((current) => !current)}
+            onClick={() => setColumnsOpen((current) => !current)}
             className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors hover:bg-gray-50 ${
-              columns.open
+              columnsOpen
                 ? "border-blue-500 bg-blue-50 text-blue-600"
                 : "border-gray-200 text-blue-600"
             }`}
@@ -335,7 +330,7 @@ export default function ApprovalRecordTable({
             Kolommen
           </button>
 
-          {columns.open && (
+          {columnsOpen && (
             <div className="absolute right-0 top-full z-20 mt-1 max-h-80 min-w-[220px] overflow-y-auto rounded-lg border border-gray-200 bg-white py-2 shadow-lg">
               {COLUMN_GROUPS.map((group) => (
                 <div key={group.label}>
@@ -426,7 +421,7 @@ export default function ApprovalRecordTable({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              onClick={() => setCurrentPage(Math.max(1, safeCurrentPage - 1))}
               disabled={safeCurrentPage === 1}
               className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -452,7 +447,7 @@ export default function ApprovalRecordTable({
 
             <button
               type="button"
-              onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+              onClick={() => setCurrentPage(Math.min(totalPages, safeCurrentPage + 1))}
               disabled={safeCurrentPage === totalPages}
               className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
             >

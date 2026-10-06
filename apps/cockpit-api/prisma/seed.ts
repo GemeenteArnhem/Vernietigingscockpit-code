@@ -77,6 +77,19 @@ async function main() {
     },
   });
 
+  // Verbinding met de teststekker uit env, zodat de seed bij elke omgeving past.
+  // Standaard lokaal zonder authenticatie ('none' mag alleen buiten productie);
+  // met SEED_STEKKER_AUTH_TYPE=oauth2_cc gelden tokenUrl, clientId en het secret
+  // uit de env-variabele die in secretRef staat. Standaard poort 3100: de API gebruikt 3000,
+  // dus de teststekker draait lokaal met PORT=3100.
+  const stekkerVerbinding = {
+    baseUrl: process.env.SEED_STEKKER_BASE_URL ?? "http://localhost:3100",
+    authType: process.env.SEED_STEKKER_AUTH_TYPE ?? "none",
+    tokenUrl: process.env.SEED_STEKKER_TOKEN_URL ?? null,
+    clientId: process.env.SEED_STEKKER_CLIENT_ID ?? "cockpit-stekker",
+    secretRef: process.env.SEED_STEKKER_SECRET_REF ?? "KC_STEKKER_CLIENT_SECRET",
+  };
+
   await prisma.stekkerConfiguratie.upsert({
     where: {
       stekkerId_versie: {
@@ -84,18 +97,11 @@ async function main() {
         versie: 1,
       },
     },
-    update: {
-      baseUrl: "http://localhost:3000",
-    },
+    update: stekkerVerbinding,
     create: {
       stekkerId: stekker.id,
       versie: 1,
-      baseUrl: "http://localhost:3000",
-      authType: "oauth2_cc",
-      tokenUrl:
-        "https://auth.cockpit.arnhem.dev/realms/vernietigingscockpit/protocol/openid-connect/token",
-      clientId: "cockpit-stekker",
-      secretRef: "KC_STEKKER_CLIENT_SECRET",
+      ...stekkerVerbinding,
       scopes: ["selectie.read", "selectie.write", "vernietiging.read", "vernietiging.write"],
       parameters: {},
       verwachteApiMajor: 1,
