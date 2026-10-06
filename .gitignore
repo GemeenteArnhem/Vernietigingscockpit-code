@@ -25,6 +25,7 @@ lerna-debug.log*
 
 # Local planning/agent notes
 /AGENT.md
+/AGENTS.md
 /bouwplan-vernietigingscockpit.md
 
 # Gegenereerde E2E-testdata (scenario H, 15.000 kandidaten)
