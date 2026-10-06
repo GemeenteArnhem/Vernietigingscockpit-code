@@ -102,6 +102,8 @@ model StekkerConfiguratie {
   tokenUrl          String?    @map("token_url")
   clientId          String?    @map("client_id")
   secretRef         String?    @map("secret_ref")
+  // Versleuteld secret (AES-256-GCM, sleutel uit SECRET_ENCRYPTION_KEY); nooit teruggeven.
+  secretVersleuteld String?    @map("secret_versleuteld")
   scopes            String[]
   parameters        Json
   verwachteApiMajor Int        @map("verwachte_api_major")
@@ -121,6 +123,9 @@ model Taakdefinitie {
   categorie        String
   frequentie       Frequentie
   startmaand       Int?                   @map("startmaand")
+  // Logisch verwijderd (er waren uitvoeringen); zonder uitvoeringen wordt hij echt verwijderd.
+  verwijderdOp     DateTime?              @map("verwijderd_op") @db.Timestamptz
+  verwijderdDoor   String?                @map("verwijderd_door")
   recordmanagerId  String                 @map("recordmanager_id") @db.Uuid
   proceseigenaarId String                 @map("proceseigenaar_id") @db.Uuid
   archivarisId     String                 @map("archivaris_id") @db.Uuid
@@ -155,6 +160,11 @@ model Taakinstantie {
   stapSinds          DateTime           @default(now()) @map("stap_sinds") @db.Timestamptz
   ronde              Int                @default(1)
   peildatum          DateTime?          @db.Date
+  // Startdatum van een geplande cyclus (terugkerende taken); null bij handmatig aangemaakt.
+  geplandOp          DateTime?          @map("gepland_op") @db.Date
+  // Logisch verwijderd door de functioneel beheerder (auditlog blijft bewaard).
+  verwijderdOp       DateTime?          @map("verwijderd_op") @db.Timestamptz
+  verwijderdDoor     String?            @map("verwijderd_door")
   recordmanagerId    String             @map("recordmanager_id") @db.Uuid
   proceseigenaarId   String             @map("proceseigenaar_id") @db.Uuid
   archivarisId       String             @map("archivaris_id") @db.Uuid

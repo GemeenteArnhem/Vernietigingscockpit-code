@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Query } from "@nestjs/common";
 import { Roles } from "../auth/roles.decorator.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import type { AuthUser } from "../auth/auth-user.js";
@@ -15,8 +15,9 @@ export class TaakdefinitiesController {
     private readonly taakdefinitiesService: TaakdefinitiesService
   ) {}
 
+  // De functioneel beheerder maakt taken aan voor een gekozen recordmanager.
   @Post()
-  @Roles("recordmanager")
+  @Roles("recordmanager", "functioneel_beheerder")
   createTaakdefinitie(
     @CurrentUser() user: AuthUser,
     @Body(new ZodPipe(taakdefinitieSchema)) body: CreateTaakdefinitieInput
@@ -25,7 +26,7 @@ export class TaakdefinitiesController {
   }
 
   @Post(":id/instanties")
-  @Roles("recordmanager")
+  @Roles("recordmanager", "functioneel_beheerder")
   createTaakinstantie(
     @CurrentUser() user: AuthUser,
     @Param("id", UUID) id: string,
@@ -47,5 +48,25 @@ export class TaakdefinitiesController {
   @Roles("recordmanager", "functioneel_beheerder", "auditor")
   getTaakdefinitie(@CurrentUser() user: AuthUser, @Param("id", UUID) id: string) {
     return this.taakdefinitiesService.getTaakdefinitie(user, id);
+  }
+
+  // Verwijderen (functioneel beheerder): echt als er nooit uitvoeringen waren, anders logisch
+  // met behoud van het auditlog. Zie TaakdefinitiesService.verwijderTaakdefinitie.
+  @Delete(":id")
+  @HttpCode(204)
+  @Roles("functioneel_beheerder")
+  async verwijderTaakdefinitie(@CurrentUser() user: AuthUser, @Param("id", UUID) id: string) {
+    await this.taakdefinitiesService.verwijderTaakdefinitie(user, id);
+  }
+
+  @Delete(":id/instanties/:instantieId")
+  @HttpCode(204)
+  @Roles("functioneel_beheerder")
+  async verwijderTaakinstantie(
+    @CurrentUser() user: AuthUser,
+    @Param("id", UUID) id: string,
+    @Param("instantieId", UUID) instantieId: string
+  ) {
+    await this.taakdefinitiesService.verwijderTaakinstantie(user, id, instantieId);
   }
 }

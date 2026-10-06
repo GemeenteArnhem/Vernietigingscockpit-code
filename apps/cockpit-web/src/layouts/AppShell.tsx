@@ -3,7 +3,7 @@ import { ClipboardList } from "lucide-react";
 import { Outlet, matchPath, useLocation } from "react-router-dom";
 import RightRail from "../components/RightRail";
 import Sidebar from "../components/Sidebar";
-import PageHeader from "../components/PageHeader";
+import PageHeaderBar from "../components/PageHeaderBar";
 import { AppShellPortalProvider } from "./AppShellPortalContext";
 import { useAppShellPortalContext } from "./appShellPortalState";
 
@@ -45,7 +45,10 @@ function AppShellLayout() {
     ? "Taakuitvoering"
     : null;
 
-  const title = taskExecutionTitle ?? (isTaskPage ? "Taken" : "Dashboard");
+  const isStekkerPage = location.pathname.startsWith("/stekkers");
+  // Net als het dashboard hebben deze pagina's een eigen kop in het paneel.
+  const heeftEigenKop = isStekkerPage || location.pathname === "/taak/nieuw";
+  const title = taskExecutionTitle ?? (isTaskPage ? "Taken" : isStekkerPage ? "Stekkers" : "Dashboard");
 
   const breadcrumbs = taskExecutionTitle
     ? [
@@ -59,6 +62,11 @@ function AppShellLayout() {
           { label: "Home", href: "/" },
           { label: "Taken" },
         ]
+      : isStekkerPage
+        ? [
+            { label: "Home", href: "/" },
+            { label: "Stekkers" },
+          ]
       : [
           { label: "Home", href: "/" },
           { label: "Dashboard" },
@@ -91,20 +99,17 @@ function AppShellLayout() {
 
       <div className="flex flex-1 flex-col min-w-0">
         {!taskExecutionMatch &&
-        !isDashboardPage ? (
-          <div className="shrink-0 border-b border-gray-200 bg-white">
-            <div className="flex h-[69px] items-center px-5">
-              <PageHeader
-                title={title}
-                breadcrumbs={isTaskPage ? undefined : breadcrumbs}
-                icon={
-                  isTaskPage ? (
-                    <ClipboardList size={24} strokeWidth={1.8} />
-                  ) : undefined
-                }
-              />
-            </div>
-          </div>
+        !isDashboardPage &&
+        !heeftEigenKop ? (
+          <PageHeaderBar
+            title={title}
+            breadcrumbs={isTaskPage ? undefined : breadcrumbs}
+            icon={
+              isTaskPage ? (
+                <ClipboardList size={24} strokeWidth={1.8} />
+              ) : undefined
+            }
+          />
         ) : null}
 
         <main className="flex flex-1 min-h-0 overflow-hidden">

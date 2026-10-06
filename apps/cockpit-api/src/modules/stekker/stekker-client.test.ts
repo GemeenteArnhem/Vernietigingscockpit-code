@@ -1,4 +1,6 @@
+import { randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { versleutel } from "../../shared/geheim/geheim.js";
 import { StekkerClient, StekkerFout, type StekkerVerbinding } from "./stekker-client.js";
 
 type Opgenomen = { url: string; init: RequestInit };
@@ -62,6 +64,25 @@ describe("StekkerClient: authenticatie", () => {
     expect(header(verzonden[1], "authorization")).toBe("Bearer tok-1");
     expect(header(verzonden[1], "x-correlation-id")).toBe("taak-1:job-1");
     expect(JSON.parse(String(verzonden[1].init.body))).toEqual({ peildatum: "2026-01-01" });
+  });
+
+  it("gebruikt een versleuteld secret uit stekkerbeheer, met voorrang op secretRef", async () => {
+    const sleutel = randomBytes(32);
+    const { fetchFn, verzonden } = nepFetch([json(200, { access_token: "tok-1", expires_in: 300 }), json(202, selectie)]);
+    const client = new StekkerClient({ fetchFn, env: { ...env, SECRET_ENCRYPTION_KEY: sleutel.toString("base64") } });
+
+    await client.startSelectie(verbinding({ secretVersleuteld: versleutel("uit-de-database", sleutel) }), null, "c");
+
+    expect(new URLSearchParams(String(verzonden[0].init.body)).get("client_secret")).toBe("uit-de-database");
+  });
+
+  it("een versleuteld secret zonder (juiste) sleutel is een definitieve configuratiefout", async () => {
+    const opgeslagen = versleutel("x", randomBytes(32));
+    const client = new StekkerClient({ fetchFn: nepFetch([]).fetchFn, env: { SECRET_ENCRYPTION_KEY: randomBytes(32).toString("base64") } });
+
+    await expect(client.getSelectie(verbinding({ secretVersleuteld: opgeslagen }), "sel-1", "c")).rejects.toMatchObject({
+      details: { tijdelijk: false, code: "CONFIGURATIE" },
+    });
   });
 
   it("hergebruikt het token tot 30 s voor verloop, en haalt daarna een nieuw", async () => {

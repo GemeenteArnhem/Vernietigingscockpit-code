@@ -9,8 +9,11 @@ import AppShell from "./layouts/AppShell";
 import AuthCallbackPage from "./auth/AuthCallbackPage";
 import RequireAuth from "./auth/RequireAuth";
 import RequireRole from "./auth/RequireRole";
+import StartPagina from "./auth/StartPagina";
+import StekkerFormPage from "./pages/StekkerFormPage";
+import StekkersPage from "./pages/StekkersPage";
+import { TAKEN_ROLLEN } from "./auth/authConfig";
 
-import DashboardPage from "./pages/DashboardPage";
 import DestructionResultPage from "./pages/DestructionResultPage";
 import TaskDefinitionCreatePage from "./pages/TaskDefinitionCreatePage";
 import TaskDefinitionDetailPage from "./pages/TaskDefinitionDetailPage";
@@ -49,7 +52,37 @@ export default function App() {
             path="/dashboard"
             element={
               <RequireAuth>
-                <DashboardPage />
+                <StartPagina />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/stekkers"
+            element={
+              <RequireAuth>
+                <RequireRole allowedRoles={["functioneel_beheerder"]}>
+                  <StekkersPage />
+                </RequireRole>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/stekkers/nieuw"
+            element={
+              <RequireAuth>
+                <RequireRole allowedRoles={["functioneel_beheerder"]}>
+                  <StekkerFormPage />
+                </RequireRole>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/stekkers/:id/bewerken"
+            element={
+              <RequireAuth>
+                <RequireRole allowedRoles={["functioneel_beheerder"]}>
+                  <StekkerFormPage />
+                </RequireRole>
               </RequireAuth>
             }
           />
@@ -57,7 +90,9 @@ export default function App() {
             path="/taak/nieuw"
             element={
               <RequireAuth>
-                <TaskDefinitionCreatePage />
+                <RequireRole allowedRoles={["recordmanager", "functioneel_beheerder"]}>
+                  <TaskDefinitionCreatePage />
+                </RequireRole>
               </RequireAuth>
             }
           />
@@ -65,7 +100,9 @@ export default function App() {
             path="/taak/:id"
             element={
               <RequireAuth>
-                <TaskDefinitionDetailPage />
+                <RequireRole allowedRoles={TAKEN_ROLLEN}>
+                  <TaskDefinitionDetailPage />
+                </RequireRole>
               </RequireAuth>
             }
           />

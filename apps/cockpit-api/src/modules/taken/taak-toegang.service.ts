@@ -73,9 +73,14 @@ export class TaakToegangService {
     };
   }
 
+  // Logisch verwijderde taakuitvoeringen (functioneel beheerder) tellen nergens meer mee.
   private async overzichtWhere(user: AuthUser, scope: "mijn" | "alle") {
+    return { verwijderdOp: null, ...(await this.overzichtToegang(user, scope)) };
+  }
+
+  private async overzichtToegang(user: AuthUser, scope: "mijn" | "alle") {
     if (scope === "alle" && user.roles.includes("auditor")) {
-      return undefined;
+      return {};
     }
 
     const medewerkerId = await this.currentMedewerker.findForUser(user);
@@ -94,6 +99,10 @@ export class TaakToegangService {
   }
 
   async toegangWhere(user: AuthUser) {
+    return { verwijderdOp: null, ...(await this.toegang(user)) };
+  }
+
+  private async toegang(user: AuthUser) {
     if (user.roles.includes("auditor")) {
       return {};
     }
@@ -173,6 +182,7 @@ export class TaakToegangService {
     const taak = await this.prisma.client.taakinstantie.findFirst({
       where: {
         id: taakinstantieId,
+        verwijderdOp: null,
         OR: [
           { recordmanagerId: medewerkerId },
           { proceseigenaarId: medewerkerId },

@@ -41,6 +41,8 @@ export type ApiTaakinstantie = {
   status: string;
   stapSinds: string;
   peildatum?: string | null;
+  // Geplande startdatum van een terugkerende taak; ervoor toont de UI 'Gepland'.
+  geplandOp?: string | null;
   gestartOp?: string | null;
   taakdefinitie?: ApiTaakdefinitieSamenvatting;
   verantwoordelijken: ApiVerantwoordelijken;
@@ -108,6 +110,37 @@ export type ApiStekkerOptie = {
     authType: string;
     verwachteApiMajor: number;
   } | null;
+};
+
+// --- stekkerbeheer ----------------------------------------------------------------------
+
+export type ApiStekkerConfiguratie = {
+  versie: number;
+  baseUrl: string;
+  authType: string;
+  tokenUrl: string | null;
+  clientId: string | null;
+  // Het secret zelf komt nooit uit de API; alleen of er een is.
+  secretIngesteld: boolean;
+  secretRef: string | null;
+  scopes: string[];
+  verwachteApiMajor: number;
+  timeouts: Record<string, unknown>;
+  parameters: Record<string, unknown>;
+  aangemaaktDoor: string;
+  aangemaaktOp: string;
+};
+
+export type ApiStekkerBeheer = {
+  id: string;
+  naam: string;
+  omschrijving: string | null;
+  actief: boolean;
+  // Waar de stekker in gebruik is; verwijderen kan alleen als beide 0 zijn.
+  gebruik: { taakdefinities: number; selecties: number };
+  configuratie: ApiStekkerConfiguratie | null;
+  versies: Array<{ versie: number; aangemaaktDoor: string; aangemaaktOp: string }>;
+  toegestaneActies: string[];
 };
 
 // --- selectie ----------------------------------------------------------------------------

@@ -38,6 +38,8 @@ services:
       OIDC_AUDIENCE: ${OIDC_AUDIENCE:-cockpit-api}
       # De worker draait als eigen service (cockpit-worker), niet in de API.
       SELECTIE_WORKER_ENABLED: "false"
+      # Sleutel voor stekker-secrets uit stekkerbeheer (AES-256-GCM, 32 bytes base64).
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:-}
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=${TRAEFIK_NETWORK:-traefik}"
@@ -82,6 +84,8 @@ services:
       WORKER_POLL_MAX_MS: ${WORKER_POLL_MAX_MS:-60000}
       # OAuth2-secret van de teststekker; de naam staat in stekker_configuratie.secret_ref.
       KC_STEKKER_CLIENT_SECRET: ${KC_STEKKER_CLIENT_SECRET:-}
+      # Sleutel voor stekker-secrets uit stekkerbeheer (AES-256-GCM, 32 bytes base64).
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:-}
     networks:
       - traefik
       - database

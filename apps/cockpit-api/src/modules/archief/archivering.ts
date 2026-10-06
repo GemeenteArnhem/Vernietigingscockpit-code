@@ -1,7 +1,9 @@
 import type { ConfigService } from "@nestjs/config";
+import type { Prisma } from "@prisma/client";
 import type { PrismaService } from "../../shared/db/prisma.service.js";
 import { schrijfAuditEvent, type AuditActor } from "../audit/audit-keten.js";
 import { verifieerTaakKeten } from "../audit/audit.service.js";
+import { eersteStartdatum, planUitvoering, volgendeStartdatum } from "../taakdefinities/planning.js";
 import type { WorkflowService } from "../workflow/workflow.service.js";
 import { BestandArchiefAdapter, type ArchiefAdapter } from "./archief-adapter.js";
 
@@ -109,10 +111,49 @@ export class ArchiveringVerwerker {
             verklaringVersie: verklaring.versie,
           },
         });
+
+        // Terugkerende taak: de volgende cyclus klaarzetten (planning.ts).
+        await this.planVolgendeCyclus(tx, taakinstantieId, actor);
       }
 
       return tx.archivering.findUniqueOrThrow({ where: { id: archiveringId } });
     });
+  }
+
+  private async planVolgendeCyclus(tx: Prisma.TransactionClient, taakinstantieId: string, actor: AuditActor) {
+    const taak = await tx.taakinstantie.findUniqueOrThrow({
+      where: { id: taakinstantieId },
+      select: {
+        geplandOp: true,
+        taakdefinitie: {
+          select: {
+            id: true,
+            naam: true,
+            frequentie: true,
+            startmaand: true,
+            actief: true,
+            verwijderdOp: true,
+            recordmanagerId: true,
+            proceseigenaarId: true,
+            archivarisId: true,
+          },
+        },
+      },
+    });
+    const definitie = taak.taakdefinitie;
+
+    if (!definitie.actief || definitie.verwijderdOp) {
+      return;
+    }
+
+    const vandaag = new Date();
+    const startdatum = taak.geplandOp
+      ? volgendeStartdatum(definitie.frequentie, definitie.startmaand, taak.geplandOp, vandaag)
+      : eersteStartdatum(definitie.frequentie, definitie.startmaand, vandaag);
+
+    if (startdatum) {
+      await planUitvoering(tx, actor, definitie, startdatum);
+    }
   }
 
   // Definitief mislukt (na het retrybeleid): vastleggen, zodat de RM opnieuw kan archiveren.

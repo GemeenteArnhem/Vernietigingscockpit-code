@@ -153,6 +153,7 @@ services:
       OIDC_ISSUER: *issuer
       OIDC_AUDIENCE: cockpit-api
       CORS_ORIGIN: ${ACC_WEB_URL:-http://localhost:8480}
+      SECRET_ENCRYPTION_KEY: ${ACC_SECRET_SLEUTEL:?maak eerst .env met init-geheimen.mjs}
       SELECTIE_WORKER_ENABLED: "false"
       LOG_LEVEL: info
     ports:
@@ -186,6 +187,7 @@ services:
       WORKER_POLL_MAX_MS: "10000"
       # Zelfde waarde als het client-secret dat keycloak-init op cockpit-stekker zet.
       KC_STEKKER_CLIENT_SECRET: ${ACC_STEKKER_GEHEIM:?maak eerst .env met init-geheimen.mjs}
+      SECRET_ENCRYPTION_KEY: ${ACC_SECRET_SLEUTEL:?maak eerst .env met init-geheimen.mjs}
       GOTENBERG_URL: http://gotenberg:3000
       ARCHIEF_PAD: /archief
       LOG_LEVEL: info

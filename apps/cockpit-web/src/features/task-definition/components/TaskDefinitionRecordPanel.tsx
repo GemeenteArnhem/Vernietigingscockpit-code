@@ -1,7 +1,6 @@
 import {
   Cable,
   ChevronsUpDown,
-  FilePlus2,
   FolderKanban,
   ListFilter,
   Search,
@@ -41,7 +40,6 @@ type Props = {
   filters: RecordPaneBarFilter[];
   activeFilter: string;
   onFilterChange: (key: string) => void;
-  onCreate?: () => void;
 };
 
 export default function TaskDefinitionRecordPanel({
@@ -56,7 +54,6 @@ export default function TaskDefinitionRecordPanel({
   filters,
   activeFilter,
   onFilterChange,
-  onCreate,
 }: Props) {
   const [tabMenuOpen, setTabMenuOpen] = useState(false);
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
@@ -130,17 +127,6 @@ export default function TaskDefinitionRecordPanel({
               </label>
 
               <div className="relative flex items-center gap-2">
-                {onCreate ? (
-                  <button
-                    type="button"
-                    onClick={onCreate}
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-blue-600 px-3 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700"
-                  >
-                    <FilePlus2 size={16} />
-                    Nieuwe taakdefinitie
-                  </button>
-                ) : null}
-
                 <button
                   type="button"
                   onClick={() => setTabMenuOpen((current) => !current)}

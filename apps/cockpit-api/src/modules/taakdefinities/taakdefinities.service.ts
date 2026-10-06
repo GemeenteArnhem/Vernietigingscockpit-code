@@ -1,8 +1,10 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
+  NotFoundException,
 } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import type { AuthUser } from "../auth/auth-user.js";
@@ -18,7 +20,8 @@ import {
   mapTaakinstantie,
   taakinstantieSelect,
 } from "../taken/taken.dto.js";
-import { schrijfAuditEvent, schrijfConfiguratieEvent } from "../audit/audit-keten.js";
+import { schrijfAuditEvent, schrijfConfiguratieEvent, type AuditActor } from "../audit/audit-keten.js";
+import { eersteStartdatum, planUitvoering } from "./planning.js";
 import type { ApiTaakdefinitie, ApiTaakinstantie } from "@vernietigingscockpit/api-contract";
 
 type TaakdefinitieStekkerInput = {
@@ -100,13 +103,18 @@ export class TaakdefinitiesService {
     );
   }
 
+  // Logisch verwijderde taakdefinities tellen nergens meer mee.
   private async buildAccessWhere(user: AuthUser, scope: "mijn" | "alle") {
+    return { verwijderdOp: null, ...(await this.toegang(user, scope)) };
+  }
+
+  private async toegang(user: AuthUser, scope: "mijn" | "alle") {
     const canSeeAll =
       user.roles.includes("auditor") ||
       user.roles.includes("functioneel_beheerder");
 
     if (scope === "alle" && canSeeAll) {
-      return undefined;
+      return {};
     }
 
     const medewerkerId = await this.currentMedewerker.findForUser(user);
@@ -133,21 +141,10 @@ export class TaakdefinitiesService {
   }
 
   async createTaakdefinitie(user: AuthUser, input: CreateTaakdefinitieInput): Promise<ApiTaakdefinitie> {
-    const currentMedewerkerId = await this.currentMedewerker.findForUser(user);
-
-    if (!currentMedewerkerId) {
-      throw new ForbiddenException(
-        "De ingelogde gebruiker is niet gekoppeld aan een medewerker."
-      );
-    }
-
     const data = this.validateCreateInput(input);
-
-    if (data.recordmanagerId !== currentMedewerkerId) {
-      throw new ForbiddenException(
-        "Een recordmanager kan alleen taakdefinities voor zichzelf aanmaken."
-      );
-    }
+    // De functioneel beheerder maakt taken aan voor een gekozen recordmanager; een
+    // recordmanager alleen voor zichzelf. De functiescheiding geldt voor beide.
+    const actor = await this.makerVan(user, data.recordmanagerId);
 
     await this.validateMedewerkers(data);
     await this.validateStekkers(data.stekkers);
@@ -179,7 +176,7 @@ export class TaakdefinitiesService {
         select: { id: true },
       });
 
-      await schrijfConfiguratieEvent(tx, { type: "user", user, rol: "recordmanager" }, {
+      await schrijfConfiguratieEvent(tx, actor, {
         entiteitType: "taakdefinitie",
         entiteitId: created.id,
         actie: "TASK_DEFINITION_CREATED",
@@ -190,6 +187,12 @@ export class TaakdefinitiesService {
           stekkers: data.stekkers.map((stekker) => stekker.stekkerId),
         },
       });
+
+      // Terugkerende taak: meteen de eerste cyclus klaarzetten (planning.ts).
+      const startdatum = eersteStartdatum(data.frequentie, data.startmaand, new Date());
+      if (startdatum) {
+        await planUitvoering(tx, actor, { id: created.id, ...data }, startdatum);
+      }
 
       return tx.taakdefinitie.findUniqueOrThrow({
         where: { id: created.id },
@@ -205,9 +208,10 @@ export class TaakdefinitiesService {
     taakdefinitieId: string,
     input: CreateTaakinstantieInput
   ): Promise<ApiTaakinstantie> {
-    const currentMedewerkerId = await this.currentMedewerker.findForUser(user);
+    const beheerder = isBeheerder(user);
+    const currentMedewerkerId = beheerder ? null : await this.currentMedewerker.findForUser(user);
 
-    if (!currentMedewerkerId) {
+    if (!beheerder && !currentMedewerkerId) {
       throw new ForbiddenException(
         "De ingelogde gebruiker is niet gekoppeld aan een medewerker."
       );
@@ -216,8 +220,10 @@ export class TaakdefinitiesService {
     const definition = await this.prisma.client.taakdefinitie.findFirstOrThrow({
       where: {
         id: taakdefinitieId,
-        recordmanagerId: currentMedewerkerId,
+        // De functioneel beheerder voor elke taak; een recordmanager alleen voor de eigen.
+        ...(currentMedewerkerId ? { recordmanagerId: currentMedewerkerId } : {}),
         actief: true,
+        verwijderdOp: null,
       },
       select: {
         id: true,
@@ -245,7 +251,7 @@ export class TaakdefinitiesService {
       });
 
       // Begin van de auditketen van deze taak (ADR-0003).
-      await schrijfAuditEvent(tx, { type: "user", user, rol: "recordmanager" }, {
+      await schrijfAuditEvent(tx, { type: "user", user, rol: beheerder ? "functioneel_beheerder" : "recordmanager" }, {
         taakinstantieId: created.id,
         entiteitType: "taakinstantie",
         entiteitId: created.id,
@@ -264,6 +270,101 @@ export class TaakdefinitiesService {
     });
 
     return mapTaakinstantie(taak);
+  }
+
+  // Verwijderen door de functioneel beheerder. Het auditlog is append-only: een taakuitvoering
+  // wordt logisch verwijderd (verwijderd_op) met TASK_DELETED in haar eigen keten; een
+  // taakdefinitie zonder uitvoeringen wordt echt verwijderd. Niet toegestaan zodra de
+  // vernietiging is gestart en de uitvoering nog niet is gearchiveerd, en niet tijdens een
+  // lopende selectie.
+  async verwijderTaakdefinitie(user: AuthUser, id: string) {
+    await this.prisma.client.$transaction(async (tx) => {
+      const definitie = await tx.taakdefinitie.findFirst({
+        where: { id, verwijderdOp: null },
+        select: { id: true, naam: true, _count: { select: { instanties: true } } },
+      });
+
+      if (!definitie) {
+        throw new NotFoundException("Taak niet gevonden.");
+      }
+
+      const actor = beheerderActor(user);
+
+      if (definitie._count.instanties === 0) {
+        await tx.taakdefinitieStekker.deleteMany({ where: { taakdefinitieId: id } });
+        await tx.taakdefinitie.delete({ where: { id } });
+        await schrijfConfiguratieEvent(tx, actor, {
+          entiteitType: "taakdefinitie",
+          entiteitId: id,
+          actie: "TASK_DEFINITION_DELETED",
+          details: { naam: definitie.naam, echtVerwijderd: true, uitvoeringen: 0 },
+        });
+        return;
+      }
+
+      const uitvoeringen = await tx.taakinstantie.findMany({
+        where: { taakdefinitieId: id, verwijderdOp: null },
+        select: { id: true, naam: true, status: true },
+      });
+
+      for (const uitvoering of uitvoeringen) {
+        await controleerVerwijderbaar(tx, uitvoering);
+      }
+
+      for (const uitvoering of uitvoeringen) {
+        await markeerVerwijderd(tx, user, uitvoering, "taakdefinitie verwijderd");
+      }
+
+      await tx.taakdefinitie.update({
+        where: { id },
+        data: { verwijderdOp: new Date(), verwijderdDoor: user.sub, actief: false },
+      });
+      await schrijfConfiguratieEvent(tx, actor, {
+        entiteitType: "taakdefinitie",
+        entiteitId: id,
+        actie: "TASK_DEFINITION_DELETED",
+        details: { naam: definitie.naam, echtVerwijderd: false, uitvoeringen: uitvoeringen.length },
+      });
+    });
+  }
+
+  async verwijderTaakinstantie(user: AuthUser, taakdefinitieId: string, id: string) {
+    await this.prisma.client.$transaction(async (tx) => {
+      const uitvoering = await tx.taakinstantie.findFirst({
+        where: { id, taakdefinitieId, verwijderdOp: null },
+        select: { id: true, naam: true, status: true },
+      });
+
+      if (!uitvoering) {
+        throw new NotFoundException("Taakuitvoering niet gevonden.");
+      }
+
+      await controleerVerwijderbaar(tx, uitvoering);
+      await markeerVerwijderd(tx, user, uitvoering, "taakuitvoering verwijderd");
+    });
+  }
+
+  // Wie maakt de taak aan: de beheerder (voor een gekozen recordmanager) of de recordmanager zelf.
+  private async makerVan(user: AuthUser, recordmanagerId: string): Promise<AuditActor> {
+    if (isBeheerder(user)) {
+      return beheerderActor(user);
+    }
+
+    const currentMedewerkerId = await this.currentMedewerker.findForUser(user);
+
+    if (!currentMedewerkerId) {
+      throw new ForbiddenException(
+        "De ingelogde gebruiker is niet gekoppeld aan een medewerker."
+      );
+    }
+
+    if (recordmanagerId !== currentMedewerkerId) {
+      throw new ForbiddenException(
+        "Een recordmanager kan alleen taakdefinities voor zichzelf aanmaken."
+      );
+    }
+
+    return { type: "user", user, rol: "recordmanager" };
   }
 
   private validateCreateInput(input: CreateTaakdefinitieInput) {
@@ -303,6 +404,10 @@ export class TaakdefinitiesService {
       (input.startmaand < 1 || input.startmaand > 12)
     ) {
       throw new BadRequestException("startmaand moet tussen 1 en 12 liggen.");
+    }
+
+    if ((frequentie === "jaarlijks" || frequentie === "kwartaal") && input.startmaand == null) {
+      throw new BadRequestException("Een jaarlijkse of kwartaaltaak heeft een startmaand (1-12) nodig.");
     }
 
     return {
@@ -406,4 +511,53 @@ function requireRole(
       `Medewerker ${id} bestaat niet, is niet actief, of heeft rol ${role} niet.`
     );
   }
+}
+
+function isBeheerder(user: AuthUser) {
+  return user.roles.includes("functioneel_beheerder");
+}
+
+function beheerderActor(user: AuthUser): AuditActor {
+  return { type: "user", user, rol: "functioneel_beheerder" };
+}
+
+// Vanaf de vernietiging tot en met de archivering moet het dossier compleet blijven.
+const NIET_VERWIJDERBAAR = new Set(["uitvoering", "resultaat"]);
+const LOPENDE_SELECTIE = ["AANGEVRAAGD", "RUNNING", "READY"];
+
+async function controleerVerwijderbaar(tx: Prisma.TransactionClient, uitvoering: { id: string; naam: string; status: string }) {
+  if (NIET_VERWIJDERBAAR.has(uitvoering.status)) {
+    throw new ConflictException(
+      `'${uitvoering.naam}' kan niet worden verwijderd: de vernietiging is gestart en de uitvoering is nog niet gearchiveerd.`
+    );
+  }
+
+  const lopend = await tx.selectie.count({
+    where: { taakinstantieId: uitvoering.id, status: { in: LOPENDE_SELECTIE } },
+  });
+
+  if (lopend > 0) {
+    throw new ConflictException(
+      `'${uitvoering.naam}' kan niet worden verwijderd zolang de selectie loopt. Probeer het opnieuw als de selectie klaar is.`
+    );
+  }
+}
+
+async function markeerVerwijderd(
+  tx: Prisma.TransactionClient,
+  user: AuthUser,
+  uitvoering: { id: string; naam: string; status: string },
+  reden: string
+) {
+  await tx.taakinstantie.update({
+    where: { id: uitvoering.id },
+    data: { verwijderdOp: new Date(), verwijderdDoor: user.sub },
+  });
+  await schrijfAuditEvent(tx, beheerderActor(user), {
+    taakinstantieId: uitvoering.id,
+    entiteitType: "taakinstantie",
+    entiteitId: uitvoering.id,
+    actie: "TASK_DELETED",
+    details: { naam: uitvoering.naam, status: uitvoering.status, reden },
+  });
 }

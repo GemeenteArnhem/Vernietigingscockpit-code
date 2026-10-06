@@ -9,6 +9,7 @@
 // - Elke fout is een StekkerFout met `tijdelijk`: true bij 5xx, 429, time-out en
 //   netwerkfouten (opnieuw proberen zinvol), false bij 4xx en contractfouten.
 
+import { GeheimFout, leesSleutel, ontsleutel } from "../../shared/geheim/geheim.js";
 import type {
   BatchResultaat,
   Selectie,
@@ -64,6 +65,8 @@ export type StekkerVerbinding = {
   tokenUrl: string | null;
   clientId: string | null;
   secretRef: string | null;
+  // Versleuteld secret uit stekkerbeheer; heeft voorrang op secretRef.
+  secretVersleuteld?: string | null;
   scopes: string[];
   timeouts: unknown;
 };
@@ -288,11 +291,11 @@ export class StekkerClient {
       return gecachet.token;
     }
 
-    const secret = verbinding.secretRef ? this.env[verbinding.secretRef] : undefined;
+    const secret = this.secretVan(verbinding);
 
     if (!verbinding.tokenUrl || !verbinding.clientId || !secret) {
       throw new StekkerFout(
-        `OAuth2-configuratie onvolledig (tokenUrl, clientId of secret via '${verbinding.secretRef ?? "?"}' ontbreekt).`,
+        `OAuth2-configuratie onvolledig (tokenUrl, clientId of secret${verbinding.secretVersleuteld ? "" : ` via '${verbinding.secretRef ?? "?"}'`} ontbreekt).`,
         { tijdelijk: false, code: "CONFIGURATIE" }
       );
     }
@@ -330,6 +333,22 @@ export class StekkerClient {
     });
 
     return body.access_token;
+  }
+
+  // Het secret: ontsleuteld uit stekkerbeheer, of uit de omgevingsvariabele in secretRef.
+  private secretVan(verbinding: StekkerVerbinding) {
+    if (verbinding.secretVersleuteld) {
+      try {
+        return ontsleutel(verbinding.secretVersleuteld, leesSleutel(this.env.SECRET_ENCRYPTION_KEY));
+      } catch (error) {
+        throw new StekkerFout(error instanceof GeheimFout ? error.message : "Secret ontsleutelen mislukt.", {
+          tijdelijk: false,
+          code: "CONFIGURATIE",
+        });
+      }
+    }
+
+    return verbinding.secretRef ? this.env[verbinding.secretRef] : undefined;
   }
 
   private async fetchMetTimeout(url: string, init: RequestInit, timeoutMs: number) {

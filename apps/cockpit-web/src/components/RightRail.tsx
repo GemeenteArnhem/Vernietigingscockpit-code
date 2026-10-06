@@ -26,11 +26,12 @@ export default function RightRail({
         />
       )}
 
+      {/* Het actiepanel staat altijd onderaan, ook zonder detailpanel erboven. */}
       {showActionPane && (
         <div
           ref={onActionPaneRef}
-          className={`flex min-h-0 flex-col overflow-hidden ${
-            showDetailPane ? "shrink-0" : "flex-1"
+          className={`flex min-h-0 shrink-0 flex-col overflow-hidden ${
+            showDetailPane ? "" : "mt-auto border-t border-slate-200"
           }`}
         />
       )}

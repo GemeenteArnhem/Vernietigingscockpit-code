@@ -15,11 +15,12 @@
 // Dan komen ook de adressen in .env: https://acc.voorbeeld.nl (web), https://api.acc.voorbeeld.nl
 // (API) en https://auth.acc.voorbeeld.nl (Keycloak), plus de Traefik-waarden.
 //
-// Een bestaand .env wordt nooit overschreven. Nieuwe waarden nodig? Verwijder .env zelf en
+// Een bestaand .env wordt nooit overschreven; ontbrekende waarden (na een update) worden
+// toegevoegd. Nieuwe waarden nodig? Verwijder .env zelf en
 // maak de omgeving leeg (`docker compose … down -v`): database en Keycloak onthouden de
 // oude wachtwoorden.
 import { randomBytes } from "node:crypto";
-import { existsSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
@@ -61,14 +62,39 @@ if (opties.domein) {
 const map = path.dirname(fileURLToPath(import.meta.url));
 const bestand = path.join(map, ".env");
 
-if (existsSync(bestand)) {
-  console.error(`${bestand} bestaat al; er is niets gewijzigd.`);
-  console.error("Nieuwe waarden nodig? Verwijder het bestand zelf en maak de omgeving leeg (down -v).");
-  process.exit(1);
-}
-
 // URL-veilig (geen tekens die in een database-URL moeten worden gecodeerd).
 const willekeurig = (bytes = 24) => randomBytes(bytes).toString("base64url");
+
+// Waarden die het script altijd zelf kiest. Bij een bestaand .env worden alleen ontbrekende
+// toegevoegd (bijv. na een update die een nieuwe sleutel nodig heeft); niets wordt overschreven.
+const altijdWillekeurig = () => ({
+  ACC_DB_WACHTWOORD: willekeurig(),
+  ACC_DB_APP_WACHTWOORD: willekeurig(),
+  ACC_KEYCLOAK_ADMIN_WACHTWOORD: willekeurig(),
+  ACC_STEKKER_GEHEIM: willekeurig(32),
+  // Sleutel voor stekker-secrets uit stekkerbeheer: 32 bytes, base64.
+  ACC_SECRET_SLEUTEL: randomBytes(32).toString("base64"),
+});
+
+if (existsSync(bestand)) {
+  const aanwezig = new Set(
+    readFileSync(bestand, "utf8")
+      .split(/\r?\n/)
+      .map((regel) => /^([A-Z0-9_]+)=/.exec(regel)?.[1])
+      .filter(Boolean)
+  );
+  const ontbrekend = Object.entries(altijdWillekeurig()).filter(([sleutel]) => !aanwezig.has(sleutel));
+
+  if (ontbrekend.length === 0) {
+    console.log(`${bestand} bestaat al en is compleet; er is niets gewijzigd.`);
+    console.log("Nieuwe waarden nodig? Verwijder het bestand zelf en maak de omgeving leeg (down -v).");
+    process.exit(0);
+  }
+
+  appendFileSync(bestand, ontbrekend.map(([sleutel, waarde]) => `${sleutel}=${waarde}`).join("\n") + "\n", "utf8");
+  console.log(`Aangevuld in ${bestand}: ${ontbrekend.map(([sleutel]) => sleutel).join(", ")}. Bestaande waarden zijn niet gewijzigd.`);
+  process.exit(0);
+}
 
 async function vraagGebruikerswachtwoord() {
   if (!process.stdin.isTTY) {
@@ -90,11 +116,8 @@ async function vraagGebruikerswachtwoord() {
 
 const gekozen = await vraagGebruikerswachtwoord();
 const waarden = {
-  ACC_DB_WACHTWOORD: willekeurig(),
-  ACC_DB_APP_WACHTWOORD: willekeurig(),
-  ACC_KEYCLOAK_ADMIN_WACHTWOORD: willekeurig(),
+  ...altijdWillekeurig(),
   ACC_GEBRUIKERS_WACHTWOORD: gekozen ?? willekeurig(12),
-  ACC_STEKKER_GEHEIM: willekeurig(32),
   ...server,
 };
 

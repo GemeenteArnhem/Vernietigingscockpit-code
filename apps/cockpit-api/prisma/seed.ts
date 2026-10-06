@@ -14,9 +14,11 @@ if (!databaseUrl) {
 
 const prisma = createPrismaClient(databaseUrl);
 
-const TEST_STEKKER_ID = "00000000-0000-0000-0000-000000000101";
-const TEST_TAAKDEFINITIE_ID = "00000000-0000-0000-0000-000000000201";
-const TEST_TAAK_INSTANTIE_ID = "00000000-0000-0000-0000-000000000301";
+// Vaste id's (geldige UUID's), zodat de seed bij elke start opnieuw kan draaien zonder
+// dubbele gegevens. Taakuitvoeringen maakt de seed bewust niet: die maak je in de cockpit,
+// zodat het auditlog met TASK_CREATED begint.
+const TEST_STEKKER_ID = "f6d4934b-4073-4763-8212-b460d662e6a9";
+const TEST_TAAKDEFINITIE_ID = "ccc80546-381c-4e21-afda-7d430c0e60aa";
 
 async function main() {
   const afdeling = await prisma.afdeling.upsert({
@@ -110,7 +112,7 @@ async function main() {
     },
   });
 
-  const taakdefinitie = await prisma.taakdefinitie.upsert({
+  await prisma.taakdefinitie.upsert({
     where: { id: TEST_TAAKDEFINITIE_ID },
     update: {},
     create: {
@@ -132,21 +134,6 @@ async function main() {
           },
         },
       },
-    },
-  });
-
-  await prisma.taakinstantie.upsert({
-    where: { id: TEST_TAAK_INSTANTIE_ID },
-    update: {},
-    create: {
-      id: TEST_TAAK_INSTANTIE_ID,
-      taakdefinitieId: taakdefinitie.id,
-      naam: "Sociaal domein 2026",
-      status: "init",
-      peildatum: new Date("2026-01-01"),
-      recordmanagerId: rm.id,
-      proceseigenaarId: po.id,
-      archivarisId: arch.id,
     },
   });
 }

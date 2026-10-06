@@ -29,6 +29,8 @@ type Props = {
   metaItems: TaskExecutionHeaderMetaItem[];
   showStatusOverview?: boolean;
   showTaskContext?: boolean;
+  // Icoon voor de titel; standaard het klembord van de taakschermen.
+  icon?: ReactNode;
 };
 
 export type {
@@ -75,6 +77,7 @@ export default function TaskExecutionHeader({
   metaItems,
   showStatusOverview = true,
   showTaskContext = true,
+  icon,
 }: Props) {
   const [detailsOpen, setDetailsOpen] = useState(false);
 
@@ -108,7 +111,7 @@ export default function TaskExecutionHeader({
       <div className="bg-white">
         <div className="flex h-[69px] items-center gap-5 px-5">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-700">
-            <ClipboardCheck size={24} strokeWidth={1.8} />
+            {icon ?? <ClipboardCheck size={24} strokeWidth={1.8} />}
           </div>
 
           <div className="min-w-0 shrink">

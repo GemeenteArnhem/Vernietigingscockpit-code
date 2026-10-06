@@ -1,4 +1,4 @@
-﻿import {
+import {
   useEffect,
   useMemo,
   useState,
@@ -8,8 +8,10 @@ import {
   ClipboardList,
   FolderOpen,
   PencilLine,
+  FilePlus2,
   PlayCircle,
   PlugZap,
+  Trash2,
 } from "lucide-react";
 import {
   useNavigate,
@@ -33,7 +35,15 @@ import type {
 } from "../components/record-pane/RecordPaneBar";
 import TaskDefinitionDetailPane from "../features/task-definition/components/TaskDefinitionDetailPane";
 import TaskDefinitionRecordPanel from "../features/task-definition/components/TaskDefinitionRecordPanel";
-import { createTaskInstance, getTaskDefinitions } from "../api/f3Data";
+import {
+  createTaskInstance,
+  getTaskDefinitions,
+  verwijderTaakdefinitie,
+  verwijderTaakuitvoering,
+} from "../api/f3Data";
+import { serverFoutmelding } from "../api/apiClient";
+import ConfirmDialog from "../components/ConfirmDialog";
+import { heeftDashboard } from "../auth/authConfig";
 import ActieFoutmelding from "../components/ActieFoutmelding";
 import { useSessionUser } from "../auth/useSessionUser";
 import { AppShellPortal } from "../layouts/AppShellPortalContext";
@@ -57,13 +67,16 @@ type TaskDefinitionDecisionId =
   | "open-uitvoering"
   | "nieuwe-uitvoering"
   | "bewerk-configuratie"
-  | "koppel-stekker";
+  | "koppel-stekker"
+  | "uitvoering-verwijderen"
+  | "taak-verwijderen"
+  | "nieuwe-taak";
 
 type TaskDefinitionDecision = {
   id: TaskDefinitionDecisionId;
   title: string;
   icon: ReactNode;
-  tone: "primary" | "success" | "warning";
+  tone: "primary" | "success" | "warning" | "danger";
 };
 
 function getPrimaryInstance(
@@ -234,6 +247,25 @@ function getTaskDefinitionDecisions(
     });
   }
 
+  // Verwijderen door de functioneel beheerder (de API bepaalt of het mag).
+  if (primaryInstance?.toegestaneActies?.includes("taakinstantie.verwijderen")) {
+    decisions.push({
+      id: "uitvoering-verwijderen",
+      title: `Uitvoering ${primaryInstance.naam} verwijderen`,
+      icon: <Trash2 size={18} />,
+      tone: "danger",
+    });
+  }
+
+  if (apiActions?.includes("taakdefinitie.verwijderen")) {
+    decisions.push({
+      id: "taak-verwijderen",
+      title: "Taak verwijderen",
+      icon: <Trash2 size={18} />,
+      tone: "danger",
+    });
+  }
+
   if (!apiActions) {
     decisions.push({
       id: "koppel-stekker",
@@ -272,8 +304,21 @@ export default function TaskDefinitionDetailPage() {
     useNavigate();
   const { id: taakId } =
     useParams();
-  const { accessToken } =
+  const { accessToken, user } =
     useSessionUser();
+  // Beheerder en auditor zien alle taken.
+  const scope =
+    user.roles.includes("functioneel_beheerder") || user.roles.includes("auditor")
+      ? "alle"
+      : "mijn";
+  // Zonder werkvoorraadrol (de beheerder) heeft een taakuitvoering openen geen zin.
+  const kanUitvoeringOpenen = heeftDashboard(user.roles);
+  // Een nieuwe taak aanmaken: recordmanager en functioneel beheerder (ook zonder selectie).
+  const kanTaakAanmaken =
+    user.roles.includes("recordmanager") || user.roles.includes("functioneel_beheerder");
+  const [herladen, setHerladen] = useState(0);
+  const [bevestigVerwijderen, setBevestigVerwijderen] = useState(false);
+  const [bezigVerwijderen, setBezigVerwijderen] = useState(false);
   const [
     apiDefinitions,
     setApiDefinitions,
@@ -312,7 +357,7 @@ export default function TaskDefinitionDetailPage() {
 
     let isCurrent = true;
 
-    getTaskDefinitions(accessToken)
+    getTaskDefinitions(accessToken, scope)
       .then((definitions) => {
         if (isCurrent) {
           setApiDefinitions(
@@ -335,7 +380,7 @@ export default function TaskDefinitionDetailPage() {
     return () => {
       isCurrent = false;
     };
-  }, [accessToken]);
+  }, [accessToken, herladen, scope]);
 
   const definitions = apiDefinitions ?? EMPTY_DEFINITIONS;
 
@@ -489,23 +534,40 @@ export default function TaskDefinitionDetailPage() {
         ]
       : undefined;
 
-  const decisions = useMemo(
-    () =>
-      selectedDefinition
-        ? getTaskDefinitionDecisions(
-            selectedDefinition
-          )
-        : [],
-    [selectedDefinition]
-  );
+  const decisions = useMemo(() => {
+    const lijst = selectedDefinition
+      ? getTaskDefinitionDecisions(
+          selectedDefinition
+        ).filter(
+          (decision) =>
+            kanUitvoeringOpenen ||
+            decision.id !== "open-uitvoering"
+        )
+      : [];
+
+    if (kanTaakAanmaken) {
+      lijst.push({
+        id: "nieuwe-taak",
+        title: "Nieuwe taakdefinitie",
+        icon: <FilePlus2 size={18} />,
+        tone: "success",
+      });
+    }
+
+    return lijst;
+  }, [kanTaakAanmaken, kanUitvoeringOpenen, selectedDefinition]);
 
   const activeRecordId =
     selectedDefinition?.id ?? null;
-  const activeDecision =
+  const gekozenDecision =
     panelState.recordId ===
     activeRecordId
       ? panelState.decision
       : "open-uitvoering";
+  const activeDecision: TaskDefinitionDecisionId =
+    decisions.some((decision) => decision.id === gekozenDecision)
+      ? gekozenDecision
+      : decisions[0]?.id ?? "open-uitvoering";
 
   const primaryInstance =
     selectedDefinition
@@ -613,6 +675,11 @@ export default function TaskDefinitionDetailPage() {
 
   const handlePrimaryAction =
     async () => {
+      if (activeDecision === "nieuwe-taak") {
+        navigate("/taak/nieuw");
+        return;
+      }
+
       if (
         !selectedDefinition
       ) {
@@ -702,11 +769,42 @@ export default function TaskDefinitionDetailPage() {
         return;
       }
 
+      if (
+        activeDecision === "uitvoering-verwijderen" ||
+        activeDecision === "taak-verwijderen"
+      ) {
+        setActionError(null);
+        setBevestigVerwijderen(true);
+        return;
+      }
+
       console.info(
         "Stekkers beheren",
         selectedDefinition.id
       );
     };
+
+  const handleVerwijderen = async () => {
+    if (!accessToken || !selectedDefinition) {
+      return;
+    }
+
+    setBezigVerwijderen(true);
+
+    try {
+      if (activeDecision === "taak-verwijderen") {
+        await verwijderTaakdefinitie(accessToken, selectedDefinition.id);
+      } else if (primaryInstance) {
+        await verwijderTaakuitvoering(accessToken, selectedDefinition.id, primaryInstance.id);
+      }
+      setHerladen((teller) => teller + 1);
+    } catch (caught) {
+      setActionError(serverFoutmelding(caught, "Verwijderen is mislukt."));
+    } finally {
+      setBezigVerwijderen(false);
+      setBevestigVerwijderen(false);
+    }
+  };
 
   useEffect(() => {
     const handleKeyDown = (
@@ -829,7 +927,7 @@ export default function TaskDefinitionDetailPage() {
           hideFooterBorder
           bodyPaddingYClass="py-0"
           footer={
-            selectedDefinition ? (
+            decisions.length > 0 ? (
               <ActionPanelButtonGroup>
                 <ActionPanelButton
                   label="Actie uitvoeren"
@@ -840,7 +938,7 @@ export default function TaskDefinitionDetailPage() {
             ) : null
           }
         >
-          {!selectedDefinition ? (
+          {decisions.length === 0 ? (
             <ActionPanelEmptyState
               title="Kies eerst een taakdefinitie"
               description="Kies een taakdefinitie om een actie te tonen."
@@ -862,7 +960,7 @@ export default function TaskDefinitionDetailPage() {
                     onClick={() => {
                       setActionError(null);
                       setPanelState({
-                        recordId: selectedDefinition.id,
+                        recordId: activeRecordId,
                         decision: item.id,
                       });
                     }}
@@ -874,6 +972,27 @@ export default function TaskDefinitionDetailPage() {
           )}
         </ActionPanel>
       </AppShellPortal>
+
+      <ConfirmDialog
+        open={bevestigVerwijderen}
+        title={
+          activeDecision === "taak-verwijderen"
+            ? `Taak ${selectedDefinition?.naam ?? ""} verwijderen?`
+            : `Uitvoering ${primaryInstance?.naam ?? ""} verwijderen?`
+        }
+        description={
+          activeDecision === "taak-verwijderen"
+            ? "De taak en al haar uitvoeringen verdwijnen uit de cockpit. Zijn er uitvoeringen geweest, dan blijven hun gegevens en auditlog bewaard en staat het verwijderen in het log."
+            : "De uitvoering verdwijnt uit de cockpit. Haar gegevens en auditlog blijven bewaard en het verwijderen staat in het log."
+        }
+        confirmLabel={bezigVerwijderen ? "Bezig..." : "Ja, verwijderen"}
+        onCancel={() => setBevestigVerwijderen(false)}
+        onConfirm={() => {
+          if (!bezigVerwijderen) {
+            void handleVerwijderen();
+          }
+        }}
+      />
 
       <AppShellPortal slot="shortcut">
         <ShortcutPane
@@ -926,9 +1045,6 @@ export default function TaskDefinitionDetailPage() {
               setFilter(
                 key as DefinitionFilter
               )
-            }
-            onCreate={() =>
-              navigate("/taak/nieuw")
             }
           />
         </>

@@ -27,6 +27,7 @@ type TaakinstantieRecord = {
   stapSinds: Date;
   ronde: number;
   peildatum: Date | null;
+  geplandOp: Date | null;
   gestartOp: Date | null;
   afgerondOp: Date | null;
   versie: number;
@@ -44,6 +45,7 @@ export const taakinstantieSelect = {
   stapSinds: true,
   ronde: true,
   peildatum: true,
+  geplandOp: true,
   gestartOp: true,
   afgerondOp: true,
   versie: true,
@@ -102,6 +104,7 @@ export function mapTaakinstantieMetActies(
     stapSinds: record.stapSinds.toISOString(),
     ronde: record.ronde,
     peildatum: record.peildatum?.toISOString() ?? null,
+    geplandOp: record.geplandOp?.toISOString() ?? null,
     gestartOp: record.gestartOp?.toISOString() ?? null,
     afgerondOp: record.afgerondOp?.toISOString() ?? null,
     versie: record.versie,

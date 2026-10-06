@@ -5,8 +5,11 @@ import
   LayoutDashboard,
   Clipboard,
   Archive,
+  Plug,
 } from "lucide-react";
 
+import { heeftDashboard, TAKEN_ROLLEN } from "../auth/authConfig";
+import { useSessionUser } from "../auth/useSessionUser";
 import SidebarFooter from "./SidebarFooter";
 import SidebarItem from "./SidebarItem";
 
@@ -39,6 +42,10 @@ export default function Sidebar() {
   const navigate = useNavigate();
   const collapseTimerRef = useRef<number | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const { user } = useSessionUser();
+  const toontTaken = TAKEN_ROLLEN.some((rol) => user.roles.includes(rol));
+  const toontStekkers = user.roles.includes("functioneel_beheerder");
+  const toontDashboard = heeftDashboard(user.roles);
 
   const clearCollapseTimer = () => {
     if (collapseTimerRef.current !== null) {
@@ -101,31 +108,47 @@ export default function Sidebar() {
         </button>
 
         <div className="mt-2 flex flex-col gap-1 px-2">
-          <SidebarItem
-            label="Dashboard"
-            icon={<LayoutDashboard />}
-            active={location.pathname.startsWith("/dashboard")}
-            expanded={isExpanded}
-            onClick={() => navigateFromSidebar("/dashboard")}
-          />
+          {toontDashboard ? (
+            <SidebarItem
+              label="Dashboard"
+              icon={<LayoutDashboard />}
+              active={location.pathname.startsWith("/dashboard")}
+              expanded={isExpanded}
+              onClick={() => navigateFromSidebar("/dashboard")}
+            />
+          ) : null}
 
-          <SidebarItem
-            label="Taken"
-            icon={<Clipboard />}
-            active={
-              location.pathname.startsWith("/taken") ||
-              location.pathname.startsWith("/taak/")
-            }
-            expanded={isExpanded}
-            onClick={() => navigateFromSidebar("/taak/1")}
-          />
+          {toontTaken ? (
+            <>
+              <SidebarItem
+                label="Taken"
+                icon={<Clipboard />}
+                active={
+                  location.pathname.startsWith("/taken") ||
+                  location.pathname.startsWith("/taak/")
+                }
+                expanded={isExpanded}
+                onClick={() => navigateFromSidebar("/taak/1")}
+              />
 
-          <SidebarItem
-            label="Archief"
-            icon={<Archive />}
-            active={location.pathname.startsWith("/taakdefinities")}
-            expanded={isExpanded}
-          />
+              <SidebarItem
+                label="Archief"
+                icon={<Archive />}
+                active={location.pathname.startsWith("/taakdefinities")}
+                expanded={isExpanded}
+              />
+            </>
+          ) : null}
+
+          {toontStekkers ? (
+            <SidebarItem
+              label="Stekkers"
+              icon={<Plug />}
+              active={location.pathname.startsWith("/stekkers")}
+              expanded={isExpanded}
+              onClick={() => navigateFromSidebar("/stekkers")}
+            />
+          ) : null}
         </div>
 
         <div className="flex-1" />

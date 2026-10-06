@@ -35,6 +35,7 @@ export function verbindingVan(configuratie: StekkerVerbinding): StekkerVerbindin
     tokenUrl: configuratie.tokenUrl,
     clientId: configuratie.clientId,
     secretRef: configuratie.secretRef,
+    secretVersleuteld: configuratie.secretVersleuteld ?? null,
     scopes: configuratie.scopes,
     timeouts: configuratie.timeouts,
   };

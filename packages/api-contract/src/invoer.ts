@@ -158,6 +158,57 @@ export const bulkBeoordelingSchema = kandidaatBeoordelingSchema.extend({ ids: id
 
 export const bulkBesluitSchema = accorderingBesluitSchema.extend({ ids: idsSchema });
 
+// --- stekkerbeheer (functioneel beheerder) ---------------------------------------------
+
+const httpUrl = z
+  .string()
+  .trim()
+  .max(500)
+  .refine((waarde) => /^https?:\/\/[^\s/]+/.test(waarde), "verwacht een http(s)-URL");
+
+export const stekkerSchema = z
+  .object({
+    naam: tekst(200).min(1),
+    omschrijving: optioneleTekst(2000),
+    baseUrl: httpUrl,
+    authType: z.enum(["none", "oauth2_cc"]),
+    tokenUrl: httpUrl.nullish(),
+    clientId: optioneleTekst(200),
+    // Alleen schrijven: de API slaat het versleuteld op en geeft het nooit terug. Leeg bij
+    // bewerken = het bestaande secret houden.
+    secret: z.string().max(2000).nullish(),
+    // Terugval: naam van een omgevingsvariabele met het secret.
+    secretRef: z
+      .string()
+      .trim()
+      .regex(/^[A-Z][A-Z0-9_]*$/, "verwacht de naam van een omgevingsvariabele (HOOFDLETTERS_EN_CIJFERS)")
+      .max(100)
+      .nullish(),
+    scopes: z.array(tekst(100).min(1)).max(20).default([]),
+    verwachteApiMajor: z.number().int().min(1).max(99).default(1),
+    timeouts: z
+      .object({
+        connectMs: z.number().int().min(100).max(120_000).optional(),
+        requestMs: z.number().int().min(100).max(600_000).optional(),
+        selectieMs: z.number().int().min(60_000).max(30 * 24 * 60 * 60 * 1000).optional(),
+      })
+      .default({}),
+    parameters: z
+      .object({ batchGrootte: z.number().int().min(1).max(500).optional() })
+      .catchall(z.unknown())
+      .default({}),
+  })
+  .superRefine((waarde, ctx) => {
+    if (waarde.authType === "oauth2_cc") {
+      if (!waarde.tokenUrl) {
+        ctx.addIssue({ code: "custom", path: ["tokenUrl"], message: "verplicht bij OAuth2" });
+      }
+      if (!waarde.clientId) {
+        ctx.addIssue({ code: "custom", path: ["clientId"], message: "verplicht bij OAuth2" });
+      }
+    }
+  });
+
 // --- invoertypes -------------------------------------------------------------------------
 // `Invoer` is wat een client mag sturen (vóór standaardwaarden en trim); `Gevalideerd` is
 // wat de API na validatie gebruikt.
@@ -181,3 +232,5 @@ export type KandidatenZoekIn = KandidatenQueryGevalideerd["zoekIn"];
 export type KandidatenStatusFilter = NonNullable<KandidatenQueryGevalideerd["status"]>;
 export type BulkBeoordelingInvoer = z.input<typeof bulkBeoordelingSchema>;
 export type BulkBesluitInvoer = z.input<typeof bulkBesluitSchema>;
+export type StekkerInvoer = z.input<typeof stekkerSchema>;
+export type StekkerGevalideerd = z.output<typeof stekkerSchema>;

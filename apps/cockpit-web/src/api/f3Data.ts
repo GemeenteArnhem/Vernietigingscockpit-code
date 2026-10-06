@@ -77,15 +77,28 @@ export async function getDashboardTasks(
   return taken.map(mapTaakToDashboardRecord);
 }
 
-export async function getTaskDefinitions(accessToken: string) {
+// Beheerder en auditor zien alle taken ('alle'); anderen hun eigen ('mijn').
+export async function getTaskDefinitions(accessToken: string, scope: "mijn" | "alle" = "mijn") {
   const definitions = await apiRequest<ApiTaakdefinitie[]>(
-    "/taakdefinities?scope=mijn",
+    `/taakdefinities?scope=${scope}`,
     {
       accessToken,
     }
   );
 
   return definitions.map(mapTaakdefinitie);
+}
+
+// Verwijderen door de functioneel beheerder (logisch als er een auditketen is).
+export async function verwijderTaakdefinitie(accessToken: string, taskDefinitionId: string) {
+  return apiRequest<void>(`/taakdefinities/${taskDefinitionId}`, { accessToken, method: "DELETE" });
+}
+
+export async function verwijderTaakuitvoering(accessToken: string, taskDefinitionId: string, taskInstanceId: string) {
+  return apiRequest<void>(`/taakdefinities/${taskDefinitionId}/instanties/${taskInstanceId}`, {
+    accessToken,
+    method: "DELETE",
+  });
 }
 
 export async function createTaskInstance(
@@ -561,7 +574,7 @@ function ifMatch(taakVersie: number) {
 }
 
 function mapTaakToDashboardRecord(taak: ApiTaakinstantie): DashboardTaskRecord {
-  const status = mapExecutionStatus(taak.status, taak.stapSinds);
+  const status = mapExecutionStatus(taak.status, taak.stapSinds, taak.geplandOp);
   const stapId = mapStepId(taak.status);
   const startdatum = formatDate(taak.gestartOp ?? taak.peildatum);
 
@@ -624,7 +637,7 @@ function mapTaakinstantieToDefinitionInstance(
       : `Peildatum ${formatDate(instantie.peildatum)}`,
     startdatum: formatDate(instantie.gestartOp ?? instantie.peildatum),
     recordmanager: instantie.verantwoordelijken.recordmanager.naam,
-    status: mapDefinitionStatus(instantie.status, instantie.stapSinds),
+    status: mapDefinitionStatus(instantie.status, instantie.stapSinds, instantie.geplandOp),
     stap: mapStepLabel(instantie.status),
     voortgang: mapProgress(instantie.status),
     plannedStartDate: instantie.peildatum ?? undefined,
@@ -1096,11 +1109,23 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
+// Een geplande uitvoering (terugkerende taak) is 'Gepland' tot de startdatum; de termijn
+// voor 'Vertraagd' telt pas vanaf die datum.
 function mapExecutionStatus(
   status: string,
-  stepSince: string
+  stepSince: string,
+  geplandOp?: string | null
 ): TaskExecutionStatus {
-  if (daysSince(stepSince) > 7) {
+  if (status === "init" && geplandOp && new Date(geplandOp).getTime() > Date.now()) {
+    return "GEPLAND";
+  }
+
+  const sinds =
+    status === "init" && geplandOp && new Date(geplandOp).getTime() > new Date(stepSince).getTime()
+      ? geplandOp
+      : stepSince;
+
+  if (daysSince(sinds) > 7) {
     return "VERTRAAGD";
   }
 
@@ -1109,13 +1134,14 @@ function mapExecutionStatus(
 
 function mapDefinitionStatus(
   status: string,
-  stepSince: string
+  stepSince: string,
+  geplandOp?: string | null
 ): TaskDefinitionExecutionStatus {
   if (status === "archief") {
     return "VOLTOOID";
   }
 
-  return mapExecutionStatus(status, stepSince);
+  return mapExecutionStatus(status, stepSince, geplandOp);
 }
 
 function mapStepId(status: string): DashboardWorkflowStepId {

@@ -1,19 +1,14 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import {
-  ArrowLeft,
-  CalendarClock,
-  Check,
-  FilePlus2,
-  Plug,
-  Save,
-} from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { CalendarClock, Check, ClipboardList, Plug } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import ContentPanel, {
   ContentPanelBody,
-  ContentPanelHeader,
   ContentPanelSection,
 } from "../components/ContentPanel";
+import FormulierActiePanel from "../components/FormulierActiePanel";
+import PageHeaderBar from "../components/PageHeaderBar";
+import { AppShellPortal } from "../layouts/AppShellPortalContext";
 import {
   createTaskDefinition,
   getMedewerkers,
@@ -69,6 +64,7 @@ export default function TaskDefinitionCreatePage() {
   const loading = Boolean(accessToken) && geladenVoorToken !== accessToken;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const formulier = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     if (!accessToken) {
@@ -176,172 +172,154 @@ export default function TaskDefinitionCreatePage() {
   };
 
   return (
-    <ContentPanel>
-      <ContentPanelBody>
-        <ContentPanelHeader
-          eyebrow="Taakdefinitie"
-          title="Nieuwe taakdefinitie"
-          subtitle="Leg de terugkerende vernietigingstaak vast met verantwoordelijken en gekoppelde stekkers."
-          aside={
-            <button
-              type="button"
-              onClick={() => navigate(-1)}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-            >
-              <ArrowLeft size={16} />
-              Terug
-            </button>
+    <>
+      <AppShellPortal slot="action">
+        <FormulierActiePanel
+          opslaanOmschrijving={
+            loading
+              ? "Stamgegevens laden..."
+              : "Bij een terugkerende taak staat na opslaan de eerste uitvoering gepland klaar."
           }
+          kanOpslaan={canSave}
+          bezig={saving}
+          fout={error}
+          onOpslaan={() => formulier.current?.requestSubmit()}
+          onTerug={() => navigate(-1)}
         />
+      </AppShellPortal>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          {error ? (
-            <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-              {error}
-            </div>
-          ) : null}
+      <ContentPanel>
+        <PageHeaderBar title="Taken - nieuw" icon={<ClipboardList size={24} strokeWidth={1.8} />} />
+        <ContentPanelBody>
+          <form ref={formulier} onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <ContentPanelSection
+              title="Basis"
+              description="Deze gegevens worden getoond in het overzicht, de uitvoering en later in de verklaring."
+            >
+              <div className="grid gap-4 lg:grid-cols-2">
+                <TextField
+                  label="Naam"
+                  value={naam}
+                  onChange={setNaam}
+                  placeholder="Bijvoorbeeld Sociaal domein 2027"
+                  required
+                />
+                <TextField
+                  label="Categorie"
+                  value={categorie}
+                  onChange={setCategorie}
+                  placeholder="Bijvoorbeeld Sociaal domein"
+                  required
+                />
+                <SelectField
+                  label="Frequentie"
+                  value={frequentie}
+                  onChange={(value) => setFrequentie(value as Frequency)}
+                  options={frequencyOptions}
+                />
+                <SelectField
+                  label="Startmaand"
+                  value={startmaand}
+                  onChange={setStartmaand}
+                  disabled={frequentie === "ad_hoc"}
+                  options={monthOptions.map((label, index) => ({
+                    value: String(index + 1),
+                    label,
+                  }))}
+                />
+                <div className="lg:col-span-2">
+                  <TextAreaField
+                    label="Omschrijving"
+                    value={omschrijving}
+                    onChange={setOmschrijving}
+                    placeholder="Korte context voor deze taakdefinitie"
+                  />
+                </div>
+              </div>
+            </ContentPanelSection>
 
-          <ContentPanelSection
-            title="Basis"
-            description="Deze gegevens worden getoond in het overzicht, de uitvoering en later in de verklaring."
-          >
-            <div className="grid gap-4 lg:grid-cols-2">
-              <TextField
-                label="Naam"
-                value={naam}
-                onChange={setNaam}
-                placeholder="Bijvoorbeeld Sociaal domein 2027"
-                required
-              />
-              <TextField
-                label="Categorie"
-                value={categorie}
-                onChange={setCategorie}
-                placeholder="Bijvoorbeeld Sociaal domein"
-                required
-              />
-              <SelectField
-                label="Frequentie"
-                value={frequentie}
-                onChange={(value) => setFrequentie(value as Frequency)}
-                options={frequencyOptions}
-              />
-              <SelectField
-                label="Startmaand"
-                value={startmaand}
-                onChange={setStartmaand}
-                disabled={frequentie === "ad_hoc"}
-                options={monthOptions.map((label, index) => ({
-                  value: String(index + 1),
-                  label,
-                }))}
-              />
-              <div className="lg:col-span-2">
-                <TextAreaField
-                  label="Omschrijving"
-                  value={omschrijving}
-                  onChange={setOmschrijving}
-                  placeholder="Korte context voor deze taakdefinitie"
+            <ContentPanelSection
+              title="Verantwoordelijken"
+              description="De API bewaakt de functiescheiding bij opslaan."
+            >
+              <div className="grid gap-4 lg:grid-cols-3">
+                <PersonField
+                  label="Recordmanager"
+                  value={recordmanagerId}
+                  onChange={setRecordmanagerId}
+                  medewerkers={recordmanagers}
+                  disabled={Boolean(user.medewerkerId)}
+                  fallbackLabel={currentRecordmanager?.naam ?? user.name}
+                />
+                <PersonField
+                  label="Proceseigenaar"
+                  value={proceseigenaarId}
+                  onChange={setProceseigenaarId}
+                  medewerkers={proceseigenaren}
+                />
+                <PersonField
+                  label="Archivaris"
+                  value={archivarisId}
+                  onChange={setArchivarisId}
+                  medewerkers={archivarissen}
                 />
               </div>
-            </div>
-          </ContentPanelSection>
+            </ContentPanelSection>
 
-          <ContentPanelSection
-            title="Verantwoordelijken"
-            description="De API bewaakt de functiescheiding bij opslaan."
-          >
-            <div className="grid gap-4 lg:grid-cols-3">
-              <PersonField
-                label="Recordmanager"
-                value={recordmanagerId}
-                onChange={setRecordmanagerId}
-                medewerkers={recordmanagers}
-                disabled={Boolean(user.medewerkerId)}
-                fallbackLabel={currentRecordmanager?.naam ?? user.name}
-              />
-              <PersonField
-                label="Proceseigenaar"
-                value={proceseigenaarId}
-                onChange={setProceseigenaarId}
-                medewerkers={proceseigenaren}
-              />
-              <PersonField
-                label="Archivaris"
-                value={archivarisId}
-                onChange={setArchivarisId}
-                medewerkers={archivarissen}
-              />
-            </div>
-          </ContentPanelSection>
+            <ContentPanelSection
+              title="Stekkers"
+              description="Kies de bronnen waaruit deze taak later selectievoorstellen ophaalt."
+            >
+              <div className="grid gap-3 lg:grid-cols-2">
+                {stekkers.map((stekker) => {
+                  const selected = selectedStekkerIds.includes(stekker.id);
 
-          <ContentPanelSection
-            title="Stekkers"
-            description="Kies de bronnen waaruit deze taak later selectievoorstellen ophaalt."
-          >
-            <div className="grid gap-3 lg:grid-cols-2">
-              {stekkers.map((stekker) => {
-                const selected = selectedStekkerIds.includes(stekker.id);
-
-                return (
-                  <button
-                    key={stekker.id}
-                    type="button"
-                    onClick={() => handleToggleStekker(stekker.id)}
-                    className={`flex min-h-28 items-start gap-3 rounded-md border px-4 py-3 text-left transition ${
-                      selected
-                        ? "border-blue-500 bg-blue-50 text-blue-950"
-                        : "border-slate-200 bg-white text-slate-800 hover:border-slate-300 hover:bg-slate-50"
-                    }`}
-                  >
-                    <span
-                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-sm ${
-                        selected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"
+                  return (
+                    <button
+                      key={stekker.id}
+                      type="button"
+                      onClick={() => handleToggleStekker(stekker.id)}
+                      className={`flex min-h-28 items-start gap-3 rounded-md border px-4 py-3 text-left transition ${
+                        selected
+                          ? "border-blue-500 bg-blue-50 text-blue-950"
+                          : "border-slate-200 bg-white text-slate-800 hover:border-slate-300 hover:bg-slate-50"
                       }`}
                     >
-                      {selected ? <Check size={18} /> : <Plug size={18} />}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-sm font-semibold">{stekker.naam}</span>
-                      <span className="mt-1 block text-sm leading-5 text-slate-500">
-                        {stekker.omschrijving ?? "Geen omschrijving"}
+                      <span
+                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-sm ${
+                          selected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"
+                        }`}
+                      >
+                        {selected ? <Check size={18} /> : <Plug size={18} />}
                       </span>
-                      {stekker.laatsteConfiguratie ? (
-                        <span className="mt-2 inline-flex items-center gap-1 rounded-sm bg-white px-2 py-1 text-xs font-medium text-slate-500">
-                          <CalendarClock size={13} />
-                          Configuratie v{stekker.laatsteConfiguratie.versie}
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold">{stekker.naam}</span>
+                        <span className="mt-1 block text-sm leading-5 text-slate-500">
+                          {stekker.omschrijving ?? "Geen omschrijving"}
                         </span>
-                      ) : null}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {!loading && stekkers.length === 0 ? (
-              <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                Er zijn nog geen actieve stekkers beschikbaar.
+                        {stekker.laatsteConfiguratie ? (
+                          <span className="mt-2 inline-flex items-center gap-1 rounded-sm bg-white px-2 py-1 text-xs font-medium text-slate-500">
+                            <CalendarClock size={13} />
+                            Configuratie v{stekker.laatsteConfiguratie.versie}
+                          </span>
+                        ) : null}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-            ) : null}
-          </ContentPanelSection>
 
-          <div className="sticky bottom-0 z-10 flex flex-col gap-2 rounded-md border border-slate-200 bg-white/95 px-4 py-3 shadow-lg shadow-slate-200/60 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2 text-sm text-slate-500">
-              <FilePlus2 size={16} />
-              {loading ? "Stamgegevens laden..." : "Taakdefinitie klaar om op te slaan"}
-            </div>
-            <button
-              type="submit"
-              disabled={!canSave}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
-            >
-              <Save size={16} />
-              {saving ? "Opslaan..." : "Taakdefinitie opslaan"}
-            </button>
-          </div>
-        </form>
-      </ContentPanelBody>
-    </ContentPanel>
+              {!loading && stekkers.length === 0 ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  Er zijn nog geen actieve stekkers beschikbaar.
+                </div>
+              ) : null}
+            </ContentPanelSection>
+
+          </form>
+        </ContentPanelBody>
+      </ContentPanel>
+    </>
   );
 }
 

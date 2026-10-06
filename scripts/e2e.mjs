@@ -14,7 +14,10 @@ const compose = ['compose', '-f', path.join(root, 'infrastructure', 'compose', '
 // bestand niet, dan worden willekeurige waarden gemaakt; een bestaand bestand blijft staan.
 // Compose leest het zelf; de tests krijgen de waarden via de omgeving.
 const geheimenBestand = path.join(root, 'infrastructure', 'compose', '.env');
-const GEHEIMEN = ['E2E_DB_WACHTWOORD', 'E2E_DB_APP_WACHTWOORD', 'E2E_STEKKER_GEHEIM'];
+const GEHEIMEN = ['E2E_DB_WACHTWOORD', 'E2E_DB_APP_WACHTWOORD', 'E2E_STEKKER_GEHEIM', 'E2E_SECRET_SLEUTEL'];
+// De sleutel voor stekker-secrets is 32 bytes base64; de rest URL-veilig.
+const nieuweWaarde = (sleutel) =>
+  sleutel === 'E2E_SECRET_SLEUTEL' ? randomBytes(32).toString('base64') : randomBytes(24).toString('base64url');
 
 function leesGeheimen() {
   const waarden = {};
@@ -33,7 +36,7 @@ let geheimen = leesGeheimen();
 const ontbrekend = GEHEIMEN.filter((sleutel) => !geheimen[sleutel]);
 
 if (ontbrekend.length > 0) {
-  const aanvulling = ontbrekend.map((sleutel) => `${sleutel}=${randomBytes(24).toString('base64url')}`).join('\n');
+  const aanvulling = ontbrekend.map((sleutel) => `${sleutel}=${nieuweWaarde(sleutel)}`).join('\n');
   const kop = fs.existsSync(geheimenBestand) ? '' : '# Geheimen van de E2E-omgeving; gemaakt door scripts/e2e.mjs. Niet in git.\n';
   fs.appendFileSync(geheimenBestand, `${kop}${aanvulling}\n`, { encoding: 'utf8', mode: 0o600 });
   console.log(`E2E-geheimen aangevuld in ${path.relative(root, geheimenBestand)}: ${ontbrekend.join(', ')}`);

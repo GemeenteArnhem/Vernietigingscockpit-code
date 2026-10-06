@@ -665,6 +665,43 @@ describe("archivering (CC-18)", () => {
     }
   });
 
+  it("een terugkerende taak krijgt na archiveren de volgende geplande cyclus", async () => {
+    const gotenberg = await nepGotenberg();
+    const archief = await mkdtemp(path.join(tmpdir(), "archief-"));
+    const nu = new Date();
+    const dezeMaand = new Date(Date.UTC(nu.getUTCFullYear(), nu.getUTCMonth(), 1));
+    const definitie = basis.taakdefinitie.id;
+    try {
+      await db.prisma.client.taakdefinitie.update({
+        where: { id: definitie },
+        data: { frequentie: "jaarlijks", startmaand: nu.getUTCMonth() + 1 },
+      });
+      const { taak, w } = await taakMetVerklaring(gotenberg.url, archief);
+      // Deze cyclus was gepland op de 1e van deze maand.
+      await db.prisma.client.taakinstantie.update({ where: { id: taak.id }, data: { geplandOp: dezeMaand } });
+
+      await taken.dossier.archiveren(rm, taak.id, (await leesTaak(taak.id)).versie);
+      await w.verwerkRonde();
+      expect((await leesTaak(taak.id)).status).toBe("archief");
+
+      const volgende = await db.prisma.client.taakinstantie.findFirstOrThrow({
+        where: { taakdefinitieId: definitie, status: "init", geplandOp: { not: null } },
+      });
+      expect(volgende.geplandOp?.toISOString().slice(0, 10)).toBe(
+        new Date(Date.UTC(nu.getUTCFullYear() + 1, nu.getUTCMonth(), 1)).toISOString().slice(0, 10)
+      );
+      expect(volgende.naam).toMatch(new RegExp(`${nu.getUTCFullYear() + 1}$`));
+      expect(await db.prisma.client.auditEvent.findFirstOrThrow({ where: { taakinstantieId: volgende.id } })).toMatchObject({
+        actie: "TASK_CREATED",
+        actorType: "system",
+      });
+    } finally {
+      await db.prisma.client.taakdefinitie.update({ where: { id: definitie }, data: { frequentie: "ad_hoc", startmaand: null } });
+      await gotenberg.stop();
+      await rm_(archief, { recursive: true, force: true });
+    }
+  });
+
   it("alleen de recordmanager van de taak mag archiveren", async () => {
     const gotenberg = await nepGotenberg();
     const archief = await mkdtemp(path.join(tmpdir(), "archief-"));

@@ -11,6 +11,19 @@ export type AppRole =
   | "functioneel_beheerder"
   | "auditor";
 
+// Rollen die Taken (taakdefinities) en Archief zien; proceseigenaar en archivaris werken
+// alleen vanuit het dashboard aan hun accorderingen.
+export const TAKEN_ROLLEN: AppRole[] = ["recordmanager", "auditor", "functioneel_beheerder"];
+
+// Rollen met een werkvoorraad op het dashboard. Een gebruiker met alleen de rol functioneel
+// beheerder heeft geen dashboard en begint bij Taken.
+export const DASHBOARD_ROLLEN: AppRole[] = ["recordmanager", "proceseigenaar", "archivaris", "auditor"];
+export const TAKEN_STARTPAGINA = "/taak/1";
+
+export function heeftDashboard(roles: AppRole[]) {
+  return DASHBOARD_ROLLEN.some((rol) => roles.includes(rol));
+}
+
 export type SessionUser = {
   id: string;
   name: string;

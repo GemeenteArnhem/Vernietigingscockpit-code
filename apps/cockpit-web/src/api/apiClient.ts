@@ -11,11 +11,15 @@ export const TAAK_GEWIJZIGD_MELDING = "De taak is intussen gewijzigd door iemand
 
 export class ApiFout extends Error {
   readonly status: number;
+  // De melding van de server zelf (met veldfouten bij 400), ook als `message` een
+  // standaardtekst is (409/412 op de taakschermen).
+  readonly serverMelding: string | null;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, serverMelding: string | null = null) {
     super(message);
     this.name = "ApiFout";
     this.status = status;
+    this.serverMelding = serverMelding;
   }
 }
 
@@ -55,25 +59,40 @@ async function verstuur(path: string, options: ApiRequestOptions) {
 }
 
 async function foutVan(path: string, response: Response) {
-  if (response.status === 409 || response.status === 412) {
-    return new ApiFout(TAAK_GEWIJZIGD_MELDING, response.status);
-  }
-
-  let message = `API request ${path} failed with ${response.status}`;
+  let serverMelding: string | null = null;
 
   try {
-    const details = (await response.json()) as { message?: unknown };
+    const details = (await response.json()) as { message?: unknown; fouten?: unknown };
 
     if (typeof details.message === "string") {
-      message = details.message;
+      serverMelding = details.message;
     } else if (Array.isArray(details.message)) {
-      message = details.message.join(" ");
+      serverMelding = details.message.join(" ");
+    }
+
+    if (Array.isArray(details.fouten) && details.fouten.length > 0) {
+      const velden = (details.fouten as Array<{ veld?: unknown; melding?: unknown }>)
+        .map((fout) => `${String(fout.veld ?? "")}: ${String(fout.melding ?? "")}`)
+        .join("; ");
+      serverMelding = `${serverMelding ?? "Ongeldige invoer."} (${velden})`;
     }
   } catch {
     // Keep the generic response status when the API does not return JSON.
   }
 
-  return new ApiFout(message, response.status);
+  if (response.status === 409 || response.status === 412) {
+    return new ApiFout(TAAK_GEWIJZIGD_MELDING, response.status, serverMelding);
+  }
+
+  return new ApiFout(serverMelding ?? `API request ${path} failed with ${response.status}`, response.status, serverMelding);
+}
+
+// Melding voor schermen buiten de taakworkflow (bijv. stekkerbeheer): de tekst van de server.
+export function serverFoutmelding(fout: unknown, standaard: string) {
+  if (fout instanceof ApiFout) {
+    return fout.serverMelding ?? fout.message;
+  }
+  return fout instanceof Error ? fout.message : standaard;
 }
 
 export async function apiRequest<T>(
@@ -84,6 +103,11 @@ export async function apiRequest<T>(
 
   if (!response.ok) {
     throw await foutVan(path, response);
+  }
+
+  // 204 No Content (bijv. verwijderen): geen body.
+  if (response.status === 204) {
+    return undefined as T;
   }
 
   return (await response.json()) as T;

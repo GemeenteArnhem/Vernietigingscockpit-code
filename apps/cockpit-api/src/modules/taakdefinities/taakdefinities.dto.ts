@@ -33,6 +33,7 @@ type TaakinstantieRecord = {
   stapSinds: Date;
   ronde: number;
   peildatum: Date | null;
+  geplandOp: Date | null;
   gestartOp: Date | null;
   afgerondOp: Date | null;
   versie: number;
@@ -99,6 +100,8 @@ export const taakdefinitieSelect = {
     },
   },
   instanties: {
+    // Logisch verwijderde uitvoeringen niet tonen.
+    where: { verwijderdOp: null },
     select: {
       id: true,
       naam: true,
@@ -106,6 +109,7 @@ export const taakdefinitieSelect = {
       stapSinds: true,
       ronde: true,
       peildatum: true,
+      geplandOp: true,
       gestartOp: true,
       afgerondOp: true,
       versie: true,

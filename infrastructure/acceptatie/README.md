@@ -38,6 +38,10 @@ Opnieuw beginnen met een lege database, lege Keycloak, leeg archief en lege stek
 docker compose -f infrastructure/acceptatie/docker-compose.yml down -v
 ```
 
+Na een update (`git pull`) het script opnieuw draaien: het voegt ontbrekende geheimen toe,
+zoals `ACC_SECRET_SLEUTEL` (sleutel voor stekker-secrets uit stekkerbeheer), en laat
+bestaande waarden staan.
+
 Andere wachtwoorden:
 - **Testgebruikers:** pas `ACC_GEBRUIKERS_WACHTWOORD` in `.env` aan en start opnieuw (`up -d`). `keycloak-init` zet het wachtwoord bij elke start.
 - **Database, Keycloak-beheer of stekker-secret:** eerst `down -v`, dan `.env` verwijderen, dan het script opnieuw draaien. De database en Keycloak onthouden het wachtwoord van hun eerste start.
@@ -126,6 +130,13 @@ docker compose -f infrastructure/acceptatie/docker-compose.yml -f infrastructure
 git pull
 ```
 
+Vul daarna ontbrekende geheimen aan (een update kan een nieuwe sleutel nodig hebben;
+bestaande waarden blijven staan):
+
+```bash
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/infrastructure/acceptatie:/w" -w /w node:22-alpine node init-geheimen.mjs
+```
+
 ```bash
 docker compose -f infrastructure/acceptatie/docker-compose.yml -f infrastructure/acceptatie/docker-compose.vm.yml up -d --build --wait
 ```
@@ -166,7 +177,7 @@ Alle testgebruikers hebben het wachtwoord uit `ACC_GEBRUIKERS_WACHTWOORD` in `.e
 | `po1` | proceseigenaar | Peter Proceseigenaar |
 | `arch1` | archivaris | Anna Archivaris |
 | `auditor1` | auditor | (alleen lezen) |
-| `beheerder1` | functioneel beheerder | (beheeracties) |
+| `beheerder1` | functioneel beheerder | (stekkerbeheer: menu **Stekkers**) |
 
 Keycloak-beheer (realm `master`): gebruiker `admin`, wachtwoord `ACC_KEYCLOAK_ADMIN_WACHTWOORD`
 uit `.env`.
@@ -178,13 +189,14 @@ Wissel van gebruiker via **Uitloggen** in de cockpit. Of gebruik een privévenst
 
 ## Wat er klaarstaat
 
-- Taakdefinitie **Sociaal domein 2026** met de teststekker, en één taakuitvoering in `init`.
+- Taakdefinitie **Sociaal domein 2026** met de teststekker. Een taakuitvoering maak je zelf
+  aan (`rm1`, actie **Nieuwe uitvoering aanmaken**); het auditlog begint dan met `TASK_CREATED`.
 - De teststekker (dataset *sociaal-domein-zaken*). Selectie en vernietiging duren elk een
   paar seconden, zodat je de tussenstanden ziet.
 
 Een volledige ronde:
 
-1. `rm1`: selectie ophalen, kandidaten beoordelen, voorleggen.
+1. `rm1`: nieuwe taakuitvoering aanmaken, selectie ophalen, kandidaten beoordelen, voorleggen.
 2. `po1`: accorderen.
 3. `arch1`: accorderen (vrijgeven).
 4. `rm1`: vernietigingsopdracht geven; na de uitvoering verschijnt de verklaring

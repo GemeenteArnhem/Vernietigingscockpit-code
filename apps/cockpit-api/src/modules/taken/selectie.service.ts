@@ -6,6 +6,7 @@ import { PrismaService } from "../../shared/db/prisma.service.js";
 import { schrijfAuditEvent } from "../audit/audit-keten.js";
 import { mapTaakSelectie, taakSelectieSelect } from "./selectie.dto.js";
 import { ACTIEVE_SELECTIE } from "./actieve-selectie.js";
+import { datumTekst, nogGepland } from "../taakdefinities/planning.js";
 import { TaakToegangService } from "./taak-toegang.service.js";
 import { StartSelectieInput, parseOptionalDate, formatDateOnly } from "./taken-hulp.js";
 import type { ApiSelectieGestart, ApiTaakSelectie } from "@vernietigingscockpit/api-contract";
@@ -49,12 +50,14 @@ export class SelectieService {
       where: {
         id: taakinstantieId,
         recordmanagerId: currentMedewerkerId,
+        verwijderdOp: null,
       },
       select: {
         id: true,
         naam: true,
         status: true,
         peildatum: true,
+        geplandOp: true,
         taakdefinitie: {
           select: {
             stekkers: {
@@ -96,6 +99,13 @@ export class SelectieService {
 
     if (taak.status !== "init") {
       throw new BadRequestException("Selectie kan alleen starten vanuit status init.");
+    }
+
+    // Geplande uitvoering van een terugkerende taak: pas vanaf de startdatum.
+    if (taak.geplandOp && nogGepland(taak.geplandOp, new Date())) {
+      throw new ConflictException(
+        `Deze taakuitvoering is gepland vanaf ${datumTekst(taak.geplandOp)}; de selectie kan vanaf die datum starten.`
+      );
     }
 
     const stekkers = taak.taakdefinitie.stekkers.filter(

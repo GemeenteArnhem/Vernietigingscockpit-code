@@ -182,6 +182,7 @@ services:
       # De tests doen veel verzoeken als dezelfde gebruiker; de anonieme limiet (60/min per IP)
       # blijft standaard, zodat de test hem kan controleren.
       RATE_LIMIT_GEBRUIKER_PER_MINUUT: "100000"
+      SECRET_ENCRYPTION_KEY: ${E2E_SECRET_SLEUTEL:?maak .env met npm run test:e2e}
     ports:
       - "39700:3000"
     depends_on:
@@ -230,6 +231,7 @@ services:
       WORKER_POLL_MAX_MS: "1000"
       # Waarde bij secret_ref 'STEKKER_SECRET' in de stekkerconfiguratie (zie test/e2e).
       STEKKER_SECRET: ${E2E_STEKKER_GEHEIM:?maak .env met npm run test:e2e}
+      SECRET_ENCRYPTION_KEY: ${E2E_SECRET_SLEUTEL:?maak .env met npm run test:e2e}
       GOTENBERG_URL: http://gotenberg:3000
       ARCHIEF_PAD: /archief
     volumes:
@@ -252,6 +254,7 @@ services:
       WORKER_POLL_START_MS: "300"
       WORKER_POLL_MAX_MS: "1000"
       STEKKER_SECRET: ${E2E_STEKKER_GEHEIM:?maak .env met npm run test:e2e}
+      SECRET_ENCRYPTION_KEY: ${E2E_SECRET_SLEUTEL:?maak .env met npm run test:e2e}
       GOTENBERG_URL: http://gotenberg:3000
       ARCHIEF_PAD: /archief
 
