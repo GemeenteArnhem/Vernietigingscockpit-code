@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import type { AuthUser } from "../auth/auth-user.js";
 import type { AppRole } from "../auth/app-role.js";
 import { isAppRole } from "../auth/app-role.js";
@@ -22,6 +22,7 @@ type MedewerkerImportInput = {
   actief?: boolean;
   bron?: string;
   externId?: string | null;
+  archiefvormer?: { verwijzingNaam: string; verwijzingIdentificatie?: { identificatieKenmerk: string; identificatieBron: string } } | null;
 };
 
 export type StamgegevensImportInput = {
@@ -110,6 +111,24 @@ export class StamgegevensService {
         }
       }
 
+      // Een proceseigenaar van een actieve taakdefinitie mag zijn archiefvormer niet kwijtraken
+      // (ADR-0005, B-M3): anders kan er geen dossier meer worden aangemaakt.
+      const zonderArchiefvormer = medewerkers.filter((medewerker) => medewerker.archiefvormer === null).map((m) => m.email);
+      if (zonderArchiefvormer.length > 0) {
+        const inGebruik = await tx.medewerker.findMany({
+          where: {
+            email: { in: zonderArchiefvormer },
+            taakdefinitiesPo: { some: { actief: true, verwijderdOp: null } },
+          },
+          select: { naam: true },
+        });
+        if (inGebruik.length > 0) {
+          throw new BadRequestException(
+            `De archiefvormer kan niet worden gewist voor proceseigenaar(s) van een actieve taakdefinitie: ${inGebruik.map((m) => m.naam).join(", ")}.`
+          );
+        }
+      }
+
       for (const medewerker of medewerkers) {
         const afdelingId = medewerker.afdelingCode
           ? afdelingIdsByCode.get(medewerker.afdelingCode)
@@ -130,6 +149,8 @@ export class StamgegevensService {
             actief: medewerker.actief,
             bron: medewerker.bron,
             externId: medewerker.externId,
+            // Weglaten laat de bestaande waarde staan; null wist hem.
+            ...(medewerker.archiefvormer !== undefined ? { archiefvormer: medewerker.archiefvormer ?? Prisma.DbNull } : {}),
           },
           create: {
             naam: medewerker.naam,
@@ -139,12 +160,13 @@ export class StamgegevensService {
             actief: medewerker.actief,
             bron: medewerker.bron,
             externId: medewerker.externId,
+            ...(medewerker.archiefvormer ? { archiefvormer: medewerker.archiefvormer } : {}),
           },
         });
       }
 
       await schrijfConfiguratieEvent(tx, { type: "user", user, rol: "functioneel_beheerder" }, {
-        actie: "MASTER_DATA_IMPORTED",
+        eventType: "Stamgegevens geïmporteerd",
         entiteitType: "stamgegevens",
         entiteitId: "stamgegevens",
         details: {
@@ -184,6 +206,7 @@ function validateMedewerker(input: MedewerkerImportInput) {
     actief: input.actief ?? true,
     bron: input.bron?.trim() || "import",
     externId: input.externId?.trim() || null,
+    archiefvormer: input.archiefvormer,
   };
 }
 

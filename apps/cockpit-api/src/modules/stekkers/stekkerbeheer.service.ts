@@ -71,7 +71,7 @@ export class StekkerbeheerService {
       await schrijfConfiguratieEvent(tx, actor(user), {
         entiteitType: "stekker",
         entiteitId: stekker.id,
-        actie: "CONNECTOR_CREATED",
+        eventType: "Stekker aangemaakt",
         details: { naam: invoer.naam, ...logbareConfiguratie(invoer, secretVersleuteld !== null), versie: 1 },
       });
       return stekker.id;
@@ -108,7 +108,7 @@ export class StekkerbeheerService {
       await schrijfConfiguratieEvent(tx, actor(user), {
         entiteitType: "stekker",
         entiteitId: id,
-        actie: "CONNECTOR_UPDATED",
+        eventType: "Stekker gewijzigd",
         details: {
           naam: invoer.naam,
           ...logbareConfiguratie(invoer, secretVersleuteld !== null),
@@ -134,7 +134,7 @@ export class StekkerbeheerService {
       await schrijfConfiguratieEvent(tx, actor(user), {
         entiteitType: "stekker",
         entiteitId: id,
-        actie: actief ? "CONNECTOR_ACTIVATED" : "CONNECTOR_DEACTIVATED",
+        eventType: actief ? "Stekker geactiveerd" : "Stekker gedeactiveerd",
         details: {},
       });
     });
@@ -163,7 +163,7 @@ export class StekkerbeheerService {
         await schrijfConfiguratieEvent(tx, actor(user), {
           entiteitType: "stekker",
           entiteitId: id,
-          actie: "CONNECTOR_DELETED",
+          eventType: "Stekker verwijderd",
           details: { naam: stekker.naam },
         });
       });

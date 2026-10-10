@@ -5,10 +5,10 @@ import type { VernietigingsKandidaat } from "../../../../shared/types/destructio
 import type { ColumnKey } from "../../../../shared/types/reviewColumns";
 
 type SortKey =
-  | "titel"
+  | "naam"
   | "omvang"
-  | "bewaartermijn"
-  | "vernietigingsdatum";
+  | "termijnLooptijd"
+  | "termijnEinddatum";
 
 type SortDir = "asc" | "desc" | null;
 
@@ -116,7 +116,7 @@ export default function ReviewResultTable({
   searchQuery,
 }: Props) {
   const col = (key: ColumnKey) => visibleColumns[key];
-  const [sortKey, setSortKey] = useState<SortKey>("vernietigingsdatum");
+  const [sortKey, setSortKey] = useState<SortKey>("termijnEinddatum");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -229,11 +229,11 @@ export default function ReviewResultTable({
               </th>
 
               <th
-                onClick={() => toggleSort("titel")}
+                onClick={() => toggleSort("naam")}
                 className="w-[22%] min-w-[260px] cursor-pointer p-3 text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-900"
               >
                 Titel
-                {sortIcon(sortKey === "titel", sortDir)}
+                {sortIcon(sortKey === "naam", sortDir)}
               </th>
 
               {col("omvang") && (
@@ -246,19 +246,19 @@ export default function ReviewResultTable({
                 </th>
               )}
 
-              {col("bewaartermijn") && (
+              {col("termijnLooptijd") && (
                 <th className="w-[10%] min-w-[130px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
                   Bewaartermijn
                 </th>
               )}
 
-              {col("vernietigingsdatum") && (
+              {col("termijnEinddatum") && (
                 <th
-                  onClick={() => toggleSort("vernietigingsdatum")}
+                  onClick={() => toggleSort("termijnEinddatum")}
                   className="w-[12%] min-w-[150px] cursor-pointer p-3 text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-900"
                 >
                   Vernietigingsdatum
-                  {sortIcon(sortKey === "vernietigingsdatum", sortDir)}
+                  {sortIcon(sortKey === "termijnEinddatum", sortDir)}
                 </th>
               )}
 
@@ -280,19 +280,19 @@ export default function ReviewResultTable({
                 </th>
               )}
 
-              {col("bron_id") && (
+              {col("identificatie") && (
                 <th className="w-[12%] min-w-[160px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
                   Bron-ID
                 </th>
               )}
 
-              {col("code") && (
+              {col("classificatie") && (
                 <th className="w-[8%] min-w-[100px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
                   Code
                 </th>
               )}
 
-              {col("periode") && (
+              {col("dekkingInTijd") && (
                 <th className="w-[16%] min-w-[170px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
                   Periode
                 </th>
@@ -304,13 +304,13 @@ export default function ReviewResultTable({
                 </th>
               )}
 
-              {col("grondslag") && (
+              {col("informatiecategorie") && (
                 <th className="w-[14%] min-w-[180px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
                   Grondslag
                 </th>
               )}
 
-              {col("bron_systeem") && (
+              {col("stekker") && (
                 <th className="w-[10%] min-w-[150px] p-3 text-xs font-medium uppercase tracking-wide text-gray-500">
                   Bronsysteem
                 </th>
@@ -349,13 +349,13 @@ export default function ReviewResultTable({
                     />
                   </td>
 
-                  <td className="truncate p-3 font-medium" title={row.titel}>
-                    {row.titel}
+                  <td className="truncate p-3 font-medium" title={row.naam}>
+                    {row.naam}
                   </td>
 
                   {col("omvang") && <td className="p-3">{row.omvang}</td>}
-                  {col("bewaartermijn") && <td className="p-3">{row.bewaartermijn} jaar</td>}
-                  {col("vernietigingsdatum") && <td className="p-3">{row.vernietigingsdatum}</td>}
+                  {col("termijnLooptijd") && <td className="p-3">{row.termijnLooptijd}</td>}
+                  {col("termijnEinddatum") && <td className="p-3">{row.termijnEinddatum}</td>}
 
                   {col("status") && (
                     <td className="p-3">
@@ -402,20 +402,20 @@ export default function ReviewResultTable({
                     </td>
                   )}
 
-                  {col("bron_id") && (
-                    <td className="truncate p-3 text-gray-500" title={row.bron_id}>
-                      {formatCellValue(row.bron_id)}
+                  {col("identificatie") && (
+                    <td className="truncate p-3 text-gray-500" title={row.identificatie}>
+                      {formatCellValue(row.identificatie)}
                     </td>
                   )}
 
-                  {col("code") && (
-                    <td className="p-3 text-gray-500">{formatCellValue(row.code)}</td>
+                  {col("classificatie") && (
+                    <td className="p-3 text-gray-500">{formatCellValue(row.classificatie)}</td>
                   )}
 
-                  {col("periode") && (
+                  {col("dekkingInTijd") && (
                     <td className="p-3 text-gray-500">
-                      {row.startdatum && row.einddatum
-                        ? `${row.startdatum} - ${row.einddatum}`
+                      {row.dekkingInTijdBegindatum && row.dekkingInTijdEinddatum
+                        ? `${row.dekkingInTijdBegindatum} - ${row.dekkingInTijdEinddatum}`
                         : "—"}
                     </td>
                   )}
@@ -424,14 +424,14 @@ export default function ReviewResultTable({
                     <td className="p-3 text-gray-500">{formatCellValue(row.selectielijst)}</td>
                   )}
 
-                  {col("grondslag") && (
-                    <td className="truncate p-3 text-gray-500" title={row.grondslag}>
-                      {formatCellValue(row.grondslag)}
+                  {col("informatiecategorie") && (
+                    <td className="truncate p-3 text-gray-500" title={row.informatiecategorie}>
+                      {formatCellValue(row.informatiecategorie)}
                     </td>
                   )}
 
-                  {col("bron_systeem") && (
-                    <td className="p-3 text-gray-500">{formatCellValue(row.bron_systeem)}</td>
+                  {col("stekker") && (
+                    <td className="p-3 text-gray-500">{formatCellValue(row.stekker)}</td>
                   )}
                 </tr>
               );

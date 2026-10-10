@@ -1,5 +1,6 @@
+import { gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm as rm_, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm as rm_, writeFile } from "node:fs/promises";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -14,6 +15,17 @@ import { WorkflowService } from "../../src/modules/workflow/workflow.service.js"
 import { gebruiker, maakBasisdata } from "./helpers/basisdata.js";
 import { startDatabase, type TestDatabase } from "./helpers/database.js";
 import { maakTaakServices, type TaakServices } from "./helpers/taken.js";
+import { mdtoKandidaat, specificatieXml, vernietigingsEvent } from "./helpers/kandidaat.js";
+import { valideerMdto } from "../../src/modules/archief/mdto-xsd.testhulp.js";
+import pg from "pg";
+import { BestandArchiefAdapter } from "../../src/modules/archief/archief-adapter.js";
+import { verifieerTaakKeten } from "../../src/modules/audit/audit.service.js";
+import { CurrentMedewerkerService } from "../../src/modules/auth/current-medewerker.service.js";
+import { zetBewaartermijn } from "../../src/modules/werkkopie/bewaartermijn.js";
+import { WerkkopieOpschoning } from "../../src/modules/werkkopie/opschoning.js";
+import { WerkkopieService } from "../../src/modules/werkkopie/werkkopie.service.js";
+import { PrismaService } from "../../src/shared/db/prisma.service.js";
+import type { IdentificatieGegevens } from "@vernietigingscockpit/stekker-client";
 
 let db: TestDatabase;
 let basis: Awaited<ReturnType<typeof maakBasisdata>>;
@@ -48,19 +60,19 @@ afterAll(async () => {
 // `onderbreek` draait NA de verwerking: een fout betekent "verwerkt, maar antwoord kwijt",
 // "hang" betekent "worker gecrasht tijdens de aanroep" (de aanroep komt nooit terug).
 
-type Stap = "start" | "batch" | "vrijgeven" | "status" | "resultaten";
+type Stap = "start" | "batch" | "vrijgeven" | "status" | "resultaten" | "specificatie";
 type Onderbreking = Error | "hang" | undefined;
 
 function nepStekker(opties: {
   onderbreek?: (stap: Stap, details: { batchNummer?: number; aanroep: number }) => Onderbreking;
-  resultaten?: (objecten: Array<{ vernietigingskandidaatId: string; bronId: string; batchNummer: number }>) => StekkerUitvoeringsresultaat[];
+  resultaten?: (objecten: Array<{ vernietigingskandidaatId: string; identificatie: IdentificatieGegevens[]; batchNummer: number }>) => StekkerUitvoeringsresultaat[];
   eindstatus?: "COMPLETED" | "PARTIAL" | "FAILED";
   // Elke aanroep duurt zo lang (een trage stekker).
   vertragingMs?: number;
 } = {}) {
   const perSleutel = new Map<string, unknown>();
-  const vernietigingen = new Map<string, { batches: Map<number, Array<{ vernietigingskandidaatId: string; bronId: string }>>; vrijgegeven: boolean }>();
-  const aanroepen: Record<Stap, number> = { start: 0, batch: 0, vrijgeven: 0, status: 0, resultaten: 0 };
+  const vernietigingen = new Map<string, { batches: Map<number, Array<{ vernietigingskandidaatId: string; identificatie: IdentificatieGegevens[] }>>; vrijgegeven: boolean }>();
+  const aanroepen: Record<Stap, number> = { start: 0, batch: 0, vrijgeven: 0, status: 0, resultaten: 0, specificatie: 0 };
   let bereikt: () => void = () => undefined;
   const hangBereikt = new Promise<void>((resolve) => (bereikt = resolve));
 
@@ -96,15 +108,23 @@ function nepStekker(opties: {
       });
       return na("start", antwoord);
     },
-    voegBatchToe: async (_v: unknown, id: string, body: { batchNummer: number; objecten: Array<{ vernietigingskandidaatId: string; bronId: string }> }, sleutel: string) => {
+    voegBatchToe: async (_v: unknown, id: string, body: { batchNummer: number; vernietigingskandidaten: Array<{ vernietigingskandidaatId: string; identificatie: IdentificatieGegevens[] }> }, sleutel: string) => {
       aanroepen.batch += 1;
-      idempotent(sleutel, () => vernietigingen.get(id)!.batches.set(body.batchNummer, body.objecten));
+      idempotent(sleutel, () => vernietigingen.get(id)!.batches.set(body.batchNummer, body.vernietigingskandidaten));
       return na("batch", { batchNummer: body.batchNummer, resultaten: [] }, body.batchNummer);
     },
     geefVrij: async (_v: unknown, id: string) => {
       aanroepen.vrijgeven += 1;
       vernietigingen.get(id)!.vrijgegeven = true;
-      return na("vrijgeven", { vernietigingId: id, selectieId: "x", status: "RUNNING" });
+      return na("vrijgeven", {
+        vernietigingId: id,
+        selectieId: "x",
+        cockpitTaakId: "t",
+        besluitReferentie: "b",
+        status: "RUNNING",
+        vernietigingsmethode: { begripLabel: "Fysiek verwijderd", begripBegrippenlijst: { verwijzingNaam: "Cockpit-vernietigingsmethoden" } },
+        vernietigingsmethodeToelichting: "Geen back-ups.",
+      });
     },
     getVernietiging: async (_v: unknown, id: string) => {
       aanroepen.status += 1;
@@ -116,8 +136,13 @@ function nepStekker(opties: {
       const batches = [...vernietigingen.get(id)!.batches.entries()].sort(([a], [b]) => a - b);
       const objecten = batches.flatMap(([batchNummer, items]) => items.map((item) => ({ ...item, batchNummer })));
       const resultaten =
-        opties.resultaten?.(objecten) ?? objecten.map((object) => ({ ...object, resultaat: "SUCCESS" as const }));
+        opties.resultaten?.(objecten) ??
+        objecten.map((object) => ({ ...object, resultaat: "SUCCESS" as const, event: vernietigingsEvent() }));
       return na("resultaten", batches.map(([batchNummer]) => ({ batchNummer, resultaten: resultaten.filter((r) => r.batchNummer === batchNummer) })));
+    },
+    getSpecificatie: async (_v: unknown, _id: string, kandidaatId: string) => {
+      aanroepen.specificatie += 1;
+      return na("specificatie", specificatieXml(kandidaatId));
     },
   };
 
@@ -150,6 +175,8 @@ async function maakOpdracht(aantal = 25) {
       recordmanagerId: basis.rm.id,
       proceseigenaarId: basis.po.id,
       archivarisId: basis.arch.id,
+      // Vastgepind bij het aanmaken, zoals de applicatie doet (ADR-0005, B-M3).
+      archiefvormer: { verwijzingNaam: "Gemeente Test" },
     },
   });
   await client.selectie.create({
@@ -161,10 +188,7 @@ async function maakOpdracht(aantal = 25) {
       status: "GEIMPORTEERD",
       kandidaten: {
         create: Array.from({ length: aantal }, (_, i) => ({
-          kandidaatId: `vk-${String(i).padStart(3, "0")}`,
-          bronId: `bron-${i}`,
-          omschrijving: `Zaak ${i}`,
-          bron: {},
+          ...mdtoKandidaat(`vk-${String(i).padStart(3, "0")}`, { kenmerk: `bron-${i}`, naam: `Zaak ${i}` }),
           beoordeling: "AKKOORD",
         })),
       },
@@ -173,7 +197,7 @@ async function maakOpdracht(aantal = 25) {
   await client.$transaction((tx) =>
     schrijfAuditEvent(tx, { type: "user", user: gebruiker("arch1", "archivaris"), rol: "archivaris" }, {
       taakinstantieId: taak.id,
-      actie: "DESTRUCTION_APPROVED_BY_ARCHIVIST",
+      eventType: "Accordering",
       entiteitType: "taakinstantie",
       entiteitId: taak.id,
       details: {},
@@ -216,12 +240,30 @@ async function controleerEindbeeld(taakId: string, vernietigingId: string, stekk
   expect(regels).toHaveLength(aantal);
   expect(regels.every((regel) => regel.resultaat === "SUCCESS")).toBe(true);
 
-  const acties = (await db.prisma.client.auditEvent.findMany({ where: { taakinstantieId: taakId } })).map((e) => e.actie);
-  expect(acties.filter((a) => a === "OBJECT_PROCESSED")).toHaveLength(aantal);
-  expect(acties.filter((a) => a === "BATCH_STARTED")).toHaveLength(3);
-  expect(acties.filter((a) => a === "BATCH_COMPLETED")).toHaveLength(3);
-  expect(acties.filter((a) => a === "EXECUTION_STARTED")).toHaveLength(1);
+  const acties = (await db.prisma.client.auditEvent.findMany({ where: { taakinstantieId: taakId } })).map((e) => e.eventType);
+  expect(acties.filter((a) => a === "Vernietigen")).toHaveLength(aantal);
+  expect(acties.filter((a) => a === "Batch aangeboden")).toHaveLength(3);
+  expect(acties.filter((a) => a === "Batch verwerkt")).toHaveLength(3);
+  expect(acties.filter((a) => a === "Uitvoering gestart")).toHaveLength(1);
   expect((await leesTaak(taakId)).status).toBe("resultaat");
+
+  // Stekker API v2 (ADR-0005): per vernietigde kandidaat het event, het tijdstip en de
+  // MDTO-specificatie (gzip, met de SHA-256 van de XML); per uitvoering de methode.
+  const metKandidaat = await db.prisma.client.uitvoeringsresultaat.findMany({
+    where: { vernietigingId },
+    include: { kandidaat: { select: { kandidaatId: true } } },
+  });
+  for (const regel of metKandidaat) {
+    expect(regel.eventTijd).toBeInstanceOf(Date);
+    expect(regel.event).toMatchObject({ eventType: { begripLabel: "Vernietigen" } });
+    const xml = gunzipSync(Buffer.from(regel.specificatie!)).toString("utf8");
+    expect(xml).toBe(specificatieXml(regel.kandidaat.kandidaatId));
+    expect(regel.specificatieSha256).toBe(createHash("sha256").update(xml, "utf8").digest("hex"));
+  }
+  expect(await leesVernietiging(vernietigingId)).toMatchObject({
+    vernietigingsmethode: { begripLabel: "Fysiek verwijderd" },
+    vernietigingsmethodeToelichting: "Geen back-ups.",
+  });
 }
 
 // ---------------------------------------------------------------------------------------
@@ -316,7 +358,7 @@ describe("integriteitscontrole", () => {
       resultaten: (objecten) =>
         objecten
           .filter((object, index) => !onvolledig || index > 0)
-          .map((object) => ({ ...object, resultaat: "SUCCESS" as const })),
+          .map((object) => ({ ...object, resultaat: "SUCCESS" as const, event: vernietigingsEvent() })),
     });
     const w = worker("a", stekker.client);
 
@@ -329,7 +371,7 @@ describe("integriteitscontrole", () => {
     expect((await leesTaak(taak.id)).status).toBe("uitvoering");
     const uitvoering = await taken.uitvoering.getUitvoering(rm, taak.id);
     expect(uitvoering.stekkers[0]).toMatchObject({ vernietigingStatus: "MISLUKT", toegestaneActies: ["vernietiging.opnieuw"] });
-    const mislukt = await db.prisma.client.auditEvent.findFirstOrThrow({ where: { taakinstantieId: taak.id, actie: "EXECUTION_FAILED" } });
+    const mislukt = await db.prisma.client.auditEvent.findFirstOrThrow({ where: { taakinstantieId: taak.id, eventType: "Uitvoering mislukt" } });
     expect(mislukt.details).toMatchObject({ reden: "INTEGRITY_CHECK_FAILED" });
 
     // Stekker levert nu wel alles; opnieuw proberen vraagt alleen de resultaten opnieuw op.
@@ -348,7 +390,7 @@ describe("integriteitscontrole", () => {
       resultaten: (objecten) => [
         ...objecten.map((object) => ({ ...object, resultaat: "SUCCESS" as const })),
         { ...objecten[0], resultaat: "SUCCESS" as const },
-        { vernietigingskandidaatId: "onbekend", bronId: "x", batchNummer: 1, resultaat: "SUCCESS" as const },
+        { vernietigingskandidaatId: "onbekend", identificatie: [{ identificatieKenmerk: "x", identificatieBron: "y" }], batchNummer: 1, resultaat: "SUCCESS" as const },
       ],
     });
 
@@ -358,6 +400,30 @@ describe("integriteitscontrole", () => {
     expect(na.status).toBe("INTEGRITEIT_MISLUKT");
     expect(na.fout).toMatch(/onbekende kandidaat onbekend/);
     expect(na.fout).toMatch(/meer dan één resultaat/);
+  });
+});
+
+describe("specificaties (Stekker API v2, ADR-0005 B-M2)", () => {
+  it("houdt de uitvoering lopend tot alle specificaties binnen zijn; een haperende stekker wordt opnieuw gevraagd", async () => {
+    const { taak, vernietiging } = await maakOpdracht();
+    let fouten = 0;
+    const stekker = nepStekker({
+      onderbreek: (stap) =>
+        stap === "specificatie" && fouten++ < 3 ? new StekkerFout("time-out", { tijdelijk: true, code: "TIMEOUT" }) : undefined,
+    });
+    const w = worker("a", stekker.client);
+
+    // Eerst mislukt het ophalen: de uitvoering is nog niet afgerond, de taak blijft in uitvoering.
+    await draaiTot([w], async () => fouten >= 1);
+    expect(await leesVernietiging(vernietiging.id)).toMatchObject({ status: "LOPEND" });
+    expect((await leesTaak(taak.id)).status).toBe("uitvoering");
+
+    await draaiTot([w], afgerond(vernietiging.id));
+
+    expect(await leesVernietiging(vernietiging.id)).toMatchObject({ status: "AFGEROND" });
+    await controleerEindbeeld(taak.id, vernietiging.id, stekker);
+    // Elke specificatie is uiteindelijk precies één keer vastgelegd; geen dubbele batch-events.
+    expect(await db.prisma.client.uitvoeringsresultaat.count({ where: { vernietigingId: vernietiging.id, specificatie: null } })).toBe(0);
   });
 });
 
@@ -389,9 +455,9 @@ describe("retrybeleid en opnieuw proberen", () => {
     // De Idempotency-Key is gelijk gebleven: bij de stekker één vernietiging.
     await controleerEindbeeld(taak.id, vernietiging.id, stekker);
     const acties = (await db.prisma.client.auditEvent.findMany({ where: { taakinstantieId: taak.id }, orderBy: { id: "asc" } })).map(
-      (event) => event.actie
+      (event) => event.eventType
     );
-    expect(acties.indexOf("EXECUTION_FAILED")).toBeLessThan(acties.indexOf("EXECUTION_RETRY_REQUESTED"));
+    expect(acties.indexOf("Uitvoering mislukt")).toBeLessThan(acties.indexOf("Uitvoering opnieuw aangevraagd"));
   });
 
   it("geeft het op na het maximum aantal tijdelijke fouten", async () => {
@@ -417,7 +483,7 @@ describe("retrybeleid en opnieuw proberen", () => {
 
     expect(await leesVernietiging(vernietiging.id)).toMatchObject({ status: "AFGEROND", stekkerStatus: "FAILED" });
     const resultaten = await taken.uitvoering.getVernietigingsresultaten(rm, taak.id);
-    expect(new Set(resultaten.resultaten.map((r) => r.vernietigingsstatus))).toEqual(new Set(["FAILED"]));
+    expect(new Set(resultaten.resultaten.map((r) => r.resultaat))).toEqual(new Set(["FAILED"]));
     expect((await leesTaak(taak.id)).status).toBe("resultaat");
   });
 });
@@ -494,7 +560,7 @@ describe("vernietigingsverklaring via de worker (CC-17)", () => {
       expect(gotenberg.verzoeken[0]).toMatch(/name="pdfa"\r\n\r\nPDF\/A-2b/);
       expect(gotenberg.verzoeken[0]).toContain("Vernietigingsverklaring");
 
-      const event = await db.prisma.client.auditEvent.findFirstOrThrow({ where: { taakinstantieId: taak.id, actie: "CERTIFICATE_GENERATED" } });
+      const event = await db.prisma.client.auditEvent.findFirstOrThrow({ where: { taakinstantieId: taak.id, eventType: "Creatie" } });
       expect(event).toMatchObject({ actorType: "system", entiteitId: verklaring.id });
       expect(await db.prisma.client.outbox.findFirstOrThrow({ where: { taakinstantieId: taak.id, queue: "verklaring" } })).toMatchObject({
         status: "VERWERKT",
@@ -564,7 +630,7 @@ async function taakMetVerklaring(gotenbergUrl: string, archiefPad: string) {
 }
 
 describe("archivering (CC-18)", () => {
-  it("zet verklaring, bijlage, auditlog en manifest weg en rondt de taak af", async () => {
+  it("zet het dossier als MDTO-XML weg (verklaring, bijlage, auditlog, kandidaten, specificaties) en rondt de taak af", async () => {
     const gotenberg = await nepGotenberg();
     const archief = await mkdtemp(path.join(tmpdir(), "archief-"));
     try {
@@ -578,6 +644,18 @@ describe("archivering (CC-18)", () => {
 
       const voor = await taken.uitvoering.getVernietigingsresultaten(rm, begin.id);
       expect(voor.taak.toegestaneActies).toEqual(["archiveren"]);
+      // MDTO in de schermen: archiefvormer van de taak, vernietigingsmethode en eventTijd per kandidaat.
+      expect(voor.taak.archiefvormer).toEqual({ verwijzingNaam: "Gemeente Test" });
+      expect(voor.resultaten[0]).toMatchObject({
+        vernietigingsmethode: "Fysiek verwijderd",
+        eventTijd: expect.stringMatching(/^\d{4}-/),
+        aggregatieniveau: "Dossier",
+        waardering: { begripLabel: "Tijdelijk te bewaren" },
+      });
+      expect((await taken.uitvoering.getUitvoering(rm, begin.id)).stekkers[0]).toMatchObject({
+        vernietigingsmethode: "Fysiek verwijderd",
+        vernietigingsmethodeToelichting: "Geen back-ups.",
+      });
 
       const aanvraag = await taken.dossier.archiveren(rm, begin.id, voor.taak.versie);
       expect(aanvraag.status).toBe("PENDING");
@@ -594,28 +672,54 @@ describe("archivering (CC-18)", () => {
 
       const map = path.join(archief, begin.id, aanvraag.id);
       expect(archivering!.locatie).toBe(map);
-      const manifestTekst = await readFile(path.join(map, "manifest.json"));
-      expect(createHash("sha256").update(manifestTekst).digest("hex")).toBe(archivering!.manifestSha256);
-      const manifest = JSON.parse(manifestTekst.toString("utf8"));
-      expect(manifest).toMatchObject({
-        soort: "vernietigingsdossier",
-        taak: { id: begin.id },
-        verklaring: { versie: 1, pdfa: "PDF/A-2b" },
-        auditlog: { intact: true },
-      });
-      for (const bestand of manifest.bestanden as { naam: string; sha256: string }[]) {
-        const inhoud = await readFile(path.join(map, bestand.naam));
-        expect(createHash("sha256").update(inhoud).digest("hex")).toBe(bestand.sha256);
+      // MDTO-XML 1.0.1 (ADR-0005 §7): dossier.mdto.xml is de referentie naar het pakket.
+      const dossierXml = await readFile(path.join(map, "dossier.mdto.xml"));
+      expect(createHash("sha256").update(dossierXml).digest("hex")).toBe(archivering!.dossierSha256);
+      expect(dossierXml.toString("utf8")).toContain(`<identificatieKenmerk>${begin.id}</identificatieKenmerk>`);
+      expect(await readdir(map)).not.toContain("manifest.json");
+
+      // Elk dossierbestand heeft een MDTO-bestandsbeschrijving met de juiste SHA-256.
+      for (const bestand of ["verklaring.pdf", "bijlage.csv", "auditlog.json"]) {
+        const inhoud = await readFile(path.join(map, bestand));
+        const beschrijving = (await readFile(path.join(map, `${bestand}.mdto.xml`))).toString("utf8");
+        expect(beschrijving).toContain(`<checksumWaarde>${createHash("sha256").update(inhoud).digest("hex")}</checksumWaarde>`);
+        expect(beschrijving).toContain(`<omvang>${inhoud.length}</omvang>`);
       }
-      expect(manifest.bestanden.map((bestand: { naam: string }) => bestand.naam)).toEqual(["verklaring.pdf", "bijlage.csv", "auditlog.json"]);
+
+      // Per aangeboden kandidaat de MDTO-beschrijving en per vernietigde kandidaat de
+      // specificatie; de SHA-256 in de CSV-bijlage dekt beide.
+      const [kop, ...regels] = (await readFile(path.join(map, "bijlage.csv"), "utf8")).split("\r\n").map((regel) => regel.split(","));
+      const kolom = (naam: string) => kop.indexOf(naam);
+      const aangeboden = regels.filter((regel) => regel[kolom("beoordeling")] === "AKKOORD");
+      expect(aangeboden.length).toBeGreaterThan(0);
+      expect((await readdir(path.join(map, "kandidaten"))).length).toBe(aangeboden.length);
+      expect((await readdir(path.join(map, "specificaties"))).length).toBe(aangeboden.length);
+      const cockpitXml: Record<string, Buffer> = { "dossier.mdto.xml": dossierXml };
+      for (const regel of aangeboden) {
+        const kandidaatXml = await readFile(path.join(map, regel[kolom("mdtoXml")]));
+        expect(createHash("sha256").update(kandidaatXml).digest("hex")).toBe(regel[kolom("mdtoXmlSha256")]);
+        expect(kandidaatXml.toString("utf8")).toContain("<begripLabel>Vernietigen</begripLabel>");
+        const specificatie = await readFile(path.join(map, regel[kolom("specificatie")]));
+        expect(createHash("sha256").update(specificatie).digest("hex")).toBe(regel[kolom("specificatieSha256")]);
+        expect(regel[kolom("eventTijd")]).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+        cockpitXml[regel[kolom("mdtoXml")]] = kandidaatXml;
+      }
+      for (const naam of (await readdir(map)).filter((naam) => naam.endsWith(".mdto.xml"))) {
+        cockpitXml[naam] = await readFile(path.join(map, naam));
+      }
+      // Alle MDTO-XML van de cockpit voldoet aan de XSD (overgeslagen zonder Python + lxml).
+      const fouten = valideerMdto(cockpitXml);
+      if (fouten !== null) {
+        expect(fouten).toEqual([]);
+      }
 
       const events = await db.prisma.client.auditEvent.findMany({ where: { taakinstantieId: begin.id }, orderBy: { id: "asc" } });
-      const acties = events.map((event) => event.actie);
-      expect(acties.indexOf("ARCHIVING_REQUESTED")).toBeLessThan(acties.indexOf("TASK_COMPLETED"));
-      expect(events.find((event) => event.actie === "ARCHIVING_REQUESTED")).toMatchObject({ actorType: "user" });
-      expect(events.find((event) => event.actie === "TASK_COMPLETED")).toMatchObject({
+      const acties = events.map((event) => event.eventType);
+      expect(acties.indexOf("Archivering aangevraagd")).toBeLessThan(acties.indexOf("Export"));
+      expect(events.find((event) => event.eventType === "Archivering aangevraagd")).toMatchObject({ actorType: "user" });
+      expect(events.find((event) => event.eventType === "Export")).toMatchObject({
         actorType: "system",
-        details: expect.objectContaining({ archiveringId: aanvraag.id, manifestSha256: archivering!.manifestSha256 }),
+        details: expect.objectContaining({ archiveringId: aanvraag.id, dossierSha256: archivering!.dossierSha256 }),
       });
       // Na archief is er niets meer te archiveren.
       await expect(taken.dossier.archiveren(rm, begin.id, taak.versie)).rejects.toThrow();
@@ -647,7 +751,7 @@ describe("archivering (CC-18)", () => {
         fout: expect.any(String),
       });
       expect((await leesTaak(begin.id)).status).toBe("resultaat");
-      expect(await db.prisma.client.auditEvent.count({ where: { taakinstantieId: begin.id, actie: "ARCHIVING_FAILED" } })).toBe(1);
+      expect(await db.prisma.client.auditEvent.count({ where: { taakinstantieId: begin.id, eventType: "Archivering mislukt" } })).toBe(1);
       const stand = await taken.uitvoering.getVernietigingsresultaten(rm, begin.id);
       expect(stand.taak.toegestaneActies).toEqual(["archiveren"]);
       expect(stand.taak.archivering).toMatchObject({ status: "FAILED" });
@@ -692,7 +796,7 @@ describe("archivering (CC-18)", () => {
       );
       expect(volgende.naam).toMatch(new RegExp(`${nu.getUTCFullYear() + 1}$`));
       expect(await db.prisma.client.auditEvent.findFirstOrThrow({ where: { taakinstantieId: volgende.id } })).toMatchObject({
-        actie: "TASK_CREATED",
+        eventType: "Creatie",
         actorType: "system",
       });
     } finally {
@@ -715,5 +819,150 @@ describe("archivering (CC-18)", () => {
       await gotenberg.stop();
       await rm_(archief, { recursive: true, force: true });
     }
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// Verwijderen van de werkkopie na archivering (ADR-0006).
+
+async function gearchiveerdeTaak(gotenbergUrl: string, archief: string) {
+  const { taak, w } = await taakMetVerklaring(gotenbergUrl, archief);
+  const aanvraag = await taken.dossier.archiveren(rm, taak.id, (await leesTaak(taak.id)).versie);
+  await w.verwerkRonde();
+  expect((await leesTaak(taak.id)).status).toBe("archief");
+  const archivering = await db.prisma.client.archivering.findUniqueOrThrow({ where: { id: aanvraag.id } });
+  return { taakId: taak.id, archivering };
+}
+
+const zetTermijn = (waarde: string) =>
+  db.prisma.client.$transaction((tx) => zetBewaartermijn(tx, { type: "system" }, waarde));
+
+describe("werkkopie verwijderen (ADR-0006)", () => {
+  let appPrisma: PrismaService;
+  let archief: string;
+  let gotenberg: Awaited<ReturnType<typeof nepGotenberg>>;
+  const opschoning = () => new WerkkopieOpschoning(appPrisma, () => new BestandArchiefAdapter(archief), "P12M", { type: "system" });
+
+  beforeAll(async () => {
+    // De opschoning draait zoals in productie als de applicatierol (geen DELETE op het auditlog).
+    appPrisma = new PrismaService(new ConfigService({ DATABASE_URL: db.appUrl }));
+    archief = await mkdtemp(path.join(tmpdir(), "archief-"));
+    gotenberg = await nepGotenberg();
+  });
+
+  afterAll(async () => {
+    await appPrisma?.client.$disconnect();
+    await gotenberg?.stop();
+    await rm_(archief, { recursive: true, force: true });
+  });
+
+  it("laat de werkkopie staan zolang de termijn niet verstreken is", async () => {
+    await zetTermijn("P12M");
+    const { taakId } = await gearchiveerdeTaak(gotenberg.url, archief);
+
+    await expect(opschoning().verwerk()).resolves.toMatchObject({ verwijderd: [] });
+    expect((await leesTaak(taakId)).status).toBe("archief");
+  });
+
+  it("verwijdert na verificatie alle gegevens van de taak, met grafsteen en configuratie-event", async () => {
+    await zetTermijn("P12M");
+    const { taakId, archivering } = await gearchiveerdeTaak(gotenberg.url, archief);
+    const keten = await verifieerTaakKeten(db.prisma, taakId);
+    await zetTermijn("P0D");
+
+    const uitkomst = await opschoning().verwerk();
+    expect(uitkomst.verwijderd).toContain(taakId);
+
+    const c = db.prisma.client;
+    expect(await c.taakinstantie.count({ where: { id: taakId } })).toBe(0);
+    expect(await c.auditEvent.count({ where: { taakinstantieId: taakId } })).toBe(0);
+    expect(await c.kandidaatBesluit.count({ where: { taakinstantieId: taakId } })).toBe(0);
+    expect(await c.selectie.count({ where: { taakinstantieId: taakId } })).toBe(0);
+    expect(await c.verklaring.count({ where: { taakinstantieId: taakId } })).toBe(0);
+    expect(await c.archivering.count({ where: { taakinstantieId: taakId } })).toBe(0);
+
+    const grafsteen = await c.dossierGrafsteen.findUniqueOrThrow({ where: { taakinstantieId: taakId } });
+    expect(grafsteen).toMatchObject({
+      archiveringId: archivering.id,
+      dossierSha256: archivering.dossierSha256,
+      auditAantalEvents: keten.aantalEvents,
+      auditLaatsteHash: keten.laatsteHash,
+      bewaartermijnWerkkopie: "P0D",
+      verificatie: expect.objectContaining({ uitkomst: "geslaagd" }),
+    });
+    // Geen taaknaam of persoonsgegevens in de grafsteen.
+    expect(JSON.stringify(grafsteen, (_, waarde) => (typeof waarde === "bigint" ? waarde.toString() : waarde))).not.toMatch(/rm1|Uitvoering/);
+    expect(await c.configuratieEvent.findFirst({ where: { eventType: "Werkkopie verwijderd", entiteitId: taakId } })).toMatchObject({
+      actorType: "system",
+      details: expect.objectContaining({ grafsteenId: grafsteen.id.toString(), auditLaatsteHash: keten.laatsteHash }),
+    });
+
+    // Na verwijderen: de grafsteen voor de auditor en de betrokkenen; anderen 404.
+    const service = new WerkkopieService(db.prisma, new ConfigService({}), new CurrentMedewerkerService(db.prisma));
+    await expect(service.getDossier(gebruiker("auditor1", "auditor"), taakId)).resolves.toMatchObject({
+      status: "werkkopie_verwijderd",
+      grafsteen: { auditlog: { laatsteHash: keten.laatsteHash }, archivering: { id: archivering.id } },
+    });
+    await expect(service.getDossier(rm, taakId)).resolves.toMatchObject({ status: "werkkopie_verwijderd" });
+    await expect(service.getDossier(gebruiker("vreemde", "recordmanager"), taakId)).rejects.toThrow(/niet gevonden/);
+    await expect(service.verifieerGrafstenen()).resolves.toMatchObject({ intact: true, fouten: [] });
+  });
+
+  it("verwijdert niet als het gearchiveerde pakket niet meer klopt, en legt dat vast", async () => {
+    await zetTermijn("P12M");
+    const { taakId, archivering } = await gearchiveerdeTaak(gotenberg.url, archief);
+    await writeFile(path.join(archivering.locatie!, "bijlage.csv"), "gewijzigd");
+    await zetTermijn("P0D");
+
+    const uitkomst = await opschoning().verwerk();
+    expect(uitkomst.verificatieMislukt).toContain(taakId);
+    expect((await leesTaak(taakId)).status).toBe("archief");
+    expect(await db.prisma.client.dossierGrafsteen.count({ where: { taakinstantieId: taakId } })).toBe(0);
+    expect(
+      await db.prisma.client.configuratieEvent.findFirst({ where: { eventType: "Verificatie archief mislukt", entiteitId: taakId } })
+    ).toMatchObject({ details: expect.objectContaining({ fout: expect.stringMatching(/bijlage\.csv/) }) });
+  });
+
+  it("de database dwingt af: geen directe DELETE, geen verwijderen buiten de voorwaarden, grafsteen onveranderlijk", async () => {
+    await zetTermijn("P12M");
+    const { taakId } = await gearchiveerdeTaak(gotenberg.url, archief);
+    const app = new pg.Client({ connectionString: db.appUrl });
+    await app.connect();
+    try {
+      await expect(app.query('DELETE FROM "audit_event" WHERE "taakinstantie_id" = $1', [taakId])).rejects.toThrow(/permission denied/);
+      // Ook de eigenaar kan niet direct verwijderen: de trigger staat het alleen toe binnen verwijder_werkkopie().
+      await expect(db.prisma.client.auditEvent.deleteMany({ where: { taakinstantieId: taakId } })).rejects.toThrow(/append-only/);
+      // Zonder grafsteen, verificatie en verstreken termijn weigert de functie.
+      await expect(app.query("SELECT verwijder_werkkopie($1::uuid, 999999)", [taakId])).rejects.toThrow(/geen grafsteen/);
+      await expect(app.query('UPDATE "dossier_grafsteen" SET "hash" = $1', ["x"])).rejects.toThrow(/permission denied/);
+      await expect(db.prisma.client.dossierGrafsteen.updateMany({ data: { hash: "x" } })).rejects.toThrow(/append-only/);
+    } finally {
+      await app.end();
+    }
+    expect((await leesTaak(taakId)).status).toBe("archief");
+  });
+
+  it("de worker plant de opschoning en voert hem uit; de beginwaarde komt uit WERKKOPIE_BEWAARTERMIJN", async () => {
+    const { taakId } = await gearchiveerdeTaak(gotenberg.url, archief);
+    // Schone lei: geen geplande opschoning en nog geen vastgelegde termijn.
+    await db.prisma.client.outbox.deleteMany({ where: { queue: "opschoning" } });
+    await db.prisma.client.instelling.deleteMany({});
+    const w = worker("a", nepStekker().client, 60_000, {
+      GOTENBERG_URL: gotenberg.url,
+      ARCHIEF_PAD: archief,
+      WERKKOPIE_BEWAARTERMIJN: "P0D",
+      OPSCHONING_INTERVAL: "PT0S",
+    });
+
+    await w.verwerkRonde();
+
+    expect(await db.prisma.client.taakinstantie.count({ where: { id: taakId } })).toBe(0);
+    expect(await db.prisma.client.instelling.findUniqueOrThrow({ where: { sleutel: "werkkopie_bewaartermijn" } })).toMatchObject({ waarde: "P0D" });
+    expect(
+      await db.prisma.client.configuratieEvent.findFirst({ where: { eventType: "Instelling gewijzigd" }, orderBy: { id: "desc" } })
+    ).toMatchObject({ details: expect.objectContaining({ nieuw: "P0D", oud: null }) });
+    expect(await db.prisma.client.outbox.findMany({ where: { queue: "opschoning" }, select: { status: true } })).toEqual(
+      expect.arrayContaining([{ status: "VERWERKT" }])
+    );
   });
 });

@@ -234,6 +234,8 @@ services:
       SECRET_ENCRYPTION_KEY: ${E2E_SECRET_SLEUTEL:?maak .env met npm run test:e2e}
       GOTENBERG_URL: http://gotenberg:3000
       ARCHIEF_PAD: /archief
+      # ADR-0006: opschoning vaak, zodat de E2E-test met termijn P0D snel klaar is.
+      OPSCHONING_INTERVAL: PT2S
     volumes:
       - archief:/archief
     depends_on:
@@ -257,6 +259,8 @@ services:
       SECRET_ENCRYPTION_KEY: ${E2E_SECRET_SLEUTEL:?maak .env met npm run test:e2e}
       GOTENBERG_URL: http://gotenberg:3000
       ARCHIEF_PAD: /archief
+      # ADR-0006: opschoning vaak, zodat de E2E-test met termijn P0D snel klaar is.
+      OPSCHONING_INTERVAL: PT2S
 
   # Telt POST-aanroepen naar de stekker, zodat de test kan bewijzen dat er niets dubbel gebeurt.
   stekker-teller:

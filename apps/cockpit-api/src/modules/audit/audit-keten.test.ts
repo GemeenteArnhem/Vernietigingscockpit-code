@@ -8,7 +8,8 @@ const basisRij = (overrides: Partial<KetenRij> = {}): KetenRij => ({
   actorId: "sub-rm1",
   actorNaam: "rm1",
   rol: "recordmanager",
-  actie: "REVIEW_SUBMITTED",
+  eventType: "Voorgelegd",
+  eventTypeBegrippenlijst: "Cockpit-eventtypen 1.0",
   entiteitType: "taakinstantie",
   entiteitId: "taak-1",
   details: { totaal: 3, akkoord: 2 },
@@ -40,7 +41,8 @@ describe("berekenHash", () => {
       { actorId: "sub-po1" },
       { actorNaam: "iemand" },
       { rol: "proceseigenaar" },
-      { actie: "APPROVAL_GRANTED" },
+      { eventType: "Accordering" },
+      { eventTypeBegrippenlijst: "MDTO EventTypeLijst 1.0" },
       { entiteitType: "vernietigingskandidaat" },
       { entiteitId: "taak-2" },
       { details: { totaal: 3, akkoord: 3 } },
@@ -62,7 +64,7 @@ describe("controleerKeten", () => {
   const keten = () => {
     const eerste = basisRij();
     const h1 = berekenHash(eerste);
-    const tweede = basisRij({ actie: "APPROVAL_GRANTED", vorigeHash: h1 });
+    const tweede = basisRij({ eventType: "Accordering", vorigeHash: h1 });
     const h2 = berekenHash(tweede);
     return [
       { ...eerste, id: 1n, hash: h1 },
@@ -82,7 +84,7 @@ describe("controleerKeten", () => {
 
   it("vindt een vertakking of ontbrekende schakel", () => {
     const rijen = keten();
-    const los = basisRij({ actie: "APPROVAL_REJECTED", vorigeHash: rijen[0].hash });
+    const los = basisRij({ eventType: "Retour", vorigeHash: rijen[0].hash });
     rijen.push({ ...los, id: 3n, hash: berekenHash(los) });
     expect(controleerKeten(rijen).fouten).toEqual([{ id: "3", reden: "schakel" }]);
   });

@@ -44,16 +44,20 @@ import type {
   DestructionResultStatus,
 } from "../shared/types/destructionResult";
 import ActieFoutmelding from "../components/ActieFoutmelding";
+import { AANTAL_OBJECTEN_UITLEG, AGGREGATIENIVEAU_UITLEG, ARCHIEFVORMER_UITLEG, WAARDERING_UITLEG } from "../features/task-execution/review/bulkDetails";
 
-type ResultSortKey = "omschrijving" | "vernietigingsstatus";
+type ResultSortKey = "naam" | "resultaat" | "eventTijd";
+// Kolommen die altijd zichtbaar zijn; de rest kiest de gebruiker in het kolommenmenu.
+const VASTE_KOLOMMEN: ResultSortKey[] = ["naam", "resultaat"];
 type ResultSortDirection = "asc" | "desc";
-type SearchScope = "all" | "omschrijving" | "vernietigingsstatus";
-type FacetFilterKey = "vernietigingsstatus" | "stekker";
+type SearchScope = "all" | "naam" | "resultaat";
+type FacetFilterKey = "resultaat" | "stekker";
 type ResultTableRow = {
   id: string;
-  omschrijving: string;
-  vernietigingsstatus: DestructionResultStatus;
+  naam: string;
+  resultaat: DestructionResultStatus;
   stekker: string;
+  eventTijd: string;
 };
 
 const PAGE_SIZE = 100;
@@ -92,23 +96,25 @@ const RESULT_ACTIONS: DestructionResultActionOption[] = [
 
 const SEARCH_SCOPE_OPTIONS: Array<{ key: SearchScope; label: string }> = [
   { key: "all", label: "Alle kolommen" },
-  { key: "omschrijving", label: "Omschrijving" },
-  { key: "vernietigingsstatus", label: "Vernietigingsstatus" },
+  { key: "naam", label: "Naam" },
+  { key: "resultaat", label: "Vernietigingsstatus" },
 ];
 
 const FILTER_LABELS: Record<FacetFilterKey, string> = {
-  vernietigingsstatus: "Vernietigingsstatus",
+  resultaat: "Vernietigingsstatus",
   stekker: "Stekker",
 };
 
 const COLUMN_LABELS: Record<ResultSortKey, string> = {
-  omschrijving: "Omschrijving",
-  vernietigingsstatus: "Vernietigingsstatus",
+  naam: "Naam",
+  resultaat: "Vernietigingsstatus",
+  eventTijd: "Tijdstip vernietiging",
 };
 
 const COLUMN_TOOLTIPS: Record<ResultSortKey, string> = {
-  omschrijving: "Titel van het record binnen de resultaatlijst.",
-  vernietigingsstatus: "Uitkomst van de uitgevoerde vernietigingsactie.",
+  naam: "Titel van het record binnen de resultaatlijst.",
+  resultaat: "Uitkomst van de uitgevoerde vernietigingsactie.",
+  eventTijd: "Tijdstip waarop de stekker het informatieobject heeft vernietigd (MDTO eventTijd).",
 };
 
 function getStatusLabel(status: DestructionResultStatus) {
@@ -206,19 +212,21 @@ function ResultTable({
   const [currentPage, setCurrentPage] = useState(0);
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const [columnsOpen, setColumnsOpen] = useState(false);
+  const [extraKolommen, setExtraKolommen] = useState<ResultSortKey[]>([]);
+  const kolommen = [...VASTE_KOLOMMEN, ...extraKolommen];
   const [activeFilters, setActiveFilters] = useState<Partial<Record<FacetFilterKey, string>>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const facetOptions = useMemo(
     () => ({
-      vernietigingsstatus: [
+      resultaat: [
         "SUCCESS",
         "FAILED",
         "NOT_FOUND",
         "SKIPPED",
         "CHANGED",
       ].filter((status) =>
-        rows.some((row) => row.vernietigingsstatus === status)
+        rows.some((row) => row.resultaat === status)
       ),
       stekker: Array.from(new Set(rows.map((row) => row.stekker))).sort(),
     }),
@@ -230,17 +238,17 @@ function ResultTable({
 
     return rows.filter((row) => {
       const haystack =
-        searchScope === "omschrijving"
-          ? row.omschrijving
-          : searchScope === "vernietigingsstatus"
-            ? getStatusLabel(row.vernietigingsstatus)
-            : `${row.omschrijving} ${getStatusLabel(row.vernietigingsstatus)}`;
+        searchScope === "naam"
+          ? row.naam
+          : searchScope === "resultaat"
+            ? getStatusLabel(row.resultaat)
+            : `${row.naam} ${getStatusLabel(row.resultaat)}`;
 
       const matchesSearch = !query ? true : haystack.toLowerCase().includes(query);
       const matchesStatus =
-        !activeFilters.vernietigingsstatus
+        !activeFilters.resultaat
           ? true
-          : row.vernietigingsstatus === activeFilters.vernietigingsstatus;
+          : row.resultaat === activeFilters.resultaat;
       const matchesStekker =
         !activeFilters.stekker ? true : row.stekker === activeFilters.stekker;
 
@@ -376,8 +384,15 @@ function ResultTable({
                       >
                         <input
                           type="checkbox"
-                          checked
-                          readOnly
+                          checked={kolommen.includes(column)}
+                          readOnly={VASTE_KOLOMMEN.includes(column)}
+                          onChange={() =>
+                            VASTE_KOLOMMEN.includes(column)
+                              ? undefined
+                              : setExtraKolommen((huidig) =>
+                                  huidig.includes(column) ? huidig.filter((kolom) => kolom !== column) : [...huidig, column]
+                                )
+                          }
                           className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                         />
                         <span>{COLUMN_LABELS[column]}</span>
@@ -408,7 +423,7 @@ function ResultTable({
                     {FILTER_LABELS[key as FacetFilterKey]}:
                   </span>
                   <span>
-                    {key === "vernietigingsstatus"
+                    {key === "resultaat"
                       ? getStatusLabel(value as DestructionResultStatus)
                       : value}
                   </span>
@@ -457,7 +472,7 @@ function ResultTable({
                                   : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                               }`}
                             >
-                              {filterKey === "vernietigingsstatus"
+                              {filterKey === "resultaat"
                                 ? getStatusLabel(option as DestructionResultStatus)
                                 : option}
                             </button>
@@ -478,10 +493,11 @@ function ResultTable({
           <colgroup>
             <col />
             <col style={{ width: "208px" }} />
+            {extraKolommen.includes("eventTijd") ? <col style={{ width: "184px" }} /> : null}
           </colgroup>
           <thead className="bg-white">
             <tr className="border-b border-slate-200">
-              {(["omschrijving", "vernietigingsstatus"] as ResultSortKey[]).map((column) => (
+              {kolommen.map((column) => (
                 <th
                   key={column}
                   title={COLUMN_TOOLTIPS[column]}
@@ -500,7 +516,7 @@ function ResultTable({
                     className="inline-flex w-full items-center gap-1.5 rounded-sm text-inherit outline-none transition hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-blue-500/30"
                     aria-label={`Sorteer op ${COLUMN_LABELS[column]}`}
                   >
-                    {column === "vernietigingsstatus" ? (
+                    {column === "resultaat" ? (
                       <span className="inline-flex items-center gap-1.5">
                         <span>{COLUMN_LABELS[column]}</span>
                         <span className="text-slate-400">
@@ -548,20 +564,23 @@ function ResultTable({
                         onActiveRecordChange(row.id);
                       }}
                       className="truncate text-left font-medium text-slate-900 hover:text-blue-700"
-                      title={row.omschrijving}
+                      title={row.naam}
                     >
-                      {row.omschrijving}
+                      {row.naam}
                     </button>
                   </td>
                   <td className="px-4 py-3 align-middle text-slate-700">
                     <span
                       className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClasses(
-                        row.vernietigingsstatus
+                        row.resultaat
                       )}`}
                     >
-                      {getStatusLabel(row.vernietigingsstatus)}
+                      {getStatusLabel(row.resultaat)}
                     </span>
                   </td>
+                  {extraKolommen.includes("eventTijd") ? (
+                    <td className="whitespace-nowrap px-4 py-3 align-middle text-slate-700">{row.eventTijd}</td>
+                  ) : null}
                 </tr>
               );
             })}
@@ -613,7 +632,7 @@ export default function DestructionResultPage() {
   const [isExecutingAction, setIsExecutingAction] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [sortKey, setSortKey] = useState<ResultSortKey>("omschrijving");
+  const [sortKey, setSortKey] = useState<ResultSortKey>("naam");
   const [sortDirection, setSortDirection] = useState<ResultSortDirection>("asc");
   const { id } = useParams();
   const { accessToken } = useSessionUser();
@@ -718,14 +737,11 @@ export default function DestructionResultPage() {
   const sortedRows = useMemo(
     () =>
       [...resultRows].sort((left, right) => {
-        const leftValue =
-          sortKey === "omschrijving"
-            ? left.titel
-            : getStatusLabel(left.vernietigingsstatus);
-        const rightValue =
-          sortKey === "omschrijving"
-            ? right.titel
-            : getStatusLabel(right.vernietigingsstatus);
+        // Tijdstip: op de ISO-waarde, zodat de volgorde chronologisch is.
+        const waarde = (row: DestructionResultRow) =>
+          sortKey === "naam" ? row.naam : sortKey === "eventTijd" ? (row.eventTijdIso ?? "") : getStatusLabel(row.resultaat);
+        const leftValue = waarde(left);
+        const rightValue = waarde(right);
         const comparison = collator.compare(String(leftValue), String(rightValue));
 
         return sortDirection === "asc" ? comparison : -comparison;
@@ -781,9 +797,10 @@ export default function DestructionResultPage() {
     () =>
       sortedRows.map((row) => ({
         id: row.id,
-        omschrijving: row.titel,
-        vernietigingsstatus: row.vernietigingsstatus,
-        stekker: row.bron_systeem ?? row.stekker,
+        naam: row.naam,
+        resultaat: row.resultaat,
+        stekker: row.stekker,
+        eventTijd: row.eventTijd ?? "-",
       })),
     [sortedRows]
   );
@@ -888,7 +905,7 @@ export default function DestructionResultPage() {
       <AppShellPortal slot="detail">
         <RecordDetailsPanel
           heading="Record"
-          record={{ titel: selectedRow?.titel ?? "Geen resultaat geselecteerd" }}
+          record={{ naam: selectedRow?.naam ?? "Geen resultaat geselecteerd" }}
           comments={selectedContext?.comments ?? []}
           currentIndex={selectedIndex >= 0 ? selectedIndex + 1 : 0}
           totalCount={sortedRows.length}
@@ -900,16 +917,26 @@ export default function DestructionResultPage() {
             selectedRow
               ? [
                   {
-                    label: "Omschrijving",
-                    labelTitle: "Titel vernietigen informatieobjecten binnen de taak",
-                    value: selectedRow.titel,
+                    label: "Naam",
+                    labelTitle: "Naam van het informatieobject",
+                    value: selectedRow.naam,
                     stacked: true,
                   },
                   {
-                    label: "Code",
+                    label: "Aggregatieniveau",
+                    labelTitle: AGGREGATIENIVEAU_UITLEG,
+                    value: selectedRow.aggregatieniveau ?? "-",
+                  },
+                  {
+                    label: "Waardering",
+                    labelTitle: WAARDERING_UITLEG,
+                    value: selectedRow.waardering ?? "-",
+                  },
+                  {
+                    label: "Classificatie",
                     labelTitle:
                       "De VNG code of BAC van de te vernietigen informatieobjecten binnen de taak. Voor selectielijst vanaf 2017, Zaaktype gebruiken.",
-                    value: selectedRow.code ?? "-",
+                    value: selectedRow.classificatie ?? "-",
                   },
                   {
                     label: "Selectielijst",
@@ -918,47 +945,62 @@ export default function DestructionResultPage() {
                     value: selectedRow.selectielijst ?? "-",
                   },
                   {
-                    label: "Grondslag",
+                    label: "Informatiecategorie",
                     labelTitle:
                       "De categorie/grondslag uit de vigerende selectielijst op basis waarvan de informatieobjecten vernietigd dienen te worden",
-                    value: selectedRow.grondslag ?? "-",
+                    value: selectedRow.informatiecategorie ?? "-",
                   },
                   {
                     label: "Bewaartermijn",
                     labelTitle:
                       "De periode dat de informatieobjecten moeten worden bewaard conform de vigerende selectielijst",
                     value:
-                      selectedRow.bewaartermijn !== undefined
-                        ? `${selectedRow.bewaartermijn} jaar`
+                      selectedRow.termijnLooptijd !== undefined
+                        ? selectedRow.termijnLooptijd
                         : "-",
                   },
                   {
-                    label: "Vernietigingsdatum",
+                    label: "Einddatum bewaartermijn",
                     labelTitle:
                       "Jaar en maand waarin het dossier/informatieobject vernietigd moest worden. Format: jjjj-mm",
-                    value: selectedRow.vernietigingsdatum ?? "-",
+                    value: selectedRow.termijnEinddatum ?? "-",
                   },
                   {
-                    label: "Periode",
+                    label: "Dekking in tijd",
                     labelTitle:
                       "Gehele periode waar de stukken binnen deze taak in vallen. Format jjjj-mm / jjjj-mm",
-                    value: `${selectedRow.startdatum ?? "-"} / ${selectedRow.einddatum ?? "-"}`,
+                    value: `${selectedRow.dekkingInTijdBegindatum ?? "-"} / ${selectedRow.dekkingInTijdEinddatum ?? "-"}`,
                   },
                   {
                     label: "Vernietigingsstatus",
                     labelTitle: "Uitkomst van de uitgevoerde vernietigingsactie.",
-                    value: getStatusLabel(selectedRow.vernietigingsstatus),
-                    badgeClassName: getStatusBadgeClasses(selectedRow.vernietigingsstatus),
+                    value: getStatusLabel(selectedRow.resultaat),
+                    badgeClassName: getStatusBadgeClasses(selectedRow.resultaat),
                   },
                   {
                     label: "Stekker",
                     labelTitle: "Naam van de stekker waar de informatieobjecten uit komt.",
-                    value: selectedRow.bron_systeem ?? selectedRow.stekker,
+                    value: selectedRow.stekker,
                   },
                   {
-                    label: "Bron-ID",
-                    labelTitle: "Identificatie van het informatieobject uit de stekker",
-                    value: selectedRow.bron_id ?? "-",
+                    label: "Identificatie",
+                    labelTitle: "Identificatie van het informatieobject: kenmerk en bron (MDTO identificatie)",
+                    value: selectedRow.identificaties?.join("\n") || (selectedRow.identificatie ?? "-"),
+                  },
+                  {
+                    label: "Archiefvormer",
+                    labelTitle: ARCHIEFVORMER_UITLEG,
+                    value: selectedRow.archiefvormer ?? "-",
+                  },
+                  {
+                    label: "Tijdstip vernietiging",
+                    labelTitle: "Tijdstip waarop de stekker het informatieobject heeft vernietigd (MDTO eventTijd).",
+                    value: selectedRow.eventTijd ?? "-",
+                  },
+                  {
+                    label: "Vernietigingsmethode",
+                    labelTitle: "Wijze van vernietiging volgens de stekker.",
+                    value: selectedRow.vernietigingsmethode ?? "-",
                   },
                   {
                     label: "ID",
@@ -973,7 +1015,7 @@ export default function DestructionResultPage() {
                   },
                   {
                     label: "Aantal objecten",
-                    labelTitle: "Aantal objecten",
+                    labelTitle: AANTAL_OBJECTEN_UITLEG,
                     value: `${selectedRow.omvang ?? 0}`,
                   },
                   {

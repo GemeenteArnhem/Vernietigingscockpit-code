@@ -190,6 +190,9 @@ services:
       SECRET_ENCRYPTION_KEY: ${ACC_SECRET_SLEUTEL:?maak eerst .env met init-geheimen.mjs}
       GOTENBERG_URL: http://gotenberg:3000
       ARCHIEF_PAD: /archief
+      # ADR-0006: beginwaarde bewaartermijn werkkopie en interval van de opschoning.
+      WERKKOPIE_BEWAARTERMIJN: ${WERKKOPIE_BEWAARTERMIJN:-P12M}
+      OPSCHONING_INTERVAL: ${OPSCHONING_INTERVAL:-P1D}
       LOG_LEVEL: info
     extra_hosts:
       - "host.docker.internal:host-gateway"

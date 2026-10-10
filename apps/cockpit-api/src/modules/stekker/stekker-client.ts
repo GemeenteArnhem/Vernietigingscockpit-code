@@ -1,7 +1,10 @@
 // Eén client voor alle communicatie met stekkers, volgens de Stekker-OpenAPI-spec
-// (v1.0.0). De cockpit bevat geen stekkerspecifieke code: verschillen tussen stekkers
-// zitten uitsluitend in de stekkerconfiguratie.
+// (v2.0.0, MDTO; ADR-0005). De cockpit bevat geen stekkerspecifieke code: verschillen
+// tussen stekkers zitten uitsluitend in de stekkerconfiguratie.
 //
+// - Paden staan onder /v{major} (API-20); elke geslaagde response moet de header
+//   API-Version met dezelfde major hebben (API-57). Alleen major 2 wordt ondersteund.
+// - Elke POST heeft een Idempotency-Key (ADR-0004).
 // - Authenticatie: OAuth2 client credentials (token gecachet per configuratieversie),
 //   of 'none' (alleen buiten productie).
 // - Elke call heeft een time-out en een X-Correlation-ID.
@@ -69,7 +72,12 @@ export type StekkerVerbinding = {
   secretVersleuteld?: string | null;
   scopes: string[];
   timeouts: unknown;
+  // Major versie van de Stekker API (stekker_configuratie.verwachte_api_major).
+  verwachteApiMajor: number;
 };
+
+// Ondersteunde major versies van de Stekker API.
+export const ONDERSTEUNDE_API_MAJORS = [2];
 
 export class StekkerFout extends Error {
   constructor(
@@ -104,6 +112,8 @@ type Verzoek = {
   correlatieId: string;
   body?: unknown;
   idempotencyKey?: string;
+  // Verwacht antwoordtype; standaard JSON.
+  xml?: boolean;
 };
 
 const TOKEN_MARGE_MS = 30_000;
@@ -122,12 +132,13 @@ export class StekkerClient {
     this.standaardTimeoutMs = opties.standaardTimeoutMs ?? 30_000;
   }
 
-  async startSelectie(verbinding: StekkerVerbinding, peildatum: string | null, correlatieId: string) {
+  async startSelectie(verbinding: StekkerVerbinding, peildatum: string | null, idempotencyKey: string, correlatieId: string) {
     const body = await this.verstuur(verbinding, {
       methode: "POST",
       pad: "/selecties",
       correlatieId,
       body: (peildatum ? { peildatum } : {}) satisfies SelectieStart,
+      idempotencyKey,
     });
     return valideerSelectie(body);
   }
@@ -149,7 +160,7 @@ export class StekkerClient {
   ) {
     const body = await this.verstuur(verbinding, {
       methode: "GET",
-      pad: `/selecties/${encodeURIComponent(selectieId)}/objecten?offset=${pagina.offset}&limit=${pagina.limit}`,
+      pad: `/selecties/${encodeURIComponent(selectieId)}/vernietigingskandidaten?offset=${pagina.offset}&limit=${pagina.limit}`,
       correlatieId,
     });
     return valideerKandidatenPagina(body);
@@ -228,9 +239,32 @@ export class StekkerClient {
     return antwoord.map(valideerBatchResultaat);
   }
 
+  // De MDTO-XML-specificatie van een vernietigde kandidaat (ADR-0005, B-M2).
+  async getSpecificatie(verbinding: StekkerVerbinding, vernietigingId: string, kandidaatId: string, correlatieId: string) {
+    const xml = await this.verstuur(verbinding, {
+      methode: "GET",
+      pad: `/vernietigingen/${encodeURIComponent(vernietigingId)}/specificaties/${encodeURIComponent(kandidaatId)}`,
+      correlatieId,
+      xml: true,
+    });
+
+    if (typeof xml !== "string" || !/<MDTO[\s>]/.test(xml)) {
+      throw contractFout("specificatie is geen MDTO-XML");
+    }
+
+    return xml;
+  }
+
   private async verstuur(verbinding: StekkerVerbinding, verzoek: Verzoek, opnieuwNa401 = true): Promise<unknown> {
+    if (!ONDERSTEUNDE_API_MAJORS.includes(verbinding.verwachteApiMajor)) {
+      throw new StekkerFout(
+        `Stekker API v${verbinding.verwachteApiMajor} wordt niet ondersteund (wel: v${ONDERSTEUNDE_API_MAJORS.join(", v")}).`,
+        { tijdelijk: false, code: "CONFIGURATIE" }
+      );
+    }
+
     const headers: Record<string, string> = {
-      Accept: "application/json",
+      Accept: verzoek.xml ? "application/xml" : "application/json",
       "X-Correlation-ID": verzoek.correlatieId,
     };
 
@@ -248,7 +282,8 @@ export class StekkerClient {
       headers.Authorization = `Bearer ${token}`;
     }
 
-    const response = await this.fetchMetTimeout(`${verbinding.baseUrl.replace(/\/$/, "")}${verzoek.pad}`, {
+    const basis = `${verbinding.baseUrl.replace(/\/$/, "")}/v${verbinding.verwachteApiMajor}`;
+    const response = await this.fetchMetTimeout(`${basis}${verzoek.pad}`, {
       method: verzoek.methode,
       headers,
       body: verzoek.body === undefined ? undefined : JSON.stringify(verzoek.body),
@@ -260,13 +295,17 @@ export class StekkerClient {
       return this.verstuur(verbinding, verzoek, false);
     }
 
-    const body = await leesJson(response);
-
     if (!response.ok) {
-      throw foutUitResponse(response.status, body, `${verzoek.methode} ${verzoek.pad}`);
+      throw foutUitResponse(response.status, await leesJson(response).catch(() => null), `${verzoek.methode} ${verzoek.pad}`);
     }
 
-    return body;
+    const apiVersie = response.headers.get("API-Version");
+
+    if (!apiVersie || Number.parseInt(apiVersie, 10) !== verbinding.verwachteApiMajor) {
+      throw contractFout(`API-Version '${apiVersie ?? "ontbreekt"}' past niet bij v${verbinding.verwachteApiMajor}`);
+    }
+
+    return verzoek.xml ? response.text() : leesJson(response);
   }
 
   private async token(verbinding: StekkerVerbinding, correlatieId: string) {
@@ -454,19 +493,64 @@ export function valideerKandidatenPagina(waarde: unknown): StekkerKandidatenPagi
   }
 
   for (const item of pagina.items) {
-    const kandidaat = object(item, "Vernietigingskandidaat");
-    verplichteTekst(kandidaat, "vernietigingskandidaatId", "Vernietigingskandidaat");
-    verplichteTekst(kandidaat, "bronId", "Vernietigingskandidaat");
-    verplichteTekst(kandidaat, "omschrijving", "Vernietigingskandidaat");
+    valideerKandidaat(item);
   }
 
   return pagina as StekkerKandidatenPagina;
+}
+
+const AGGREGATIENIVEAUS = ["Archief", "Serie", "Dossier", "Archiefstuk"] as const;
+const WAARDERINGSCODES = ["B", "V", "N"] as const;
+
+// Verplichte velden van het MDTO-profiel (Stekker API v2). Ontbreekt er één, dan is de hele
+// pagina een contractfout: liever geen import dan een kandidaat die niet te verantwoorden is.
+function valideerKandidaat(item: unknown) {
+  const wat = "Vernietigingskandidaat";
+  const kandidaat = object(item, wat);
+  verplichteTekst(kandidaat, "vernietigingskandidaatId", wat);
+  verplichteTekst(kandidaat, "naam", wat);
+  valideerIdentificatie(kandidaat, wat);
+  enumWaarde(object(kandidaat.aggregatieniveau, `${wat}.aggregatieniveau`), "begripLabel", AGGREGATIENIVEAUS, `${wat}.aggregatieniveau`);
+  enumWaarde(object(kandidaat.waardering, `${wat}.waardering`), "begripCode", WAARDERINGSCODES, `${wat}.waardering`);
+  valideerDatum(object(kandidaat.bewaartermijn, `${wat}.bewaartermijn`), "termijnEinddatum", `${wat}.bewaartermijn`);
+  verplichteTekst(object(kandidaat.informatiecategorie, `${wat}.informatiecategorie`), "begripLabel", `${wat}.informatiecategorie`);
+  verplichteTekst(
+    object(object(kandidaat.informatiecategorie, `${wat}.informatiecategorie`).begripBegrippenlijst, `${wat}.informatiecategorie.begripBegrippenlijst`),
+    "verwijzingNaam",
+    `${wat}.informatiecategorie.begripBegrippenlijst`
+  );
+}
+
+function valideerIdentificatie(bron: Record<string, unknown>, wat: string) {
+  const identificatie = bron.identificatie;
+
+  if (!Array.isArray(identificatie) || identificatie.length === 0) {
+    throw contractFout(`${wat} mist verplicht veld identificatie`);
+  }
+
+  for (const item of identificatie) {
+    const gegevens = object(item, `${wat}.identificatie`);
+    verplichteTekst(gegevens, "identificatieKenmerk", `${wat}.identificatie`);
+    verplichteTekst(gegevens, "identificatieBron", `${wat}.identificatie`);
+  }
+}
+
+function valideerDatum(bron: Record<string, unknown>, veld: string, wat: string) {
+  const waarde = verplichteTekst(bron, veld, wat);
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(waarde) || Number.isNaN(Date.parse(waarde))) {
+    throw contractFout(`${wat}.${veld} '${waarde}' is geen datum`);
+  }
+
+  return waarde;
 }
 
 export function valideerVernietiging(waarde: unknown): StekkerVernietiging {
   const vernietiging = object(waarde, "Vernietigingsuitvoering");
   verplichteTekst(vernietiging, "vernietigingId", "Vernietigingsuitvoering");
   verplichteTekst(vernietiging, "selectieId", "Vernietigingsuitvoering");
+  verplichteTekst(vernietiging, "cockpitTaakId", "Vernietigingsuitvoering");
+  verplichteTekst(vernietiging, "besluitReferentie", "Vernietigingsuitvoering");
   enumWaarde(vernietiging, "status", VERNIETIGING_STATUSSEN, "Vernietigingsuitvoering");
   return vernietiging as StekkerVernietiging;
 }
@@ -485,8 +569,21 @@ export function valideerBatchResultaat(waarde: unknown): StekkerBatchResultaat {
   for (const item of batch.resultaten) {
     const resultaat = object(item, "Uitvoeringsresultaat");
     verplichteTekst(resultaat, "vernietigingskandidaatId", "Uitvoeringsresultaat");
-    verplichteTekst(resultaat, "bronId", "Uitvoeringsresultaat");
-    enumWaarde(resultaat, "resultaat", UITVOERINGSRESULTATEN, "Uitvoeringsresultaat");
+    valideerIdentificatie(resultaat, "Uitvoeringsresultaat");
+    const waarde = enumWaarde(resultaat, "resultaat", UITVOERINGSRESULTATEN, "Uitvoeringsresultaat");
+
+    // Bij SUCCESS is het event Vernietigen met tijdstip verplicht (Archiefbesluit art. 8).
+    if (waarde === "SUCCESS") {
+      const event = object(resultaat.event, "Uitvoeringsresultaat.event");
+      const type = object(event.eventType, "Uitvoeringsresultaat.event.eventType");
+
+      if (type.begripLabel !== "Vernietigen") {
+        throw contractFout(`Uitvoeringsresultaat.event.eventType '${String(type.begripLabel)}' is niet Vernietigen`);
+      }
+      if (typeof event.eventTijd !== "string" || Number.isNaN(Date.parse(event.eventTijd))) {
+        throw contractFout("Uitvoeringsresultaat.event mist een geldige eventTijd");
+      }
+    }
   }
 
   return batch as StekkerBatchResultaat;

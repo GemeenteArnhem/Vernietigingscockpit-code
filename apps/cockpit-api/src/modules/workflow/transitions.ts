@@ -1,4 +1,4 @@
-import type { AuditActie } from "../audit/audit-acties.js";
+import type { AuditEventType } from "../audit/audit-eventtypen.js";
 
 // Transitietabel van de taakinstantie: de enige plek waar staat welke statusovergangen
 // bestaan. Bron: ui-spec/state/task-state-machine.md en ADR-0002 (status `vrijgegeven`,
@@ -25,50 +25,53 @@ export type Transitie = {
   naar: TaakStatus;
   // Wie de overgang uitvoert: een rol, of het systeem (worker).
   door: "recordmanager" | "proceseigenaar" | "archivaris" | "systeem";
-  // Actienaam in het auditlog (ADR-0003).
-  auditActie: AuditActie;
+  // Eventtype in het auditlog (ADR-0005 §5).
+  eventType: AuditEventType;
+  // Een tweede event direct na de overgang (door het systeem), bijv. Bevriezing van de lijst.
+  vervolgEventType?: AuditEventType;
 };
 
 export const TRANSITIES = {
-  "selectie.voltooid": { van: "init", naar: "beoordeling", door: "systeem", auditActie: "SELECTION_COMPLETED" },
+  "selectie.voltooid": { van: "init", naar: "beoordeling", door: "systeem", eventType: "Import" },
   "beoordeling.voorleggen": {
     van: "beoordeling",
     naar: "accordering_po",
     door: "recordmanager",
-    auditActie: "REVIEW_SUBMITTED",
+    eventType: "Voorgelegd",
   },
   "accordering_po.goedkeuren": {
     van: "accordering_po",
     naar: "accordering_archivaris",
     door: "proceseigenaar",
-    auditActie: "APPROVAL_GRANTED",
+    eventType: "Accordering",
   },
   "accordering_po.terugsturen": {
     van: "accordering_po",
     naar: "beoordeling",
     door: "proceseigenaar",
-    auditActie: "APPROVAL_REJECTED",
+    eventType: "Retour",
   },
   "accordering_archivaris.vrijgeven": {
     van: "accordering_archivaris",
     naar: "vrijgegeven",
     door: "archivaris",
-    auditActie: "DESTRUCTION_APPROVED_BY_ARCHIVIST",
+    eventType: "Accordering",
+    vervolgEventType: "Bevriezing",
   },
   "accordering_archivaris.terugsturen": {
     van: "accordering_archivaris",
     naar: "beoordeling",
     door: "archivaris",
-    auditActie: "APPROVAL_REJECTED",
+    eventType: "Retour",
   },
   "vernietiging.opdracht_geven": {
     van: "vrijgegeven",
     naar: "uitvoering",
     door: "recordmanager",
-    auditActie: "DESTRUCTION_ORDERED_BY_RM",
+    eventType: "Vernietigingsopdracht",
   },
-  "uitvoering.voltooid": { van: "uitvoering", naar: "resultaat", door: "systeem", auditActie: "EXECUTION_COMPLETED" },
-  archiveren: { van: "resultaat", naar: "archief", door: "recordmanager", auditActie: "TASK_COMPLETED" },
+  "uitvoering.voltooid": { van: "uitvoering", naar: "resultaat", door: "systeem", eventType: "Uitvoering afgerond" },
+  archiveren: { van: "resultaat", naar: "archief", door: "recordmanager", eventType: "Export" },
 } as const satisfies Record<string, Transitie>;
 
 export type TransitieActie = keyof typeof TRANSITIES;

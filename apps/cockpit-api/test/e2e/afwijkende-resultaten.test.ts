@@ -25,7 +25,7 @@ describe("afwijkende resultaten (scenario G)", () => {
     const perUitkomst = Object.fromEntries(
       UITKOMSTEN.map((uitkomst) => [
         uitkomst,
-        body.resultaten.filter((resultaat: { vernietigingsstatus: string }) => resultaat.vernietigingsstatus === uitkomst).length,
+        body.resultaten.filter((resultaat: { resultaat: string }) => resultaat.resultaat === uitkomst).length,
       ])
     ) as Record<(typeof UITKOMSTEN)[number], number>;
     expect(Object.values(perUitkomst).reduce((som, aantal) => som + aantal, 0)).toBe(aantalKandidaten);
@@ -44,8 +44,8 @@ describe("afwijkende resultaten (scenario G)", () => {
 
     // Audit: één event per object, succes en niet-succes apart.
     const acties = await auditActies(taakId);
-    expect(acties.filter((actie) => actie === "OBJECT_PROCESSED")).toHaveLength(perUitkomst.SUCCESS);
-    expect(acties.filter((actie) => actie === "OBJECT_FAILED")).toHaveLength(aantalKandidaten - perUitkomst.SUCCESS);
+    expect(acties.filter((actie) => actie === "Vernietigen")).toHaveLength(perUitkomst.SUCCESS);
+    expect(acties.filter((actie) => actie === "Niet vernietigd")).toHaveLength(aantalKandidaten - perUitkomst.SUCCESS);
 
     // Verklaring en CSV tonen dezelfde aantallen.
     const verklaring = await wachtOp(
@@ -67,7 +67,7 @@ describe("afwijkende resultaten (scenario G)", () => {
       await fetch(`${API}/taken/${taakId}/verklaring/bijlage.csv`, { headers: { authorization: `Bearer ${await token("rm")}` } })
     ).text();
     const [kop, ...regels] = leesCsv(csv);
-    const kolom = kop.indexOf("vernietigingsstatus");
+    const kolom = kop.indexOf("resultaat");
     expect(kolom).toBeGreaterThan(-1);
     for (const uitkomst of UITKOMSTEN) {
       expect(regels.filter((regel) => regel[kolom] === uitkomst), `CSV ${uitkomst}`).toHaveLength(perUitkomst[uitkomst]);

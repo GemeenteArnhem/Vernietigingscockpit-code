@@ -10,6 +10,7 @@ import { TaakdefinitiesModule } from "./taakdefinities/taakdefinities.module.js"
 import { TakenModule } from "./taken/taken.module.js";
 import { HealthModule } from "./health/health.module.js";
 import { StekkersModule } from "./stekkers/stekkers.module.js";
+import { WerkkopieModule } from "./werkkopie/werkkopie.module.js";
 import { WorkerModule } from "./worker/worker.module.js";
 import { JwtAuthGuard } from "./auth/jwt-auth.guard.js";
 import { RolesGuard } from "./auth/roles.guard.js";
@@ -42,6 +43,7 @@ import { loggingModule } from "../shared/logging/logging.js";
     StekkersModule,
     TaakdefinitiesModule,
     TakenModule,
+    WerkkopieModule,
     WorkerModule,
     WorkflowModule,
   ],

@@ -76,6 +76,9 @@ services:
       WORKER_LEASE_MS: ${WORKER_LEASE_MS:-300000}
       # Archivering (CC-18): het dossierpakket per taak komt in dit volume.
       ARCHIEF_PAD: /archief
+      # ADR-0006: beginwaarde bewaartermijn werkkopie en interval van de opschoning.
+      WERKKOPIE_BEWAARTERMIJN: ${WERKKOPIE_BEWAARTERMIJN:-P12M}
+      OPSCHONING_INTERVAL: ${OPSCHONING_INTERVAL:-P1D}
       # De worker maakt de vernietigingsverklaring (PDF/A-2b) via Gotenberg (CC-17).
       GOTENBERG_URL: ${GOTENBERG_URL:-}
       GOTENBERG_USERNAME: ${GOTENBERG_USERNAME:-}

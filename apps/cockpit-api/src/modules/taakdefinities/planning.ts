@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { leesArchiefvormer } from "./archiefvormer.js";
 import { schrijfAuditEvent, type AuditActor } from "../audit/audit-keten.js";
 
 // Planning van terugkerende taken. Een jaarlijkse, kwartaal- of maandelijkse taakdefinitie
@@ -68,7 +69,7 @@ export function naamVoorCyclus(definitieNaam: string, frequentie: string, startd
   return `${definitieNaam} ${jaar}`;
 }
 
-// Geplande uitvoering aanmaken, met TASK_CREATED als begin van de auditketen. Bestaat er al een
+// Geplande uitvoering aanmaken, met Creatie als begin van de auditketen. Bestaat er al een
 // geplande, nog niet gestarte uitvoering voor deze definitie, dan gebeurt er niets.
 export async function planUitvoering(
   tx: Prisma.TransactionClient,
@@ -91,12 +92,25 @@ export async function planUitvoering(
     return null;
   }
 
+  // Archiefvormer van de proceseigenaar vastpinnen. Ontbreekt hij (profiel gewijzigd), dan wordt
+  // de cyclus niet gepland: geen dossier zonder archiefvormer.
+  const proceseigenaar = await tx.medewerker.findUnique({
+    where: { id: definitie.proceseigenaarId },
+    select: { archiefvormer: true },
+  });
+  const archiefvormer = leesArchiefvormer(proceseigenaar?.archiefvormer);
+
+  if (!archiefvormer) {
+    return null;
+  }
+
   const naam = naamVoorCyclus(definitie.naam, definitie.frequentie, startdatum);
   const taak = await tx.taakinstantie.create({
     data: {
       taakdefinitieId: definitie.id,
       naam,
       status: "init",
+      archiefvormer,
       geplandOp: startdatum,
       // De selectieregels gelden op de geplande startdatum.
       peildatum: startdatum,
@@ -111,7 +125,7 @@ export async function planUitvoering(
     taakinstantieId: taak.id,
     entiteitType: "taakinstantie",
     entiteitId: taak.id,
-    actie: "TASK_CREATED",
+    eventType: "Creatie",
     details: {
       taakdefinitieId: definitie.id,
       naam,

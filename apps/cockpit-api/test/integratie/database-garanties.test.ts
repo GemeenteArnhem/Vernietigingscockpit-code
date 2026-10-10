@@ -20,7 +20,8 @@ describe("append-only auditlogs", () => {
       data: {
         taakinstantieId: basis.taak.id,
         actorType: "user",
-        actie: "TASK_CREATED",
+        eventType: "Creatie",
+        eventTypeBegrippenlijst: "MDTO EventTypeLijst 1.0",
         entiteitType: "taakinstantie",
         entiteitId: basis.taak.id,
         details: {},
@@ -29,7 +30,7 @@ describe("append-only auditlogs", () => {
     });
 
     await expect(
-      db.prisma.client.auditEvent.update({ where: { id: event.id }, data: { actie: "GEWIJZIGD" } })
+      db.prisma.client.auditEvent.update({ where: { id: event.id }, data: { eventType: "GEWIJZIGD" } })
     ).rejects.toThrow(/append-only/);
     await expect(db.prisma.client.auditEvent.delete({ where: { id: event.id } })).rejects.toThrow(/append-only/);
   });
@@ -38,7 +39,8 @@ describe("append-only auditlogs", () => {
     const event = await db.prisma.client.configuratieEvent.create({
       data: {
         actorType: "user",
-        actie: "TASKDEF_CREATED",
+        eventType: "Taakdefinitie aangemaakt",
+        eventTypeBegrippenlijst: "Cockpit-configuratie-eventtypen 1.0",
         entiteitType: "taakdefinitie",
         entiteitId: "x",
         details: {},
@@ -47,7 +49,7 @@ describe("append-only auditlogs", () => {
     });
 
     await expect(
-      db.prisma.client.configuratieEvent.update({ where: { id: event.id }, data: { actie: "GEWIJZIGD" } })
+      db.prisma.client.configuratieEvent.update({ where: { id: event.id }, data: { eventType: "GEWIJZIGD" } })
     ).rejects.toThrow(/append-only/);
     await expect(db.prisma.client.configuratieEvent.delete({ where: { id: event.id } })).rejects.toThrow(
       /append-only/

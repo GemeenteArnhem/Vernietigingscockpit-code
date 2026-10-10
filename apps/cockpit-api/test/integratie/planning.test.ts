@@ -42,7 +42,7 @@ const uitvoeringen = (taakdefinitieId: string) =>
   db.prisma.client.taakinstantie.findMany({ where: { taakdefinitieId }, orderBy: { naam: "asc" } });
 
 describe("geplande taakuitvoering", () => {
-  it("jaarlijks: één uitvoering in init op de 1e van de eerstvolgende startmaand, met TASK_CREATED", async () => {
+  it("jaarlijks: één uitvoering in init op de 1e van de eerstvolgende startmaand, met Creatie", async () => {
     const startmaand = new Date().getUTCMonth() === 11 ? 1 : new Date().getUTCMonth() + 2; // volgende maand
     const aangemaakt = await service.createTaakdefinitie(rm, definitie("jaarlijks", startmaand));
     const [uitvoering, ...rest] = await uitvoeringen(aangemaakt.id);
@@ -54,7 +54,7 @@ describe("geplande taakuitvoering", () => {
     expect(uitvoering.peildatum?.toISOString().slice(0, 10)).toBe(verwacht.toISOString().slice(0, 10));
 
     const event = await db.prisma.client.auditEvent.findFirstOrThrow({ where: { taakinstantieId: uitvoering.id } });
-    expect(event).toMatchObject({ actie: "TASK_CREATED", actorType: "user" });
+    expect(event).toMatchObject({ eventType: "Creatie", actorType: "user" });
     expect(event.details).toMatchObject({ gepland: true });
 
     // Zolang de startdatum in de toekomst ligt: geen selectie (API 409), en de actie ontbreekt.

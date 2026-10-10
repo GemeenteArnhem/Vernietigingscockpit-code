@@ -1,30 +1,30 @@
 export type ColumnKey =
   | "omvang"
-  | "bewaartermijn"
-  | "vernietigingsdatum"
+  | "termijnLooptijd"
+  | "termijnEinddatum"
   | "status"
   | "uitsluiten"
   | "toelichting"
-  | "bron_id"
-  | "code"
-  | "periode"
+  | "identificatie"
+  | "classificatie"
+  | "dekkingInTijd"
   | "selectielijst"
-  | "grondslag"
-  | "bron_systeem";
+  | "informatiecategorie"
+  | "stekker";
 
 export const COLUMN_LABELS: Record<ColumnKey, string> = {
   omvang: "Omvang",
-  bewaartermijn: "Bewaartermijn",
-  vernietigingsdatum: "Vernietigingsdatum",
+  termijnLooptijd: "Bewaartermijn",
+  termijnEinddatum: "Einddatum bewaartermijn",
   status: "Status",
   uitsluiten: "Uitsluiten",
   toelichting: "Toelichting",
-  bron_id: "Bron-ID",
-  code: "Code",
-  periode: "Periode",
+  identificatie: "Identificatie",
+  classificatie: "Classificatie",
+  dekkingInTijd: "Dekking in tijd",
   selectielijst: "Selectielijst",
-  grondslag: "Grondslag",
-  bron_systeem: "Bronsysteem",
+  informatiecategorie: "Informatiecategorie",
+  stekker: "Stekker",
 };
 
 export type ColumnGroup = {
@@ -35,10 +35,10 @@ export type ColumnGroup = {
 export const COLUMN_GROUPS: ColumnGroup[] = [
   {
     label: "Primaire kolommen",
-    keys: ["omvang", "bewaartermijn", "vernietigingsdatum", "status", "uitsluiten", "toelichting"],
+    keys: ["omvang", "termijnLooptijd", "termijnEinddatum", "status", "uitsluiten", "toelichting"],
   },
   {
     label: "Metadata",
-    keys: ["bron_id", "code", "periode", "selectielijst", "grondslag", "bron_systeem"],
+    keys: ["identificatie", "classificatie", "dekkingInTijd", "selectielijst", "informatiecategorie", "stekker"],
   },
 ];

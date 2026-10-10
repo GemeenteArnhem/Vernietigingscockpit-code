@@ -26,8 +26,9 @@ function nepFetch(antwoorden: Array<Response | (() => Promise<Response>) | Error
   return { fetchFn, verzonden };
 }
 
-const json = (status: number, body: unknown) =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+// Stekker API v2: elke response meldt de volledige versie in API-Version (API-57).
+const json = (status: number, body: unknown, apiVersie = "2.0.0") =>
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "API-Version": apiVersie } });
 
 const verbinding = (overrides: Partial<StekkerVerbinding> = {}): StekkerVerbinding => ({
   id: "config-1",
@@ -38,10 +39,28 @@ const verbinding = (overrides: Partial<StekkerVerbinding> = {}): StekkerVerbindi
   secretRef: "STEKKER_SECRET",
   scopes: ["selectie.read", "selectie.write"],
   timeouts: { requestMs: 1000 },
+  verwachteApiMajor: 2,
   ...overrides,
 });
 
 const selectie = { selectieId: "sel-1", status: "RUNNING" };
+const identificatie = [{ identificatieKenmerk: "b-1", identificatieBron: "Testbron" }];
+const begrip = (begripLabel: string, begripCode?: string) => ({
+  begripLabel,
+  ...(begripCode ? { begripCode } : {}),
+  begripBegrippenlijst: { verwijzingNaam: "Testlijst" },
+});
+// Een kandidaat met alle verplichte velden van het MDTO-profiel (Stekker API v2).
+const kandidaat = (overrides: Record<string, unknown> = {}) => ({
+  vernietigingskandidaatId: "k-1",
+  identificatie,
+  naam: "Dossier 1",
+  aggregatieniveau: begrip("Dossier"),
+  waardering: begrip("Tijdelijk te bewaren", "V"),
+  bewaartermijn: { termijnEinddatum: "2025-01-01" },
+  informatiecategorie: begrip("Handhaving", "11.1"),
+  ...overrides,
+});
 const env = { STEKKER_SECRET: "geheim" };
 const header = (opgenomen: Opgenomen, naam: string) => new Headers(opgenomen.init.headers).get(naam);
 
@@ -50,7 +69,7 @@ describe("StekkerClient: authenticatie", () => {
     const { fetchFn, verzonden } = nepFetch([json(200, { access_token: "tok-1", expires_in: 300 }), json(202, selectie)]);
     const client = new StekkerClient({ fetchFn, env });
 
-    await client.startSelectie(verbinding(), "2026-01-01", "taak-1:job-1");
+    await client.startSelectie(verbinding(), "2026-01-01", "selectie-sel-1", "taak-1:job-1");
 
     expect(verzonden[0].url).toBe("http://idp.test/token");
     const tokenBody = new URLSearchParams(String(verzonden[0].init.body));
@@ -60,8 +79,9 @@ describe("StekkerClient: authenticatie", () => {
       client_secret: "geheim",
       scope: "selectie.read selectie.write",
     });
-    expect(verzonden[1].url).toBe("http://stekker.test/selecties");
+    expect(verzonden[1].url).toBe("http://stekker.test/v2/selecties");
     expect(header(verzonden[1], "authorization")).toBe("Bearer tok-1");
+    expect(header(verzonden[1], "idempotency-key")).toBe("selectie-sel-1");
     expect(header(verzonden[1], "x-correlation-id")).toBe("taak-1:job-1");
     expect(JSON.parse(String(verzonden[1].init.body))).toEqual({ peildatum: "2026-01-01" });
   });
@@ -71,7 +91,7 @@ describe("StekkerClient: authenticatie", () => {
     const { fetchFn, verzonden } = nepFetch([json(200, { access_token: "tok-1", expires_in: 300 }), json(202, selectie)]);
     const client = new StekkerClient({ fetchFn, env: { ...env, SECRET_ENCRYPTION_KEY: sleutel.toString("base64") } });
 
-    await client.startSelectie(verbinding({ secretVersleuteld: versleutel("uit-de-database", sleutel) }), null, "c");
+    await client.startSelectie(verbinding({ secretVersleuteld: versleutel("uit-de-database", sleutel) }), null, "k", "c");
 
     expect(new URLSearchParams(String(verzonden[0].init.body)).get("client_secret")).toBe("uit-de-database");
   });
@@ -151,7 +171,7 @@ describe("StekkerClient: foutclassificatie", () => {
 
   it("4xx is definitief en neemt code, correlatieId en logReference van de stekker over", async () => {
     const fout = await client([
-      json(409, { code: "IDEMPOTENCY_KEY_CONFLICT", message: "x", correlatieId: "corr-9", logReference: "log-9" }),
+      json(409, { code: "IDEMPOTENCY_KEY_REUSED", message: "x", correlatieId: "corr-9", logReference: "log-9" }),
     ])
       .startVernietiging(zonderAuth, { selectieId: "s", cockpitTaakId: "t", besluitReferentie: "b" }, "key-1", "c")
       .catch((error: unknown) => error);
@@ -160,7 +180,7 @@ describe("StekkerClient: foutclassificatie", () => {
     expect((fout as StekkerFout).details).toEqual({
       tijdelijk: false,
       status: 409,
-      code: "IDEMPOTENCY_KEY_CONFLICT",
+      code: "IDEMPOTENCY_KEY_REUSED",
       correlatieId: "corr-9",
       logReference: "log-9",
     });
@@ -214,7 +234,7 @@ describe("StekkerClient: strikt contract", () => {
   });
 
   it("weigert een batchresultaat met een niet-spec resultaatwaarde", async () => {
-    const body = [{ batchNummer: 1, resultaten: [{ vernietigingskandidaatId: "k", bronId: "b", resultaat: "GEWIJZIGD" }] }];
+    const body = [{ batchNummer: 1, resultaten: [{ vernietigingskandidaatId: "k", identificatie, resultaat: "GEWIJZIGD" }] }];
     await expect(met(body).getBatchResultaten(zonderAuth, "v", "c")).rejects.toMatchObject({
       details: { code: "CONTRACT" },
     });
@@ -225,13 +245,81 @@ describe("StekkerClient: strikt contract", () => {
     await new StekkerClient({ fetchFn, env: {} }).voegBatchToe(
       zonderAuth,
       "vern-1",
-      { batchNummer: 2, objecten: [{ vernietigingskandidaatId: "k", bronId: "b" }] },
+      { batchNummer: 2, vernietigingskandidaten: [{ vernietigingskandidaatId: "k", identificatie }] },
       "vernietiging-batch-vern-1-2",
       "taak-1:job-7"
     );
 
-    expect(verzonden[0].url).toBe("http://stekker.test/vernietigingen/vern-1/batches");
+    expect(verzonden[0].url).toBe("http://stekker.test/v2/vernietigingen/vern-1/batches");
     expect(header(verzonden[0], "idempotency-key")).toBe("vernietiging-batch-vern-1-2");
     expect(header(verzonden[0], "x-correlation-id")).toBe("taak-1:job-7");
+  });
+});
+
+describe("StekkerClient: Stekker API v2 (MDTO)", () => {
+  const zonderAuth = verbinding({ authType: "none" });
+  const met = (antwoord: Response) => new StekkerClient({ fetchFn: nepFetch([antwoord]).fetchFn, env: {} });
+  const pagina = (items: unknown[]) => ({ selectieId: "s", items, totaal: items.length });
+
+  it("haalt kandidaten op via /v2/…/vernietigingskandidaten en accepteert het MDTO-profiel", async () => {
+    const { fetchFn, verzonden } = nepFetch([json(200, pagina([kandidaat()]))]);
+    const resultaat = await new StekkerClient({ fetchFn, env: {} }).getKandidaten(zonderAuth, "s", { offset: 0, limit: 500 }, "c");
+
+    expect(verzonden[0].url).toBe("http://stekker.test/v2/selecties/s/vernietigingskandidaten?offset=0&limit=500");
+    expect(resultaat.items[0].naam).toBe("Dossier 1");
+  });
+
+  it.each([
+    ["zonder identificatie", kandidaat({ identificatie: [] })],
+    ["identificatie zonder bron", kandidaat({ identificatie: [{ identificatieKenmerk: "x" }] })],
+    ["niet-MDTO aggregatieniveau", kandidaat({ aggregatieniveau: begrip("Groepering") })],
+    ["onbekende waardering", kandidaat({ waardering: begrip("Vernietigen", "VERNIETIGEN") })],
+    ["zonder einddatum bewaartermijn", kandidaat({ bewaartermijn: { termijnLooptijd: "P5Y" } })],
+    ["zonder informatiecategorie", kandidaat({ informatiecategorie: undefined })],
+  ])("weigert een kandidaat %s", async (_wat, item) => {
+    await expect(met(json(200, pagina([item]))).getKandidaten(zonderAuth, "s", { offset: 0, limit: 500 }, "c")).rejects.toMatchObject({
+      details: { tijdelijk: false, code: "CONTRACT" },
+    });
+  });
+
+  it("weigert een response zonder passende API-Version", async () => {
+    await expect(met(json(200, selectie, "1.0.0")).getSelectie(zonderAuth, "s", "c")).rejects.toMatchObject({
+      details: { code: "CONTRACT" },
+    });
+  });
+
+  it("weigert een stekkerconfiguratie met een niet-ondersteunde major versie", async () => {
+    await expect(met(json(200, selectie)).getSelectie(verbinding({ authType: "none", verwachteApiMajor: 1 }), "s", "c")).rejects.toMatchObject({
+      details: { tijdelijk: false, code: "CONFIGURATIE" },
+    });
+  });
+
+  it("eist bij SUCCESS het event Vernietigen met tijdstip", async () => {
+    const zonderEvent = [{ batchNummer: 1, resultaten: [{ vernietigingskandidaatId: "k", identificatie, resultaat: "SUCCESS" }] }];
+    const metEvent = [{
+      batchNummer: 1,
+      resultaten: [{
+        vernietigingskandidaatId: "k",
+        identificatie,
+        resultaat: "SUCCESS",
+        event: { eventType: begrip("Vernietigen"), eventTijd: "2026-10-08T10:00:00Z" },
+      }],
+    }];
+
+    await expect(met(json(200, zonderEvent)).getBatchResultaten(zonderAuth, "v", "c")).rejects.toMatchObject({
+      details: { code: "CONTRACT" },
+    });
+    await expect(met(json(200, metEvent)).getBatchResultaten(zonderAuth, "v", "c")).resolves.toHaveLength(1);
+  });
+
+  it("haalt de MDTO-XML-specificatie op", async () => {
+    const xml = '<?xml version="1.0"?><MDTO xmlns="https://www.nationaalarchief.nl/mdto"><informatieobject/></MDTO>';
+    const { fetchFn, verzonden } = nepFetch([
+      new Response(xml, { status: 200, headers: { "content-type": "application/xml", "API-Version": "2.0.0" } }),
+    ]);
+
+    await expect(new StekkerClient({ fetchFn, env: {} }).getSpecificatie(zonderAuth, "v-1", "k-1", "c")).resolves.toBe(xml);
+    expect(verzonden[0].url).toBe("http://stekker.test/v2/vernietigingen/v-1/specificaties/k-1");
+    expect(header(verzonden[0], "accept")).toBe("application/xml");
   });
 });

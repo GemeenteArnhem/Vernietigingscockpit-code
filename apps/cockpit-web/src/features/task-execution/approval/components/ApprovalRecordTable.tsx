@@ -5,17 +5,17 @@ import type { VernietigingsKandidaat } from "../../../../shared/types/destructio
 
 type ApprovalColumnKey =
   | "omvang"
-  | "bewaartermijn"
-  | "vernietigingsdatum"
+  | "termijnLooptijd"
+  | "termijnEinddatum"
   | "reden"
   | "toelichting"
   | "accorderingsToelichting"
-  | "bron_id"
-  | "code"
-  | "periode"
+  | "identificatie"
+  | "classificatie"
+  | "dekkingInTijd"
   | "selectielijst"
-  | "grondslag"
-  | "bron_systeem";
+  | "informatiecategorie"
+  | "stekker";
 
 type Props = {
   rows: VernietigingsKandidaat[];
@@ -35,17 +35,17 @@ const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 const COLUMN_LABELS: Record<ApprovalColumnKey, string> = {
   omvang: "Omvang",
-  bewaartermijn: "Bewaartermijn",
-  vernietigingsdatum: "Vernietigingsdatum",
+  termijnLooptijd: "Bewaartermijn",
+  termijnEinddatum: "Einddatum bewaartermijn",
   reden: "Reden",
   toelichting: "Toelichting",
   accorderingsToelichting: "Toelichting accordering",
-  bron_id: "Bron-ID",
-  code: "Code",
-  periode: "Periode",
+  identificatie: "Identificatie",
+  classificatie: "Classificatie",
+  dekkingInTijd: "Dekking in tijd",
   selectielijst: "Selectielijst",
-  grondslag: "Grondslag",
-  bron_systeem: "Bronsysteem",
+  informatiecategorie: "Informatiecategorie",
+  stekker: "Stekker",
 };
 
 const COLUMN_GROUPS: Array<{
@@ -56,8 +56,8 @@ const COLUMN_GROUPS: Array<{
     label: "Primaire kolommen",
     keys: [
       "omvang",
-      "bewaartermijn",
-      "vernietigingsdatum",
+      "termijnLooptijd",
+      "termijnEinddatum",
       "reden",
       "toelichting",
       "accorderingsToelichting",
@@ -65,23 +65,23 @@ const COLUMN_GROUPS: Array<{
   },
   {
     label: "Metadata",
-    keys: ["bron_id", "code", "periode", "selectielijst", "grondslag", "bron_systeem"],
+    keys: ["identificatie", "classificatie", "dekkingInTijd", "selectielijst", "informatiecategorie", "stekker"],
   },
 ];
 
 const DEFAULT_COLUMNS: Record<ApprovalColumnKey, boolean> = {
   omvang: true,
-  bewaartermijn: true,
-  vernietigingsdatum: true,
+  termijnLooptijd: true,
+  termijnEinddatum: true,
   reden: false,
   toelichting: false,
   accorderingsToelichting: true,
-  bron_id: false,
-  code: false,
-  periode: false,
+  identificatie: false,
+  classificatie: false,
+  dekkingInTijd: false,
   selectielijst: false,
-  grondslag: false,
-  bron_systeem: false,
+  informatiecategorie: false,
+  stekker: false,
 };
 
 function useDropdown() {
@@ -143,12 +143,12 @@ export default function ApprovalRecordTable({
   const columnDefinitions = useMemo<ColumnDefinition[]>(() => {
     const definitions: ColumnDefinition[] = [
       {
-        key: "titel",
-        label: "Titel",
+        key: "naam",
+        label: "Naam",
         widthClassName: "w-[28%] min-w-[320px]",
         render: (row) => (
-          <span className="block truncate font-medium text-gray-900" title={row.titel}>
-            {row.titel}
+          <span className="block truncate font-medium text-gray-900" title={row.naam}>
+            {row.naam}
           </span>
         ),
       },
@@ -163,21 +163,21 @@ export default function ApprovalRecordTable({
       });
     }
 
-    if (visibleColumns.bewaartermijn) {
+    if (visibleColumns.termijnLooptijd) {
       definitions.push({
-        key: "bewaartermijn",
+        key: "termijnLooptijd",
         label: "Bewaartermijn",
         widthClassName: "w-[10%] min-w-[140px]",
-        render: (row) => `${row.bewaartermijn} jaar`,
+        render: (row) => row.termijnLooptijd,
       });
     }
 
-    if (visibleColumns.vernietigingsdatum) {
+    if (visibleColumns.termijnEinddatum) {
       definitions.push({
-        key: "vernietigingsdatum",
-        label: "Vernietigingsdatum",
+        key: "termijnEinddatum",
+        label: "Einddatum bewaartermijn",
         widthClassName: "w-[12%] min-w-[150px]",
-        render: (row) => row.vernietigingsdatum,
+        render: (row) => row.termijnEinddatum,
       });
     }
 
@@ -216,32 +216,32 @@ export default function ApprovalRecordTable({
       });
     }
 
-    if (visibleColumns.bron_id) {
+    if (visibleColumns.identificatie) {
       definitions.push({
-        key: "bron_id",
-        label: "Bron-ID",
+        key: "identificatie",
+        label: "Identificatie",
         widthClassName: "w-[12%] min-w-[170px]",
-        render: (row) => formatCellValue(row.bron_id),
+        render: (row) => formatCellValue(row.identificatie),
       });
     }
 
-    if (visibleColumns.code) {
+    if (visibleColumns.classificatie) {
       definitions.push({
-        key: "code",
-        label: "Code",
+        key: "classificatie",
+        label: "Classificatie",
         widthClassName: "w-[8%] min-w-[110px]",
-        render: (row) => formatCellValue(row.code),
+        render: (row) => formatCellValue(row.classificatie),
       });
     }
 
-    if (visibleColumns.periode) {
+    if (visibleColumns.dekkingInTijd) {
       definitions.push({
-        key: "periode",
-        label: "Periode",
+        key: "dekkingInTijd",
+        label: "Dekking in tijd",
         widthClassName: "w-[16%] min-w-[170px]",
         render: (row) =>
-          row.startdatum && row.einddatum
-            ? `${row.startdatum} - ${row.einddatum}`
+          row.dekkingInTijdBegindatum && row.dekkingInTijdEinddatum
+            ? `${row.dekkingInTijdBegindatum} - ${row.dekkingInTijdEinddatum}`
             : "—",
       });
     }
@@ -255,21 +255,21 @@ export default function ApprovalRecordTable({
       });
     }
 
-    if (visibleColumns.grondslag) {
+    if (visibleColumns.informatiecategorie) {
       definitions.push({
-        key: "grondslag",
-        label: "Grondslag",
+        key: "informatiecategorie",
+        label: "Informatiecategorie",
         widthClassName: "w-[14%] min-w-[180px]",
-        render: (row) => formatCellValue(row.grondslag),
+        render: (row) => formatCellValue(row.informatiecategorie),
       });
     }
 
-    if (visibleColumns.bron_systeem) {
+    if (visibleColumns.stekker) {
       definitions.push({
-        key: "bron_systeem",
-        label: "Bronsysteem",
+        key: "stekker",
+        label: "Stekker",
         widthClassName: "w-[10%] min-w-[150px]",
-        render: (row) => formatCellValue(row.bron_systeem),
+        render: (row) => formatCellValue(row.stekker),
       });
     }
 

@@ -6,6 +6,7 @@ import { WorkflowService } from "../../src/modules/workflow/workflow.service.js"
 import { gebruiker, maakBasisdata } from "./helpers/basisdata.js";
 import { startDatabase, type TestDatabase } from "./helpers/database.js";
 import { maakTaakServices, type TaakServices } from "./helpers/taken.js";
+import { mdtoKandidaat, stekkerKandidaat } from "./helpers/kandidaat.js";
 
 let db: TestDatabase;
 let basis: Awaited<ReturnType<typeof maakBasisdata>>;
@@ -45,11 +46,7 @@ function nepStekker(antwoorden: Antwoord[] = [], kandidaten = 2) {
       return { selectieId: "extern", ...antwoord };
     },
     getKandidaten: async () => ({
-      items: Array.from({ length: kandidaten }, (_, i) => ({
-        vernietigingskandidaatId: `nieuw-${i}`,
-        bronId: `bron-${i}`,
-        omschrijving: `Nieuw ${i}`,
-      })),
+      items: Array.from({ length: kandidaten }, (_, i) => stekkerKandidaat(`nieuw-${i}`, `bron-${i}`, `Nieuw ${i}`)),
       totaal: kandidaten,
     }),
   };
@@ -85,10 +82,7 @@ async function maakTaak(selectie: { status: string; externSelectieId?: string; s
       fout: selectie.status === "FAILED" ? "Eerdere fout" : null,
       kandidaten: {
         create: Array.from({ length: selectie.kandidaten ?? 0 }, (_, i) => ({
-          kandidaatId: `oud-${i}`,
-          bronId: `oud-bron-${i}`,
-          omschrijving: `Oud ${i}`,
-          bron: {},
+          ...mdtoKandidaat(`oud-${i}`, { kenmerk: `oud-bron-${i}`, naam: `Oud ${i}` }),
         })),
       },
     },
@@ -116,7 +110,7 @@ describe("herkansen maakt een nieuw selectierecord", () => {
 
     const job = await db.prisma.client.outbox.findFirstOrThrow({ where: { taakinstantieId: taak.id, jobNaam: "selectie:start" } });
     expect(job.payload).toMatchObject({ selectieId: nieuwId });
-    const event = await db.prisma.client.auditEvent.findFirstOrThrow({ where: { taakinstantieId: taak.id, actie: "SELECTION_RETRY_REQUESTED" } });
+    const event = await db.prisma.client.auditEvent.findFirstOrThrow({ where: { taakinstantieId: taak.id, eventType: "Selectie opnieuw aangevraagd" } });
     expect(event).toMatchObject({ entiteitId: nieuwId });
     expect(event.details).toMatchObject({ vorigeSelectieId: oud.id, selectieId: nieuwId });
   });
@@ -144,7 +138,7 @@ describe("herkansen maakt een nieuw selectierecord", () => {
 
     expect((await db.prisma.client.taakinstantie.findUniqueOrThrow({ where: { id: taak.id } })).status).toBe("beoordeling");
     const { kandidaten } = await taken.beoordeling.getKandidaten(rm, taak.id);
-    expect(kandidaten.map((kandidaat) => kandidaat.kandidaatId).sort()).toEqual(["nieuw-0", "nieuw-1"]);
+    expect(kandidaten.map((kandidaat) => kandidaat.vernietigingskandidaatId).sort()).toEqual(["nieuw-0", "nieuw-1"]);
     expect((await leesSelectie(oud.id)).status).toBe("VERVANGEN");
   });
 

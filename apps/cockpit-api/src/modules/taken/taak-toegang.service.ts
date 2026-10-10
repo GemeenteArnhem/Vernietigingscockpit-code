@@ -135,6 +135,7 @@ export class TaakToegangService {
         status: true,
         stapSinds: true,
         versie: true,
+        archiefvormer: true,
         recordmanager: {
           select: {
             id: true,

@@ -5,6 +5,9 @@ import type { Prisma } from "@prisma/client";
 import type { PrismaService } from "../../shared/db/prisma.service.js";
 import { schrijfAuditEvent, type AuditActor } from "../audit/audit-keten.js";
 import { verifieerTaakKeten } from "../audit/audit.service.js";
+import { leesDossierKandidaten, vernietigingsmethodeVan, zorgdragerVan } from "../archief/dossier-gegevens.js";
+import { kandidaatXml, kandidaatXmlNaam, sha256, specificatieNaam } from "../archief/mdto-dossier.js";
+import type { MdtoBegrip, MdtoIdentificatie, MdtoVerwijzing } from "../archief/mdto-xml.js";
 import { ACTIEVE_SELECTIE } from "../taken/actieve-selectie.js";
 
 // Vernietigingsverklaring (CC-17). De worker maakt hem bij de overgang naar `resultaat`;
@@ -12,17 +15,30 @@ import { ACTIEVE_SELECTIE } from "../taken/actieve-selectie.js";
 // verantwoordelijken, per stekker de versies en id's, de resultaten, de uitgesloten
 // kandidaten per reden, het verloop van de besluitvorming en de integriteitsgegevens
 // (CSV-bijlage, lijst- en auditloghash). PDF/A-2b via Gotenberg.
+// MDTO is leidend (ADR-0005 §7): MDTO-namen in de CSV-kolommen en teksten, per stekker de
+// vernietigingsmethode, per vernietigde kandidaat het tijdstip (eventTijd) en een verwijzing
+// naar de MDTO-beschrijving en de specificatie in het archiefpakket.
 
-const BESLUITEN = {
-  REVIEW_SUBMITTED: "Voorgelegd ter accordering",
-  APPROVAL_GRANTED: "Akkoord",
-  APPROVAL_REJECTED: "Teruggestuurd naar recordmanager",
-  DESTRUCTION_APPROVED_BY_ARCHIVIST: "Vrijgegeven voor vernietiging",
-  DESTRUCTION_ORDERED_BY_RM: "Vernietigingsopdracht gegeven",
-  EXECUTION_COMPLETED: "Uitvoering afgerond",
-} as const;
+// De besluiten op taakniveau in de verklaring, per eventtype (ADR-0005 §5). Accordering
+// door de archivaris is de inhoudelijke vrijgave.
+export const BESLUIT_EVENTTYPEN = ["Voorgelegd", "Accordering", "Retour", "Vernietigingsopdracht", "Uitvoering afgerond"] as const;
 
-const ROLNAMEN: Record<string, string> = {
+export function besluitTekst(eventType: string, rol: string | null) {
+  switch (eventType) {
+    case "Voorgelegd":
+      return "Voorgelegd ter accordering";
+    case "Accordering":
+      return rol === "archivaris" ? "Vrijgegeven voor vernietiging" : "Akkoord";
+    case "Retour":
+      return "Teruggestuurd naar recordmanager";
+    case "Vernietigingsopdracht":
+      return "Vernietigingsopdracht gegeven";
+    default:
+      return "Uitvoering afgerond";
+  }
+}
+
+export const ROLNAMEN: Record<string, string> = {
   recordmanager: "Recordmanager",
   proceseigenaar: "Proceseigenaar",
   archivaris: "Archivaris",
@@ -51,6 +67,7 @@ export class VerklaringMaker {
         ronde: true,
         lijstHash: true,
         afgerondOp: true,
+        archiefvormer: true,
         taakdefinitie: { select: { naam: true } },
         recordmanager: persoon,
         proceseigenaar: persoon,
@@ -63,18 +80,11 @@ export class VerklaringMaker {
         include: { stekkerConfiguratie: { include: { stekker: true } }, vernietiging: true },
         orderBy: { selectietijdstip: "asc" },
       }),
-      db.vernietigingskandidaat.findMany({
-        where: { selectie: { taakinstantieId, ...ACTIEVE_SELECTIE } },
-        include: {
-          uitvoeringsresultaten: true,
-          selectie: { select: { stekkerConfiguratie: { select: { stekker: { select: { naam: true } } } } } },
-        },
-        orderBy: [{ vernietigingsdatum: "asc" }, { kandidaatId: "asc" }],
-      }),
+      leesDossierKandidaten(db, taakinstantieId),
       db.auditEvent.findMany({
-        where: { taakinstantieId, entiteitType: "taakinstantie", actie: { in: Object.keys(BESLUITEN) } },
+        where: { taakinstantieId, entiteitType: "taakinstantie", eventType: { in: [...BESLUIT_EVENTTYPEN] } },
         orderBy: { id: "asc" },
-        select: { tijdstip: true, actie: true, actorId: true, actorNaam: true, actorType: true, rol: true },
+        select: { tijdstip: true, eventType: true, actorId: true, actorNaam: true, actorType: true, rol: true },
       }),
       db.kandidaatBesluit.groupBy({
         by: ["ronde", "rol", "besluit"],
@@ -94,26 +104,49 @@ export class VerklaringMaker {
       );
     }
 
+    const zorgdrager = zorgdragerVan(taak);
     const rijen = kandidaten.map((kandidaat) => {
       const resultaat = kandidaat.uitvoeringsresultaten[0];
+      const identificatie = (kandidaat.identificatie ?? []) as MdtoIdentificatie[];
+      const archiefvormer = (kandidaat.archiefvormer as MdtoVerwijzing[] | null) ?? [zorgdrager];
+      const vernietigingsmethode = vernietigingsmethodeVan(kandidaat);
+      // De MDTO-beschrijving per aangeboden kandidaat (B-M6); de SHA-256 staat in de CSV en
+      // dekt het bestand in het archiefpakket.
+      const mdto = kandidaat.beoordeling === "AKKOORD" ? kandidaatXml(kandidaat, zorgdrager, vernietigingsmethode) : null;
       return {
-        kandidaatId: kandidaat.kandidaatId,
-        bronId: kandidaat.bronId,
-        bronIdNaam: kandidaat.bronIdNaam,
-        omschrijving: kandidaat.omschrijving,
+        id: kandidaat.id,
+        vernietigingskandidaatId: kandidaat.kandidaatId,
+        identificatieKenmerk: identificatie.map((item) => item.identificatieKenmerk).join(" | "),
+        identificatieBron: identificatie.map((item) => item.identificatieBron).join(" | "),
+        naam: kandidaat.naam,
+        aggregatieniveau: kandidaat.aggregatieniveau,
         stekker: kandidaat.selectie.stekkerConfiguratie.stekker.naam,
-        classificatiesleutel: kandidaat.classificatiesleutel,
-        selectielijst: kandidaat.selectielijst,
-        grondslag: kandidaat.grondslag,
-        bewaartermijn: kandidaat.bewaartermijn,
-        begindatum: datum(kandidaat.begindatum),
-        einddatum: datum(kandidaat.einddatum),
-        vernietigingsdatum: datum(kandidaat.vernietigingsdatum),
+        classificatieBegripCode: kandidaat.classificatieBegripCode,
+        classificatieBegripLabel: kandidaat.classificatieBegripLabel,
+        dekkingInTijdBegindatum: kandidaat.dekkingInTijdBegindatum,
+        dekkingInTijdEinddatum: kandidaat.dekkingInTijdEinddatum,
+        waardering: kandidaat.waarderingBegripLabel,
+        termijnTriggerStartLooptijd: (kandidaat.termijnTriggerStartLooptijd as MdtoBegrip | null)?.begripLabel ?? null,
+        termijnStartdatumLooptijd: datum(kandidaat.termijnStartdatumLooptijd),
+        termijnLooptijd: kandidaat.termijnLooptijd,
+        termijnEinddatum: datum(kandidaat.termijnEinddatum),
+        informatiecategorieBegripCode: kandidaat.informatiecategorieBegripCode,
+        informatiecategorieBegripLabel: kandidaat.informatiecategorieBegripLabel,
+        informatiecategorieBegrippenlijst: kandidaat.selectielijst,
+        archiefvormer: archiefvormer.map((item) => item.verwijzingNaam).join(" | "),
         aantalObjecten: kandidaat.aantalObjecten,
         aantalBetrokkenen: kandidaat.aantalBetrokkenen,
         beoordeling: kandidaat.beoordeling,
-        uitsluitReden: kandidaat.uitsluitReden,
-        vernietigingsstatus: resultaat?.resultaat ?? null,
+        uitsluitreden: kandidaat.uitsluitReden,
+        resultaat: resultaat?.resultaat ?? null,
+        eventType: resultaat?.resultaat === "SUCCESS" ? "Vernietigen" : resultaat?.resultaat ? "Niet vernietigd" : null,
+        eventTijd: resultaat?.eventTijd?.toISOString() ?? null,
+        bronEventReferentie: resultaat?.bronEventReferentie ?? null,
+        vernietigingsmethode: kandidaat.beoordeling === "AKKOORD" ? vernietigingsmethode : null,
+        mdtoXml: mdto ? kandidaatXmlNaam(kandidaat) : null,
+        mdtoXmlSha256: mdto ? sha256(mdto) : null,
+        specificatie: resultaat?.specificatieSha256 ? specificatieNaam(kandidaat) : null,
+        specificatieSha256: resultaat?.specificatieSha256 ?? null,
         foutcode: resultaat?.foutcode ?? null,
         foutmelding: resultaat?.foutmelding ?? null,
         bronstatus: resultaat?.bronstatus ?? null,
@@ -123,11 +156,11 @@ export class VerklaringMaker {
     });
 
     const aangeboden = rijen.filter((rij) => rij.beoordeling === "AKKOORD");
-    const telling = (status: string) => aangeboden.filter((rij) => rij.vernietigingsstatus === status).length;
+    const telling = (status: string) => aangeboden.filter((rij) => rij.resultaat === status).length;
     const uitgesloten = rijen.filter((rij) => rij.beoordeling === "UITGESLOTEN");
     const perReden = new Map<string, number>();
     for (const rij of uitgesloten) {
-      const reden = rij.uitsluitReden?.trim() || "(geen reden opgegeven)";
+      const reden = rij.uitsluitreden?.trim() || "(geen reden opgegeven)";
       perReden.set(reden, (perReden.get(reden) ?? 0) + 1);
     }
 
@@ -150,9 +183,9 @@ export class VerklaringMaker {
             ? "Vernietigingscockpit"
             : ((event.actorId ? naamVan.get(event.actorId) : undefined) ?? event.actorNaam ?? "-"),
         rol: event.rol ? (ROLNAMEN[event.rol] ?? event.rol) : "Systeem",
-        besluit: BESLUITEN[event.actie as keyof typeof BESLUITEN],
+        besluit: besluitTekst(event.eventType, event.rol),
       };
-      if (event.actie === "APPROVAL_REJECTED") {
+      if (event.eventType === "Retour") {
         ronde += 1;
       }
       return regel;
@@ -168,6 +201,7 @@ export class VerklaringMaker {
         peildatum: datum(taak.peildatum),
         rondes: taak.ronde,
         afgerondOp: taak.afgerondOp?.toISOString() ?? null,
+        archiefvormer: zorgdrager.verwijzingNaam,
         verantwoordelijken: {
           recordmanager: taak.recordmanager,
           proceseigenaar: taak.proceseigenaar,
@@ -175,6 +209,7 @@ export class VerklaringMaker {
         },
       },
       stekkers: selecties.map((selectie) => ({
+        ...vernietigingVan(selectie.id, kandidaten, rijen),
         naam: selectie.stekkerConfiguratie.stekker.naam,
         stekkerversie: selectie.stekkerversie,
         configuratieversie: selectie.configuratieversie,
@@ -186,6 +221,8 @@ export class VerklaringMaker {
         vernietigingStatus: selectie.vernietiging?.stekkerStatus ?? null,
         vernietigingAfgerondOp: (selectie.vernietiging?.stekkerEindtijd ?? selectie.vernietiging?.afgerondOp)?.toISOString() ?? null,
         besluitReferentie: selectie.vernietiging?.besluitReferentie ?? null,
+        vernietigingsmethode: (selectie.vernietiging?.vernietigingsmethode as MdtoBegrip | null | undefined)?.begripLabel ?? null,
+        vernietigingsmethodeToelichting: selectie.vernietiging?.vernietigingsmethodeToelichting ?? null,
       })),
       tellingen: {
         aangeboden: aangeboden.length,
@@ -236,7 +273,7 @@ export class VerklaringMaker {
       csvSha256,
       auditlog: { aantalEvents: keten.aantalEvents, laatsteHash: keten.laatsteHash, intact: keten.intact },
     });
-    const pdf = await this.pdf(maakHtml(metadata));
+    const pdf = await this.pdf(maakHtml(metadata, gegevens.rijen));
     const pdfSha256 = createHash("sha256").update(pdf).digest("hex");
 
     return this.prisma.client.$transaction(async (tx) => {
@@ -257,7 +294,7 @@ export class VerklaringMaker {
 
       await schrijfAuditEvent(tx, actor, {
         taakinstantieId,
-        actie: "CERTIFICATE_GENERATED",
+        eventType: "Creatie",
         entiteitType: "verklaring",
         entiteitId: verklaring.id,
         details: {
@@ -349,39 +386,57 @@ function maakMetadata(
   };
 }
 
-export function maakCsv(rijen: VerklaringGegevens["rijen"]) {
-  const kolommen: Array<[string, (rij: VerklaringGegevens["rijen"][number]) => unknown]> = [
-    ["kandidaat_id", (rij) => rij.kandidaatId],
-    ["bron_id", (rij) => rij.bronId],
-    ["bron_id_naam", (rij) => rij.bronIdNaam],
-    ["omschrijving", (rij) => rij.omschrijving],
-    ["stekker", (rij) => rij.stekker],
-    ["classificatiesleutel", (rij) => rij.classificatiesleutel],
-    ["selectielijst", (rij) => rij.selectielijst],
-    ["grondslag", (rij) => rij.grondslag],
-    ["bewaartermijn", (rij) => rij.bewaartermijn],
-    ["begindatum", (rij) => rij.begindatum],
-    ["einddatum", (rij) => rij.einddatum],
-    ["vernietigingsdatum", (rij) => rij.vernietigingsdatum],
-    ["aantal_objecten", (rij) => rij.aantalObjecten],
-    ["aantal_betrokkenen", (rij) => rij.aantalBetrokkenen],
-    ["beoordeling", (rij) => rij.beoordeling],
-    ["uitsluit_reden", (rij) => rij.uitsluitReden],
-    ["vernietigingsstatus", (rij) => rij.vernietigingsstatus],
-    ["foutcode", (rij) => rij.foutcode],
-    ["foutmelding", (rij) => rij.foutmelding],
-    ["bronstatus", (rij) => rij.bronstatus],
-    ["log_reference", (rij) => rij.logReference],
-    ["correlatie_id", (rij) => rij.correlatieId],
+type Rij = VerklaringGegevens["rijen"][number];
+
+export function maakCsv(rijen: Rij[]) {
+  // Kolomkoppen met MDTO-namen (ADR-0005 §7, B-M6); meervoudige waarden met " | ".
+  const kolommen: Array<keyof Omit<Rij, "id">> = [
+    "vernietigingskandidaatId",
+    "identificatieKenmerk",
+    "identificatieBron",
+    "naam",
+    "aggregatieniveau",
+    "stekker",
+    "classificatieBegripCode",
+    "classificatieBegripLabel",
+    "dekkingInTijdBegindatum",
+    "dekkingInTijdEinddatum",
+    "waardering",
+    "termijnTriggerStartLooptijd",
+    "termijnStartdatumLooptijd",
+    "termijnLooptijd",
+    "termijnEinddatum",
+    "informatiecategorieBegripCode",
+    "informatiecategorieBegripLabel",
+    "informatiecategorieBegrippenlijst",
+    "archiefvormer",
+    "aantalObjecten",
+    "aantalBetrokkenen",
+    "beoordeling",
+    "uitsluitreden",
+    "resultaat",
+    "eventType",
+    "eventTijd",
+    "bronEventReferentie",
+    "vernietigingsmethode",
+    "mdtoXml",
+    "mdtoXmlSha256",
+    "specificatie",
+    "specificatieSha256",
+    "foutcode",
+    "foutmelding",
+    "bronstatus",
+    "logReference",
+    "correlatieId",
   ];
 
   return [
-    kolommen.map(([kop]) => csvWaarde(kop)).join(","),
-    ...rijen.map((rij) => kolommen.map(([, waarde]) => csvWaarde(waarde(rij))).join(",")),
+    kolommen.map((kop) => csvWaarde(kop)).join(","),
+    ...rijen.map((rij) => kolommen.map((kop) => csvWaarde(rij[kop])).join(",")),
   ].join("\r\n");
 }
 
-export function maakHtml(m: VerklaringMetadata) {
+export function maakHtml(m: VerklaringMetadata, rijen: Rij[]) {
   const v = m.taak.verantwoordelijken;
   const tabel = (koppen: string[], regels: unknown[][], klasse = "") =>
     `<table class="lijst ${klasse}"><thead><tr>${koppen.map((kop) => `<th>${html(kop)}</th>`).join("")}</tr></thead><tbody>${
@@ -394,6 +449,8 @@ export function maakHtml(m: VerklaringMetadata) {
       .map(([label, waarde, klasse]) => `<tr><th>${html(label)}</th><td${klasse ? ` class="${klasse}"` : ""}>${html(waarde)}</td></tr>`)
       .join("")}</tbody></table>`;
   const t = m.tellingen;
+  const vernietigd = rijen.filter((rij) => rij.beoordeling === "AKKOORD" && rij.resultaat === "SUCCESS");
+  const nietVernietigd = rijen.filter((rij) => rij.beoordeling === "AKKOORD" && rij.resultaat !== "SUCCESS");
 
   return `<!doctype html>
 <html lang="nl">
@@ -425,7 +482,7 @@ export function maakHtml(m: VerklaringMetadata) {
     <div class="sub">${html(m.taak.naam)} &middot; versie ${html(m.versie)} &middot; ${html(datumTijd(m.gegenereerdOp))}</div>
   </div>
 
-  <p>Deze verklaring legt vast welke vernietigingskandidaten na beoordeling en accordering zijn aangeboden voor vernietiging, met welk resultaat de gekoppelde bronsystemen ze hebben verwerkt, en op basis van welke besluiten. De volledige lijst staat in de CSV-bijlage; de integriteit van bijlage en besluitvorming is controleerbaar met de vermelde hashwaarden.</p>
+  <p>Deze verklaring legt vast welke informatieobjecten (vernietigingskandidaten) na beoordeling en accordering zijn aangeboden voor vernietiging, met welk resultaat de gekoppelde bronsystemen ze hebben verwerkt, met welke vernietigingsmethode, en op basis van welke besluiten. Alleen het resultaat SUCCESS telt als vernietigd. De volledige vernietigingslijst staat in de CSV-bijlage (MDTO-kolomnamen); per aangeboden informatieobject staat de MDTO-beschrijving in het archiefpakket, en bij aggregaties de specificatie van de vernietigde onderliggende informatieobjecten. De integriteit is controleerbaar met de vermelde hashwaarden.</p>
 
   <h2>Taak</h2>
   ${gegevens([
@@ -434,6 +491,7 @@ export function maakHtml(m: VerklaringMetadata) {
     ["Taak-id", m.taak.id, "hash"],
     ["Peildatum", m.taak.peildatum ?? "-"],
     ["Uitvoering afgerond", m.taak.afgerondOp ? datumTijd(m.taak.afgerondOp) : "-"],
+    ["Archiefvormer", m.taak.archiefvormer],
     ["Recordmanager", persoon(v.recordmanager)],
     ["Proceseigenaar", persoon(v.proceseigenaar)],
     ["Archivaris", persoon(v.archivaris)],
@@ -471,9 +529,25 @@ export function maakHtml(m: VerklaringMetadata) {
         ["Status bij de stekker", s.vernietigingStatus ?? "-"],
         ["Afgerond bij de stekker", s.vernietigingAfgerondOp ? datumTijd(s.vernietigingAfgerondOp) : "-"],
         ["Besluitreferentie", s.besluitReferentie ?? "-", "hash"],
+        ["Vernietigingsmethode", s.vernietigingsmethode ?? "-"],
+        ["Toelichting vernietigingsmethode", s.vernietigingsmethodeToelichting ?? "-"],
+        ["Vernietigd (eventTijd)", s.eersteEventTijd ? `${datumTijd(s.eersteEventTijd)} t/m ${datumTijd(s.laatsteEventTijd!)}` : "-"],
+        ["Specificaties", `${s.specificaties.toLocaleString("nl-NL")} MDTO-XML-specificaties (map specificaties/ in het archiefpakket)`],
       ])
     )
     .join("")}
+
+  <h2>Vernietigde informatieobjecten</h2>
+  ${tabel(
+    ["Identificatie", "Naam", "Aggregatieniveau", "Tijdstip vernietiging"],
+    vernietigd.map((rij) => [rij.identificatieKenmerk, rij.naam, rij.aggregatieniveau, rij.eventTijd ? datumTijd(rij.eventTijd) : "-"])
+  )}
+
+  <h2>Aangeboden, niet vernietigd</h2>
+  ${tabel(
+    ["Identificatie", "Naam", "Resultaat", "Melding"],
+    nietVernietigd.map((rij) => [rij.identificatieKenmerk, rij.naam, rij.resultaat ?? "-", rij.foutmelding ?? rij.foutcode ?? "-"])
+  )}
 
   <h2>Besluitvorming</h2>
   ${tabel(
@@ -490,7 +564,7 @@ export function maakHtml(m: VerklaringMetadata) {
 
   <h2>Integriteit</h2>
   ${gegevens([
-    ["CSV-bijlage", `${m.bijlage.bestandsnaam} (${m.bijlage.aantalRegels.toLocaleString("nl-NL")} regels, inclusief uitgesloten kandidaten)`],
+    ["CSV-bijlage (vernietigingslijst)", `${m.bijlage.bestandsnaam} (${m.bijlage.aantalRegels.toLocaleString("nl-NL")} regels, inclusief uitgesloten kandidaten)`],
     ["SHA-256 CSV-bijlage", m.bijlage.sha256, "hash"],
     ["Vingerafdruk lijst bij vrijgave", m.integriteit.lijstHash ?? "-", "hash"],
     ["Auditlog", m.integriteit.auditlog ? `${m.integriteit.auditlog.aantalEvents.toLocaleString("nl-NL")} events, keten ${m.integriteit.auditlog.intact ? "intact" : "NIET intact"}` : "-"],
@@ -500,6 +574,26 @@ export function maakHtml(m: VerklaringMetadata) {
   <div class="voet">Gegenereerd door de Vernietigingscockpit op ${html(datumTijd(m.gegenereerdOp))}. PDF/A-2b. De hashwaarden zijn SHA-256; de auditloghash is de laatste schakel van de auditketen van deze taak op het moment van genereren.</div>
 </body>
 </html>`;
+}
+
+// Per stekker: de periode waarin is vernietigd (eventTijd) en het aantal specificaties.
+function vernietigingVan(
+  selectieId: string,
+  kandidaten: Array<{ id: string; selectieId: string }>,
+  rijen: Array<{ id: string; resultaat: string | null; eventTijd: string | null; specificatie: string | null }>
+) {
+  const vanSelectie = new Set(kandidaten.filter((kandidaat) => kandidaat.selectieId === selectieId).map((kandidaat) => kandidaat.id));
+  const eigen = rijen.filter((rij) => vanSelectie.has(rij.id));
+  const tijden = eigen
+    .filter((rij) => rij.resultaat === "SUCCESS" && rij.eventTijd)
+    .map((rij) => rij.eventTijd!)
+    .sort();
+
+  return {
+    eersteEventTijd: tijden[0] ?? null,
+    laatsteEventTijd: tijden.at(-1) ?? null,
+    specificaties: eigen.filter((rij) => rij.specificatie).length,
+  };
 }
 
 function persoon(p: { naam: string; email: string | null }) {

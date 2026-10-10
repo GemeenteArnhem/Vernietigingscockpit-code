@@ -1,48 +1,40 @@
-import { createHash } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { DOSSIER_XML, sha256, verifieerPakket, type Verificatie } from "./pakket-verificatie.js";
+
+export { DOSSIER_XML, sha256 };
 
 // Archivering van het vernietigingsdossier (CC-18). De cockpit stelt een pakket samen;
 // een adapter zet het op de juiste plek. Nu: een map op schijf (volume). Later: OpenZaak
 // (zaak, documenten en besluit) achter dezelfde interface.
+//
+// Het pakket is MDTO-XML 1.0.1 (ADR-0005 §7): bestanden met hun MDTO-beschrijving en als
+// sluitstuk `dossier.mdto.xml`, de beschrijving van het dossier als geheel.
 
+// `naam` is een relatief pad in het pakket (bijv. `kandidaten/<id>.mdto.xml`).
 export type ArchiefBestand = { naam: string; inhoud: Buffer; contentType: string };
 
 export type ArchiefPakket = {
   taakinstantieId: string;
   archiveringId: string;
   bestanden: ArchiefBestand[];
-  // Beschrijving van het pakket; de adapter voegt per bestand de SHA-256 toe.
-  manifest: Record<string, unknown>;
+  // De MDTO-beschrijving van het dossier; wordt als laatste geschreven.
+  dossierXml: Buffer;
 };
 
 export type ArchiefResultaat = {
   locatie: string;
-  manifestSha256: string;
+  // SHA-256 van dossier.mdto.xml: de referentie naar het gearchiveerde pakket (ADR-0006).
+  dossierSha256: string;
   openzaakZaakId?: string;
 };
 
 export interface ArchiefAdapter {
   readonly naam: string;
   archiveer(pakket: ArchiefPakket): Promise<ArchiefResultaat>;
-}
-
-export function sha256(inhoud: Buffer | string) {
-  return createHash("sha256").update(inhoud).digest("hex");
-}
-
-// Het manifest met per bestand naam, type, grootte en SHA-256; zo is het pakket buiten de
-// cockpit te controleren.
-export function maakManifest(pakket: ArchiefPakket) {
-  return {
-    ...pakket.manifest,
-    bestanden: pakket.bestanden.map((bestand) => ({
-      naam: bestand.naam,
-      contentType: bestand.contentType,
-      bytes: bestand.inhoud.length,
-      sha256: sha256(bestand.inhoud),
-    })),
-  };
+  // Leest het gearchiveerde pakket terug en controleert alle checksums (ADR-0006 §2.3);
+  // gooit een VerificatieFout als er iets niet klopt.
+  verifieer(locatie: string, dossierSha256: string): Promise<Verificatie>;
 }
 
 // Map per taak en archivering: <ARCHIEF_PAD>/<taak-id>/<archivering-id>/. Eerst in een
@@ -55,11 +47,10 @@ export class BestandArchiefAdapter implements ArchiefAdapter {
 
   async archiveer(pakket: ArchiefPakket): Promise<ArchiefResultaat> {
     const doel = path.join(this.basisPad, pakket.taakinstantieId, pakket.archiveringId);
-    const manifestPad = path.join(doel, "manifest.json");
 
-    const bestaand = await readFile(manifestPad).catch(() => null);
+    const bestaand = await readFile(path.join(doel, DOSSIER_XML)).catch(() => null);
     if (bestaand) {
-      return { locatie: doel, manifestSha256: sha256(bestaand) };
+      return { locatie: doel, dossierSha256: sha256(bestaand) };
     }
 
     const tijdelijk = `${doel}.bezig-${process.pid}-${Date.now()}`;
@@ -67,17 +58,59 @@ export class BestandArchiefAdapter implements ArchiefAdapter {
 
     try {
       for (const bestand of pakket.bestanden) {
-        await writeFile(path.join(tijdelijk, bestand.naam), bestand.inhoud);
+        const pad = veiligPad(tijdelijk, bestand.naam);
+        await mkdir(path.dirname(pad), { recursive: true });
+        await writeFile(pad, bestand.inhoud);
       }
 
-      const manifest = Buffer.from(JSON.stringify(maakManifest(pakket), null, 2), "utf8");
-      await writeFile(path.join(tijdelijk, "manifest.json"), manifest);
+      await writeFile(path.join(tijdelijk, DOSSIER_XML), pakket.dossierXml);
       await rename(tijdelijk, doel);
 
-      return { locatie: doel, manifestSha256: sha256(manifest) };
+      return { locatie: doel, dossierSha256: sha256(pakket.dossierXml) };
     } catch (error) {
       await rm(tijdelijk, { recursive: true, force: true }).catch(() => undefined);
       throw error;
     }
   }
+
+  async verifieer(locatie: string, dossierSha256: string): Promise<Verificatie> {
+    const map = path.resolve(locatie);
+
+    // Alleen pakketten onder de eigen archiefmap.
+    if (!map.startsWith(path.resolve(this.basisPad) + path.sep)) {
+      throw new Error(`Archieflocatie ${locatie} valt buiten ARCHIEF_PAD.`);
+    }
+
+    return verifieerPakket(
+      {
+        paden: async () => {
+          const items = await readdir(map, { recursive: true, withFileTypes: true });
+          return items
+            .filter((item) => item.isFile())
+            .map((item) => path.relative(map, path.join(item.parentPath, item.name)).split(path.sep).join("/"));
+        },
+        lees: (pad) => readFile(veiligLeesPad(map, pad)),
+      },
+      dossierSha256
+    );
+  }
+}
+
+function veiligLeesPad(map: string, naam: string) {
+  const pad = path.resolve(map, naam);
+  if (!pad.startsWith(map + path.sep)) {
+    throw new Error(`Ongeldige bestandsnaam in het archiefpakket: ${naam}`);
+  }
+  return pad;
+}
+
+// Een bestandsnaam uit het pakket mag niet buiten de pakketmap uitkomen.
+function veiligPad(map: string, naam: string) {
+  const pad = path.resolve(map, naam);
+
+  if (!pad.startsWith(path.resolve(map) + path.sep) || naam === DOSSIER_XML) {
+    throw new Error(`Ongeldige bestandsnaam in het archiefpakket: ${naam}`);
+  }
+
+  return pad;
 }

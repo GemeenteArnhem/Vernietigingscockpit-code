@@ -1,7 +1,7 @@
 import type { KandidatenStatusFilter } from "@vernietigingscockpit/api-contract";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  formatBewaartermijnLabel,
+  formatTermijnLooptijd,
   getReviewCandidateIds,
   getReviewCandidatesPagina,
   getReviewSelectionSummary,
@@ -50,7 +50,7 @@ export function useKandidatenLijst({
   const [vertraagdeZoek, setVertraagdeZoek] = useState("");
   const [zoekIn, setZoekIn] = useState<SearchScope>("all");
   const [filters, setFilters] = useState<Partial<Record<FacetFilterKey, string>>>({});
-  const [sortKey, setSortKey] = useState<ReviewRecordSortKey>("vernietigingsdatum");
+  const [sortKey, setSortKey] = useState<ReviewRecordSortKey>("termijnEinddatum");
   const [sortDirection, setSortDirection] = useState<ReviewRecordSortDirection>("asc");
   const [data, setData] = useState<Pagina | null>(null);
   const [fout, setFout] = useState<string | null>(null);
@@ -73,7 +73,7 @@ export function useKandidatenLijst({
       ids: uitgesteld ? (uitgesteldeIds.length > 0 ? uitgesteldeIds.slice(0, 200) : [GEEN_KANDIDAAT]) : undefined,
       selectielijst: filters.selectielijst,
       stekker: filters.stekker,
-      bewaartermijn: filters.bewaartermijn,
+      termijnLooptijd: filters.termijnLooptijd,
       sort: sortKey,
       richting: sortDirection,
     };
@@ -138,9 +138,9 @@ export function useKandidatenLijst({
         })),
         selectielijst: (data?.facetten.selectielijst ?? []).map((waarde) => ({ waarde, label: waarde })),
         stekker: (data?.facetten.stekker ?? []).map((waarde) => ({ waarde, label: waarde })),
-        bewaartermijn: (data?.facetten.bewaartermijn ?? []).map((waarde) => ({
+        termijnLooptijd: (data?.facetten.termijnLooptijd ?? []).map((waarde) => ({
           waarde,
-          label: formatBewaartermijnLabel(waarde),
+          label: formatTermijnLooptijd(waarde),
         })),
       },
       onPaginaChange: setPagina,

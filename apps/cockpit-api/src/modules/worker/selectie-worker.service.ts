@@ -21,15 +21,20 @@ import {
   type SelectieWerk,
 } from "./claim.js";
 import { bepaalVervolg, leesRetryConfig, type RetryConfig } from "./retrybeleid.js";
+import { UITSLUITREDEN_WAARDERING } from "@vernietigingscockpit/api-contract";
+import { schrijfAuditEvent } from "../audit/audit-keten.js";
 import {
   StekkerClient,
   type StekkerKandidaat,
   type StekkerSelectie,
   type StekkerVerbinding,
 } from "../stekker/stekker-client.js";
+import { mapKandidaatData } from "./kandidaat-mapping.js";
 import { leesPollConfig, UitvoeringVerwerker } from "./uitvoering.js";
 import { VerklaringMaker } from "../verklaring/verklaring-maker.js";
 import { archiefAdapterVan, ArchiveringVerwerker } from "../archief/archivering.js";
+import { beginwaarde, ISO_DUUR } from "../werkkopie/bewaartermijn.js";
+import { WerkkopieOpschoning } from "../werkkopie/opschoning.js";
 import {
   correlatieId,
   describeError,
@@ -58,6 +63,8 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly uitvoering: UitvoeringVerwerker;
   private readonly verklaringMaker: VerklaringMaker;
   private readonly archivering: ArchiveringVerwerker;
+  private readonly opschoning: WerkkopieOpschoning;
+  private readonly opschoningInterval: string;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -70,6 +77,16 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
     this.leaseMs = leesLeaseMs(this.config.get<string>("WORKER_LEASE_MS"));
     this.verklaringMaker = new VerklaringMaker(this.prisma, this.config);
     this.archivering = new ArchiveringVerwerker(this.prisma, this.workflow, () => archiefAdapterVan(this.config));
+    this.opschoning = new WerkkopieOpschoning(
+      this.prisma,
+      () => archiefAdapterVan(this.config),
+      beginwaarde(this.config.get<string>("WERKKOPIE_BEWAARTERMIJN")),
+      SYSTEEM
+    );
+    this.opschoningInterval = this.config.get<string>("OPSCHONING_INTERVAL")?.trim() || "P1D";
+    if (!ISO_DUUR.test(this.opschoningInterval)) {
+      throw new Error(`OPSCHONING_INTERVAL moet een ISO 8601-duur zijn (bijv. P1D of PT1H), niet '${this.opschoningInterval}'.`);
+    }
     this.uitvoering = new UitvoeringVerwerker(
       this.prisma,
       this.stekker,
@@ -145,6 +162,65 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
     await this.uitvoering.verwerkRonde();
     await this.verwerkVerklaringJobs();
     await this.verwerkArchiefJobs();
+    await this.verwerkOpschoning();
+  }
+
+  // Verwijderen van werkkopieën na archivering (ADR-0006): een periodieke job in de queue
+  // `opschoning` (standaard dagelijks, OPSCHONING_INTERVAL). Alleen met een archieflocatie:
+  // zonder archivering is er niets te verwijderen.
+  private async verwerkOpschoning() {
+    if (!this.config.get<string>("ARCHIEF_PAD")?.trim()) {
+      return;
+    }
+
+    await this.planOpschoning();
+
+    for (const job of await this.claimdeJobs("opschoning", "opschoning:werkkopieen", 1)) {
+      try {
+        const uitkomst = await this.opschoning.verwerk(() => this.verleng("outbox", job.id));
+        await this.prisma.client.$transaction((tx) => this.rondJobAf(tx, job.id, jobVerwerkt(job.pogingen)));
+        if (uitkomst.verwijderd.length || uitkomst.verificatieMislukt.length) {
+          this.logger.log(
+            `opschoning: ${uitkomst.verwijderd.length} werkkopie(ën) verwijderd, ${uitkomst.verificatieMislukt.length} keer verificatie mislukt.`
+          );
+        }
+      } catch (error) {
+        if (error instanceof ClaimVerlorenFout) {
+          this.logger.warn(error.message);
+          continue;
+        }
+
+        const vervolg = bepaalVervolg(error, job.pogingen + 1, this.retry, new Date());
+        const melding = `${describeError(error)}${vervolgToelichting(vervolg)}`;
+
+        await this.prisma.client
+          .$transaction((tx) => this.rondJobAf(tx, job.id, jobNaFout(job.pogingen, vervolg, melding)))
+          .catch((opslagFout: unknown) => {
+            this.logger.error(logRegel(`opschoning: fout kon niet worden vastgelegd: ${describeError(opslagFout)}`, job));
+          });
+        this.logger.warn(logRegel(`opschoning mislukt (${vervolg.status}): ${melding}`, job));
+      }
+    }
+  }
+
+  // Er staat altijd precies één open opschoningsjob klaar: de eerste direct, daarna steeds
+  // OPSCHONING_INTERVAL na de vorige (klok van de database).
+  private async planOpschoning() {
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT 1 AS vergrendeld FROM pg_advisory_xact_lock(hashtext(${"opschoning:planning"}::text))`;
+
+      if (await tx.outbox.count({ where: { queue: "opschoning", status: "OPEN" } })) {
+        return;
+      }
+
+      const eerder = await tx.outbox.count({ where: { queue: "opschoning" } });
+      const [{ tijdstip }] = await tx.$queryRaw<Array<{ tijdstip: Date }>>`
+        SELECT now() + (CASE WHEN ${eerder > 0} THEN ${this.opschoningInterval}::interval ELSE interval '0' END) AS tijdstip`;
+
+      await tx.outbox.create({
+        data: { queue: "opschoning", jobNaam: "opschoning:werkkopieen", payload: {}, volgendePogingOp: tijdstip },
+      });
+    });
   }
 
   // Vernietigingsverklaring maken (CC-17), met hetzelfde retrybeleid als de stekkerjobs:
@@ -226,6 +302,9 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
           this.stekker.startSelectie(
             verbindingVan(selectie.stekkerConfiguratie),
             formatDateOnly(payload.peildatum),
+            // Vaste sleutel per eigen selectierecord (ADR-0004): een herhaalde start na een
+            // gemist antwoord levert bij de stekker dezelfde selectie op.
+            `selectie-${selectie.id}`,
             correlatieId(job.taakinstantieId, job.id)
           )
         );
@@ -394,6 +473,7 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
 
       try {
         const imported = await this.importSelectieKandidaten({
+          taakinstantieId: selectie.taakinstantie.id,
           selectieId: selectie.id,
           externSelectieId: selectie.externSelectieId,
           verbinding: verbindingVan(selectie.stekkerConfiguratie),
@@ -453,7 +533,51 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  // Kandidaten met een waardering anders dan V (Blijvend te bewaren of Nader te bepalen) sluit
+  // het systeem direct uit, met een vaste reden en een audit-event (ADR-0005, B-M1). Alleen
+  // kandidaten die nog niet zijn uitgesloten: een herhaalde import schrijft niets dubbel.
+  private async sluitNietVUit(taakinstantieId: string, selectieId: string, kandidaten: StekkerKandidaat[]) {
+    const nietV = kandidaten.filter((kandidaat) => kandidaat.waardering.begripCode !== "V");
+
+    if (nietV.length === 0) {
+      return;
+    }
+
+    await this.prisma.client.$transaction(async (tx) => {
+      const open = await tx.vernietigingskandidaat.findMany({
+        where: {
+          selectieId,
+          kandidaatId: { in: nietV.map((kandidaat) => kandidaat.vernietigingskandidaatId.trim()) },
+          uitsluitReden: null,
+        },
+        select: { id: true, kandidaatId: true, waarderingBegripCode: true, waarderingBegripLabel: true },
+      });
+
+      for (const kandidaat of open) {
+        const toelichting = `Waardering ${kandidaat.waarderingBegripCode} (${kandidaat.waarderingBegripLabel}) volgens de stekker; alleen V (Tijdelijk te bewaren) kan worden vernietigd.`;
+        await tx.vernietigingskandidaat.update({
+          where: { id: kandidaat.id },
+          data: { beoordeling: "UITGESLOTEN", uitsluitReden: UITSLUITREDEN_WAARDERING, toelichting, beoordeeldOp: new Date() },
+        });
+        await schrijfAuditEvent(tx, SYSTEEM, {
+          taakinstantieId,
+          eventType: "Kandidaat uitgesloten",
+          entiteitType: "vernietigingskandidaat",
+          entiteitId: kandidaat.id,
+          details: {
+            kandidaatId: kandidaat.kandidaatId,
+            beoordeling: "UITGESLOTEN",
+            uitsluitReden: UITSLUITREDEN_WAARDERING,
+            waardering: kandidaat.waarderingBegripCode,
+            automatisch: true,
+          },
+        });
+      }
+    });
+  }
+
   private async importSelectieKandidaten(input: {
+    taakinstantieId: string;
     selectieId: string;
     externSelectieId: string;
     verbinding: StekkerVerbinding;
@@ -494,6 +618,7 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
             })
           )
         );
+        await this.sluitNietVUit(input.taakinstantieId, input.selectieId, page.items);
       }
 
       imported += page.items.length;
@@ -619,39 +744,6 @@ function formatDateOnly(value?: string | null) {
   const date = parseDate(value);
 
   return date?.toISOString().slice(0, 10) ?? null;
-}
-
-function mapKandidaatData(
-  selectieId: string,
-  kandidaat: StekkerKandidaat
-): Prisma.VernietigingskandidaatUncheckedCreateInput {
-  return {
-    selectieId,
-    kandidaatId: requiredString(
-      kandidaat.vernietigingskandidaatId,
-      "vernietigingskandidaatId"
-    ),
-    bronId: requiredString(kandidaat.bronId, "bronId"),
-    bronIdNaam: kandidaat.bronIdNaam,
-    omschrijving: requiredString(kandidaat.omschrijving, "omschrijving"),
-    classificatieschema: kandidaat.classificatieschema,
-    classificatiesleutel: kandidaat.classificatiesleutel,
-    classificatieomschrijving: kandidaat.classificatieomschrijving,
-    selectielijst: kandidaat.selectielijst,
-    grondslag: kandidaat.grondslag,
-    grondslagAfwijkend: kandidaat.grondslagAfwijkend,
-    resultaat: kandidaat.resultaat,
-    bewaartermijn: kandidaat.bewaartermijn,
-    waardering: kandidaat.waardering,
-    begindatum: parseDate(kandidaat.begindatum),
-    einddatum: parseDate(kandidaat.einddatum),
-    vernietigingsdatum: parseDate(kandidaat.vernietigingsdatum),
-    aantalObjecten: kandidaat.aantalObjecten ?? 0,
-    aantalBetrokkenen: kandidaat.aantalBetrokkenen ?? 0,
-    relatieType: kandidaat.relatieType,
-    relatieId: kandidaat.relatieId,
-    bron: kandidaat as Prisma.InputJsonValue,
-  };
 }
 
 function requiredString(value: string | undefined, field: string) {

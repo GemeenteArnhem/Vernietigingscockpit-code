@@ -12,8 +12,10 @@ import ActionPanel, {
   ActionPanelChoice,
   ActionPanelEmptyState,
   ActionPanelSection,
+  ActionPanelSelect,
   ActionPanelTextarea,
 } from "../components/ActionPanel";
+import { UITSLUIT_REDENEN } from "../shared/constants/exclusionReasons";
 import ShortcutPane from "../components/ShortcutPane";
 import ConfirmDialog from "../components/ConfirmDialog";
 import RecordDetailsPanel from "../features/task-execution/components/RecordDetailsPanel";
@@ -41,6 +43,7 @@ import {
   useSelectieSamenvatting,
 } from "../features/task-execution/review/useKandidatenLijst";
 import { maakBulkDetails } from "../features/task-execution/review/bulkDetails";
+import { AANTAL_OBJECTEN_UITLEG, AGGREGATIENIVEAU_UITLEG, ARCHIEFVORMER_UITLEG, WAARDERING_UITLEG } from "../features/task-execution/review/bulkDetails";
 
 // Vaste lege lijsten, zodat useMemo-afhankelijkheden niet bij elke render veranderen.
 const EMPTY_ROWS: VernietigingsKandidaat[] = [];
@@ -106,7 +109,8 @@ const reviewActions = [
 
 function mapActionToApiInput(
   action: ReviewAction,
-  toelichting: string
+  toelichting: string,
+  reden: string
 ): UpdateKandidaatBeoordelingInput | null {
   const normalizedToelichting = toelichting.trim() || null;
 
@@ -119,7 +123,7 @@ function mapActionToApiInput(
     case "uitsluiten":
       return {
         beoordeling: "UITGESLOTEN",
-        uitsluitReden: normalizedToelichting,
+        uitsluitReden: (reden || null) as UpdateKandidaatBeoordelingInput["uitsluitReden"],
         toelichting: normalizedToelichting,
       };
     default:
@@ -137,6 +141,8 @@ export default function RecordReviewPage() {
   const [decisions, setDecisions] =
     useState<Record<string, ReviewDecision>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
+  // Gekozen uitsluitreden per record (of voor de bulkselectie), uit Cockpit-uitsluitredenen.
+  const [redenen, setRedenen] = useState<Record<string, string>>({});
   const [deferredRecords, setDeferredRecords] = useState<Record<string, boolean>>({});
   const [selectedActions, setSelectedActions] = useState<Record<string, ReviewAction>>({});
   const [manualComments, setManualComments] = useState<Record<string, ReviewComment[]>>({});
@@ -252,7 +258,7 @@ export default function RecordReviewPage() {
       selectedBulkItems.flatMap((item) =>
         (item.context?.comments ?? []).map((comment) => ({
           ...comment,
-          role: `${comment.role} · ${item.row.titel}`,
+          role: `${comment.role} · ${item.row.naam}`,
         }))
       ),
     [selectedBulkItems]
@@ -277,6 +283,11 @@ export default function RecordReviewPage() {
     : selectedItem
       ? notes[selectedItem.row.id] ?? ""
       : "";
+  const selectedReden = isBulkMode
+    ? redenen[BULK_SELECTION_KEY] ?? ""
+    : selectedItem
+      ? redenen[selectedItem.row.id] ?? ""
+      : "";
   const tellingen = lijst.data?.tellingen;
   // Over de hele lijst, niet alleen deze pagina.
   const allReviewed = (tellingen?.totaal ?? 0) > 0 && tellingen?.opgenomen === 0;
@@ -290,20 +301,22 @@ export default function RecordReviewPage() {
     () =>
       visibleRows.map((item) => ({
         id: item.row.id,
-        omschrijving: item.row.titel,
+        naam: item.row.naam,
         queueStatus: item.queueStatus,
         volgnummer: item.snapshotVolgnummer,
-        code: item.row.code ?? "-",
+        classificatie: item.row.classificatie ?? "-",
         selectielijst: item.row.selectielijst ?? "-",
-        grondslag: item.row.grondslag ?? "-",
-        bewaartermijn: `${item.row.bewaartermijn} jaar`,
-        vernietigingsdatum: item.row.vernietigingsdatum ?? "-",
+        informatiecategorie: item.row.informatiecategorie ?? "-",
+        termijnLooptijd: item.row.termijnLooptijd,
+        termijnEinddatum: item.row.termijnEinddatum ?? "-",
         opmerkingenCount: item.context?.comments.length ?? 0,
         aantalObjecten: item.row.aantalObjecten.toLocaleString("nl-NL"),
         aantalBetrokkenen: item.row.aantalBetrokkenen.toLocaleString("nl-NL"),
-        periode: `${item.row.startdatum ?? "-"} / ${item.row.einddatum ?? "-"}`,
-        stekker: item.row.bron_systeem ?? "-",
-        bronId: item.row.bron_id ?? "-",
+        dekkingInTijd: `${item.row.dekkingInTijdBegindatum ?? "-"} / ${item.row.dekkingInTijdEinddatum ?? "-"}`,
+        stekker: item.row.stekker ?? "-",
+        identificatie: item.row.identificatie ?? "-",
+        aggregatieniveau: item.row.aggregatieniveau ?? "-",
+        waardering: item.row.waardering ?? "-",
       })),
     [visibleRows]
   );
@@ -315,8 +328,18 @@ export default function RecordReviewPage() {
 
     setActionError(null);
 
+    // Bij uitsluiten zijn een reden uit de lijst en een toelichting verplicht (ADR-0005).
+    if (action === "uitsluiten" && !selectedReden) {
+      setActionError("Reden is verplicht");
+      return;
+    }
+    if (action === "uitsluiten" && !selectedNote.trim()) {
+      setActionError("Toelichting is verplicht bij uitsluiten");
+      return;
+    }
+
     if (action !== "uitstellen" && accessToken && id && apiRows) {
-      const input = mapActionToApiInput(action, selectedNote);
+      const input = mapActionToApiInput(action, selectedNote, selectedReden);
 
       if (!input) {
         return;
@@ -403,6 +426,11 @@ export default function RecordReviewPage() {
         } else if (selectedItem) {
           nextState[selectedItem.row.id] = "";
         }
+        return nextState;
+      });
+      setRedenen((current) => {
+        const nextState = { ...current };
+        delete nextState[isBulkMode ? BULK_SELECTION_KEY : selectedItem?.row.id ?? ""];
         return nextState;
       });
     }
@@ -520,7 +548,7 @@ export default function RecordReviewPage() {
       <AppShellPortal slot="detail">
         {selectedItem ? (
           <RecordDetailsPanel
-            record={isBulkMode ? { titel: `Selectie van ${selectedTableIds.length} records` } : selectedItem.row}
+            record={isBulkMode ? { naam: `Selectie van ${selectedTableIds.length} records` } : selectedItem.row}
             comments={isBulkMode ? bulkComments : selectedItem.context?.comments ?? []}
             currentIndex={isBulkMode ? 0 : selectedIndex >= 0 ? lijst.pagina * PAGINA_GROOTTE + selectedIndex + 1 : 0}
             totalCount={isBulkMode ? 0 : lijst.server.totaal}
@@ -541,16 +569,26 @@ export default function RecordReviewPage() {
             }
             details={isBulkMode ? bulkDetails : [
               {
-                label: "Omschrijving",
-                labelTitle: "Titel vernietigen informatieobjecten binnen de taak",
-                value: selectedItem.row.titel,
+                label: "Naam",
+                labelTitle: "Naam van het informatieobject",
+                value: selectedItem.row.naam,
                 stacked: true,
               },
               {
-                label: "Code",
+                label: "Aggregatieniveau",
+                labelTitle: AGGREGATIENIVEAU_UITLEG,
+                value: selectedItem.row.aggregatieniveau ?? "-",
+              },
+              {
+                label: "Waardering",
+                labelTitle: WAARDERING_UITLEG,
+                value: selectedItem.row.waardering ?? "-",
+              },
+              {
+                label: "Classificatie",
                 labelTitle:
                   "De VNG code of BAC van de te vernietigen informatieobjecten binnen de taak. Voor selectielijst vanaf 2017, Zaaktype gebruiken.",
-                value: selectedItem.row.code ?? "-",
+                value: selectedItem.row.classificatie ?? "-",
               },
               {
                 label: "Selectielijst",
@@ -559,28 +597,28 @@ export default function RecordReviewPage() {
                 value: selectedItem.row.selectielijst ?? "-",
               },
               {
-                label: "Grondslag",
+                label: "Informatiecategorie",
                 labelTitle:
                   "De categorie/grondslag uit de vignerende selectielijst op basis waarvan de informatieobjecten vernietigd dienen te worden",
-                value: selectedItem.row.grondslag ?? "-",
+                value: selectedItem.row.informatiecategorie ?? "-",
               },
               {
                 label: "Bewaartermijn",
                 labelTitle:
                   "De periode dat de informatieobjecten moeten worden bewaard conform de vigerende selectielijst",
-                value: `${selectedItem.row.bewaartermijn} jaar`,
+                value: selectedItem.row.termijnLooptijd,
               },
               {
-                label: "Vernietigingsdatum",
+                label: "Einddatum bewaartermijn",
                 labelTitle:
-                  "Jaar en maand waarin het dossier/informatieobject vernietigd moet worden. Format: jjjj-mm",
-                value: selectedItem.row.vernietigingsdatum ?? "-",
+                  "Jaar en maand waarin de bewaartermijn eindigt (MDTO termijnEinddatum). Format: jjjj-mm",
+                value: selectedItem.row.termijnEinddatum ?? "-",
               },
               {
-                label: "Periode",
+                label: "Dekking in tijd",
                 labelTitle:
                   "Gehele periode waar de stukken binnen deze taak in vallen. Format jjjj-mm / jjjj-mm",
-                value: `${selectedItem.row.startdatum ?? "-"} / ${selectedItem.row.einddatum ?? "-"}`,
+                value: `${selectedItem.row.dekkingInTijdBegindatum ?? "-"} / ${selectedItem.row.dekkingInTijdEinddatum ?? "-"}`,
               },
               {
                 label: "Status",
@@ -591,7 +629,7 @@ export default function RecordReviewPage() {
               },
               {
                 label: "Aantal objecten",
-                labelTitle: "Aantal objecten",
+                labelTitle: AANTAL_OBJECTEN_UITLEG,
                 value: `${selectedItem.row.aantalObjecten}`,
               },
               {
@@ -602,12 +640,17 @@ export default function RecordReviewPage() {
               {
                 label: "Stekker",
                 labelTitle: "Naam van de stekker waar de informatieobjecten uit komt.",
-                value: selectedItem.row.bron_systeem ?? "-",
+                value: selectedItem.row.stekker ?? "-",
               },
               {
-                label: "Bron-ID",
-                labelTitle: "Identificatie van het informatieobject uit de stekker",
-                value: selectedItem.row.bron_id ?? "-",
+                label: "Identificatie",
+                labelTitle: "Identificatie van het informatieobject: kenmerk en bron (MDTO identificatie)",
+                value: selectedItem.row.identificaties?.join("\n") || (selectedItem.row.identificatie ?? "-"),
+              },
+              {
+                label: "Archiefvormer",
+                labelTitle: ARCHIEFVORMER_UITLEG,
+                value: selectedItem.row.archiefvormer ?? "-",
               },
               {
                 label: "ID",
@@ -684,6 +727,23 @@ export default function RecordReviewPage() {
                   ))}
                 </div>
               </ActionPanelSection>
+
+              {selectedDecision === "uitsluiten" ? (
+                <div className="mb-3">
+                  <ActionPanelSelect
+                    label="Reden"
+                    placeholder="Kies een reden..."
+                    value={selectedReden}
+                    options={UITSLUIT_REDENEN}
+                    onChange={(value) =>
+                      setRedenen((current) => ({
+                        ...current,
+                        [isBulkMode ? BULK_SELECTION_KEY : selectedItem.row.id]: value,
+                      }))
+                    }
+                  />
+                </div>
+              ) : null}
 
               <div>
                 <ActionPanelTextarea

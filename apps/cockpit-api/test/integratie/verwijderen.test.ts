@@ -48,7 +48,7 @@ describe("beheerder maakt aan", () => {
   it("een taak voor een gekozen recordmanager, met functiescheiding, en een uitvoering daarvan", async () => {
     const aangemaakt = await service.createTaakdefinitie(fb, definitie());
     const event = await db.prisma.client.configuratieEvent.findFirstOrThrow({
-      where: { entiteitId: aangemaakt.id, actie: "TASK_DEFINITION_CREATED" },
+      where: { entiteitId: aangemaakt.id, eventType: "Taakdefinitie aangemaakt" },
     });
     expect(event).toMatchObject({ rol: "functioneel_beheerder" });
 
@@ -57,7 +57,7 @@ describe("beheerder maakt aan", () => {
     const uitvoering = await service.createTaakinstantie(fb, aangemaakt.id, {});
     expect(uitvoering).toMatchObject({ status: "init" });
     expect(await db.prisma.client.auditEvent.findFirstOrThrow({ where: { taakinstantieId: uitvoering.id } })).toMatchObject({
-      actie: "TASK_CREATED",
+      eventType: "Creatie",
       rol: "functioneel_beheerder",
     });
   });
@@ -75,7 +75,7 @@ describe("beheerder verwijdert", () => {
 
     expect(await db.prisma.client.taakdefinitie.count({ where: { id: aangemaakt.id } })).toBe(0);
     expect(
-      await db.prisma.client.configuratieEvent.findFirstOrThrow({ where: { entiteitId: aangemaakt.id, actie: "TASK_DEFINITION_DELETED" } })
+      await db.prisma.client.configuratieEvent.findFirstOrThrow({ where: { entiteitId: aangemaakt.id, eventType: "Taakdefinitie verwijderd" } })
     ).toMatchObject({ details: expect.objectContaining({ echtVerwijderd: true }) });
   });
 
@@ -91,9 +91,9 @@ describe("beheerder verwijdert", () => {
     expect((await db.prisma.client.taakinstantie.findUniqueOrThrow({ where: { id: uitvoering.id } })).verwijderdOp).toBeInstanceOf(Date);
 
     const acties = (await db.prisma.client.auditEvent.findMany({ where: { taakinstantieId: uitvoering.id }, orderBy: { id: "asc" } })).map(
-      (event) => event.actie
+      (event) => event.eventType
     );
-    expect(acties).toEqual(["TASK_CREATED", "TASK_DELETED"]);
+    expect(acties).toEqual(["Creatie", "Logisch verwijderd"]);
     expect(await verifieerTaakKeten(db.prisma, uitvoering.id)).toMatchObject({ intact: true });
 
     expect((await service.getTaakdefinities(fb, "alle")).map((item) => item.id)).not.toContain(aangemaakt.id);

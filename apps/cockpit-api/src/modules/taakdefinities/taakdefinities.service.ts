@@ -21,6 +21,7 @@ import {
   taakinstantieSelect,
 } from "../taken/taken.dto.js";
 import { schrijfAuditEvent, schrijfConfiguratieEvent, type AuditActor } from "../audit/audit-keten.js";
+import { archiefvormerVanProceseigenaar } from "./archiefvormer.js";
 import { eersteStartdatum, planUitvoering } from "./planning.js";
 import type { ApiTaakdefinitie, ApiTaakinstantie } from "@vernietigingscockpit/api-contract";
 
@@ -148,6 +149,8 @@ export class TaakdefinitiesService {
 
     await this.validateMedewerkers(data);
     await this.validateStekkers(data.stekkers);
+    // De proceseigenaar moet een archiefvormer in het profiel hebben (ADR-0005, B-M3).
+    await archiefvormerVanProceseigenaar(this.prisma.client, data.proceseigenaarId);
 
     const taakdefinitie = await this.prisma.client.$transaction(async (tx) => {
       const created = await tx.taakdefinitie.create({
@@ -179,7 +182,7 @@ export class TaakdefinitiesService {
       await schrijfConfiguratieEvent(tx, actor, {
         entiteitType: "taakdefinitie",
         entiteitId: created.id,
-        actie: "TASK_DEFINITION_CREATED",
+        eventType: "Taakdefinitie aangemaakt",
         details: {
           naam: data.naam,
           categorie: data.categorie,
@@ -237,12 +240,14 @@ export class TaakdefinitiesService {
     const naam = input.naam?.trim() || definition.naam;
 
     const taak = await this.prisma.client.$transaction(async (tx) => {
+      const archiefvormer = await archiefvormerVanProceseigenaar(tx, definition.proceseigenaarId);
       const created = await tx.taakinstantie.create({
         data: {
           taakdefinitieId: definition.id,
           naam,
           status: "init",
           peildatum,
+          archiefvormer,
           recordmanagerId: definition.recordmanagerId,
           proceseigenaarId: definition.proceseigenaarId,
           archivarisId: definition.archivarisId,
@@ -255,7 +260,7 @@ export class TaakdefinitiesService {
         taakinstantieId: created.id,
         entiteitType: "taakinstantie",
         entiteitId: created.id,
-        actie: "TASK_CREATED",
+        eventType: "Creatie",
         details: {
           taakdefinitieId: definition.id,
           naam,
@@ -296,7 +301,7 @@ export class TaakdefinitiesService {
         await schrijfConfiguratieEvent(tx, actor, {
           entiteitType: "taakdefinitie",
           entiteitId: id,
-          actie: "TASK_DEFINITION_DELETED",
+          eventType: "Taakdefinitie verwijderd",
           details: { naam: definitie.naam, echtVerwijderd: true, uitvoeringen: 0 },
         });
         return;
@@ -322,7 +327,7 @@ export class TaakdefinitiesService {
       await schrijfConfiguratieEvent(tx, actor, {
         entiteitType: "taakdefinitie",
         entiteitId: id,
-        actie: "TASK_DEFINITION_DELETED",
+        eventType: "Taakdefinitie verwijderd",
         details: { naam: definitie.naam, echtVerwijderd: false, uitvoeringen: uitvoeringen.length },
       });
     });
@@ -557,7 +562,7 @@ async function markeerVerwijderd(
     taakinstantieId: uitvoering.id,
     entiteitType: "taakinstantie",
     entiteitId: uitvoering.id,
-    actie: "TASK_DELETED",
+    eventType: "Logisch verwijderd",
     details: { naam: uitvoering.naam, status: uitvoering.status, reden },
   });
 }

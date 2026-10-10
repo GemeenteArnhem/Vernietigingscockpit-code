@@ -3,13 +3,30 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { api, auditActies, maakTaak, prisma, statuswijziging, token, totVrijgegeven, wachtOp } from "./helpers.js";
+import { valideerMdto } from "../../src/modules/archief/mdto-xsd.testhulp.js";
 
 const API = process.env.E2E_API_URL ?? "http://localhost:39700/api/v1";
 const COMPOSE = path.resolve(import.meta.dirname, "../../../../infrastructure/compose/docker-compose.test.yml");
 
-// Een bestand uit het gedeelde archiefvolume lezen, via een van de workers.
-const leesArchief = (bestand: string) =>
-  execFileSync("docker", ["compose", "-f", COMPOSE, "exec", "-T", "worker-2", "cat", bestand]);
+// Het hele pakket in één aanroep (relatief pad -> inhoud). Veel losse aanroepen blokkeren
+// het testproces zo lang dat een bewaarde verbinding met de API wordt verbroken.
+const LEES_MAP = [
+  "const fs = require('fs'), path = require('path');",
+  "const lees = (map) => fs.readdirSync(map, { withFileTypes: true }).flatMap((d) =>",
+  "  d.isDirectory() ? lees(path.join(map, d.name)) : [path.join(map, d.name)]);",
+  "const basis = process.argv[1];",
+  "console.log(JSON.stringify(Object.fromEntries(lees(basis).map((f) => [path.relative(basis, f).split(path.sep).join('/'), fs.readFileSync(f).toString('base64')]))));",
+].join("\n");
+const leesArchiefMap = (map: string): Record<string, Buffer> =>
+  Object.fromEntries(
+    Object.entries(
+      JSON.parse(
+        execFileSync("docker", ["compose", "-f", COMPOSE, "exec", "-T", "worker-2", "node", "-e", LEES_MAP, map], {
+          maxBuffer: 256 * 1024 * 1024,
+        }).toString("utf8")
+      ) as Record<string, string>
+    ).map(([naam, inhoud]) => [naam, Buffer.from(inhoud, "base64")])
+  );
 
 afterAll(async () => {
   await prisma.client.$disconnect();
@@ -33,7 +50,7 @@ describe("volledige vernietigingscyclus tegen de teststekker (met OAuth2)", () =
 
     const { body } = await api("rm", `/taken/${taakId}/vernietigingsresultaten`);
     expect(body.resultaten).toHaveLength(aantalKandidaten - UITGESLOTEN);
-    expect(body.resultaten.every((resultaat: { vernietigingsstatus: string }) => resultaat.vernietigingsstatus === "SUCCESS")).toBe(true);
+    expect(body.resultaten.every((resultaat: { resultaat: string }) => resultaat.resultaat === "SUCCESS")).toBe(true);
 
     const vernietigd = aantalKandidaten - UITGESLOTEN;
 
@@ -55,22 +72,22 @@ describe("volledige vernietigingscyclus tegen de teststekker (met OAuth2)", () =
 
     // Auditlog (ADR-0003): volledige reconstructie en een intacte keten.
     const acties = await auditActies(taakId);
-    expect(acties.slice(0, 3)).toEqual(["TASK_CREATED", "SELECTION_REQUESTED", "SELECTION_COMPLETED"]);
-    expect(acties.filter((actie) => actie === "OBJECT_EXCLUDED")).toHaveLength(UITGESLOTEN);
-    expect(acties.filter((actie) => actie === "OBJECT_INCLUDED")).toHaveLength(vernietigd);
-    expect(acties.filter((actie) => actie === "OBJECT_PROCESSED")).toHaveLength(vernietigd);
+    expect(acties.slice(0, 3)).toEqual(["Creatie", "Selectie aangevraagd", "Import"]);
+    expect(acties.filter((actie) => actie === "Kandidaat uitgesloten")).toHaveLength(UITGESLOTEN);
+    expect(acties.filter((actie) => actie === "Kandidaat opgenomen")).toHaveLength(vernietigd);
+    expect(acties.filter((actie) => actie === "Vernietigen")).toHaveLength(vernietigd);
     for (const actie of [
-      "REVIEW_SUBMITTED",
-      "APPROVAL_GRANTED",
-      "DESTRUCTION_APPROVED_BY_ARCHIVIST",
-      "DESTRUCTION_ORDERED_BY_RM",
-      "EXECUTION_STARTED",
-      "BATCH_STARTED",
-      "BATCH_COMPLETED",
+      "Voorgelegd",
+      "Accordering",
+      "Accordering",
+      "Vernietigingsopdracht",
+      "Uitvoering gestart",
+      "Batch aangeboden",
+      "Batch verwerkt",
     ]) {
       expect(acties, actie).toContain(actie);
     }
-    expect(acties.slice(-2)).toEqual(["EXECUTION_COMPLETED", "CERTIFICATE_GENERATED"]);
+    expect(acties.slice(-2)).toEqual(["Uitvoering afgerond", "Creatie"]);
 
     const verificatie = await api("auditor", `/taken/${taakId}/auditlog/verificatie`);
     expect(verificatie.body).toMatchObject({ intact: true, aantalEvents: acties.length, fouten: [] });
@@ -89,15 +106,36 @@ describe("volledige vernietigingscyclus tegen de teststekker (met OAuth2)", () =
     const locatie: string = archief.body.archivering.locatie;
     expect(locatie).toBe(`/archief/${taakId}/${aanvraag.body.id}`);
 
-    const manifestTekst = leesArchief(`${locatie}/manifest.json`);
-    expect(createHash("sha256").update(manifestTekst).digest("hex")).toBe(archief.body.archivering.manifestSha256);
-    const manifest = JSON.parse(manifestTekst.toString("utf8"));
-    expect(manifest.bestanden.map((bestand: { naam: string }) => bestand.naam)).toEqual(["verklaring.pdf", "bijlage.csv", "auditlog.json"]);
-    expect(manifest.bestanden[0].sha256).toBe(createHash("sha256").update(pdf).digest("hex"));
-    expect(manifest.auditlog).toMatchObject({ intact: true });
+    // MDTO-XML 1.0.1 (ADR-0005 §7): dossier.mdto.xml is de referentie naar het pakket.
+    const pakket = leesArchiefMap(locatie);
+    const dossierXml = pakket["dossier.mdto.xml"];
+    expect(createHash("sha256").update(dossierXml).digest("hex")).toBe(archief.body.archivering.dossierSha256);
+    expect(pakket["verklaring.pdf.mdto.xml"].toString("utf8")).toContain(
+      `<checksumWaarde>${createHash("sha256").update(pdf).digest("hex")}</checksumWaarde>`
+    );
+    expect(Object.keys(pakket)).not.toContain("manifest.json");
+    const mdto: Record<string, Buffer> = Object.fromEntries(
+      Object.entries(pakket).filter(([naam]) => naam.endsWith(".mdto.xml") || naam.startsWith("specificaties/"))
+    );
+    // Per vernietigde kandidaat: de MDTO-beschrijving en de specificatie van de teststekker,
+    // allebei gedekt door de SHA-256 in de CSV-bijlage.
+    const [kop, ...regels] = csv.split(/\r?\n/).map((regel) => regel.split(","));
+    const kolom = (naam: string) => kop.indexOf(naam);
+    const vernietigdeRegels = regels.filter((regel) => regel[kolom("resultaat")] === "SUCCESS");
+    expect(vernietigdeRegels).toHaveLength(vernietigd);
+    expect(Object.keys(pakket).filter((naam) => naam.startsWith("specificaties/"))).toHaveLength(vernietigd);
+    for (const regel of vernietigdeRegels) {
+      expect(createHash("sha256").update(pakket[regel[kolom("mdtoXml")]]).digest("hex")).toBe(regel[kolom("mdtoXmlSha256")]);
+      expect(createHash("sha256").update(pakket[regel[kolom("specificatie")]]).digest("hex")).toBe(regel[kolom("specificatieSha256")]);
+    }
+    // Alles voldoet aan de XSD van het Nationaal Archief (overgeslagen zonder Python + lxml).
+    const fouten = valideerMdto(mdto);
+    if (fouten !== null) {
+      expect(fouten).toEqual([]);
+    }
 
     const naArchief = await auditActies(taakId);
-    expect(naArchief.slice(-2)).toEqual(["ARCHIVING_REQUESTED", "TASK_COMPLETED"]);
+    expect(naArchief.slice(-2)).toEqual(["Archivering aangevraagd", "Export"]);
     expect((await api("auditor", `/taken/${taakId}/auditlog/verificatie`)).body).toMatchObject({ intact: true, fouten: [] });
   });
 });

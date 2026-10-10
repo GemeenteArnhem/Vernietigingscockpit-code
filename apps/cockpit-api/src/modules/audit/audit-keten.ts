@@ -2,12 +2,18 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import type { AppRole } from "../auth/app-role.js";
 import type { AuthUser } from "../auth/auth-user.js";
-import type { AuditActie, ConfiguratieActie } from "./audit-acties.js";
+import {
+  AUDIT_EVENTTYPEN,
+  BEGRIPPENLIJST_CONFIGURATIE,
+  type AuditEventType,
+  type ConfiguratieEventType,
+} from "./audit-eventtypen.js";
 
 // Eén plek voor het schrijven en controleren van audit-events (ADR-0003):
 // - audit_event: een hashketen per taakinstantie; configuratie_event: één globale keten;
 // - vóór het lezen van de vorige hash een advisory lock op de keten (geen vertakkingen);
-// - hash = SHA-256 over canonieke JSON van alle kolommen behalve id en hash.
+// - hash = SHA-256 over canonieke JSON van alle kolommen behalve id en hash;
+// - het eventtype is een begrip (label + begrippenlijst) volgens ADR-0005 §5.
 
 export type AuditActor =
   | { type: "user"; user: AuthUser; rol: AppRole }
@@ -15,14 +21,14 @@ export type AuditActor =
 
 export type AuditEventInvoer = {
   taakinstantieId: string;
-  actie: AuditActie;
+  eventType: AuditEventType;
   entiteitType: string;
   entiteitId: string;
   details: Prisma.InputJsonValue;
 };
 
 export type ConfiguratieEventInvoer = {
-  actie: ConfiguratieActie;
+  eventType: ConfiguratieEventType;
   entiteitType: string;
   entiteitId: string;
   details: Prisma.InputJsonValue;
@@ -36,7 +42,8 @@ export type KetenRij = {
   actorId: string | null;
   actorNaam: string | null;
   rol: string | null;
-  actie: string;
+  eventType: string;
+  eventTypeBegrippenlijst: string;
   entiteitType: string;
   entiteitId: string;
   details: unknown;
@@ -55,7 +62,8 @@ export async function schrijfAuditEvent(tx: Prisma.TransactionClient, actor: Aud
     taakinstantieId: event.taakinstantieId,
     ...actorKolommen(actor),
     tijdstip: new Date(),
-    actie: event.actie,
+    eventType: event.eventType,
+    eventTypeBegrippenlijst: AUDIT_EVENTTYPEN[event.eventType],
     entiteitType: event.entiteitType,
     entiteitId: event.entiteitId,
     details: event.details,
@@ -101,7 +109,8 @@ export async function schrijfAuditEvents(tx: Prisma.TransactionClient, actor: Au
       taakinstantieId,
       ...actorKolommen(actor),
       tijdstip: new Date(),
-      actie: event.actie,
+      eventType: event.eventType,
+      eventTypeBegrippenlijst: AUDIT_EVENTTYPEN[event.eventType],
       entiteitType: event.entiteitType,
       entiteitId: event.entiteitId,
       details: event.details,
@@ -136,7 +145,8 @@ export async function schrijfConfiguratieEvent(
   const rij: KetenRij = {
     ...actorKolommen(actor),
     tijdstip: new Date(),
-    actie: event.actie,
+    eventType: event.eventType,
+    eventTypeBegrippenlijst: BEGRIPPENLIJST_CONFIGURATIE,
     entiteitType: event.entiteitType,
     entiteitId: event.entiteitId,
     details: event.details,
@@ -183,7 +193,8 @@ export function berekenHash(rij: KetenRij) {
     actorId: rij.actorId,
     actorNaam: rij.actorNaam,
     rol: rij.rol,
-    actie: rij.actie,
+    eventType: rij.eventType,
+    eventTypeBegrippenlijst: rij.eventTypeBegrippenlijst,
     entiteitType: rij.entiteitType,
     entiteitId: rij.entiteitId,
     details: rij.details,

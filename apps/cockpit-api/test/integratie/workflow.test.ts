@@ -9,6 +9,7 @@ import { WorkflowService } from "../../src/modules/workflow/workflow.service.js"
 import { gebruiker, maakBasisdata } from "./helpers/basisdata.js";
 import { startDatabase, type TestDatabase } from "./helpers/database.js";
 import { maakTaakServices, type TaakServices } from "./helpers/taken.js";
+import { mdtoKandidaat } from "./helpers/kandidaat.js";
 
 let db: TestDatabase;
 let basis: Awaited<ReturnType<typeof maakBasisdata>>;
@@ -52,10 +53,7 @@ async function maakTaak(status: string, beoordelingen: string[] = ["AKKOORD"]) {
       status: "GEIMPORTEERD",
       kandidaten: {
         create: beoordelingen.map((beoordeling, i) => ({
-          kandidaatId: `vk-${i}`,
-          bronId: `bron-${i}`,
-          omschrijving: `Zaak ${i}`,
-          bron: {},
+          ...mdtoKandidaat(`vk-${i}`, { kenmerk: `bron-${i}`, naam: `Zaak ${i}` }),
           beoordeling,
         })),
       },
@@ -67,7 +65,7 @@ async function maakTaak(status: string, beoordelingen: string[] = ["AKKOORD"]) {
 const lees = (id: string) => db.prisma.client.taakinstantie.findUniqueOrThrow({ where: { id } });
 const auditActies = async (id: string) =>
   (await db.prisma.client.auditEvent.findMany({ where: { taakinstantieId: id }, orderBy: { id: "asc" } })).map(
-    (event) => event.actie
+    (event) => event.eventType
   );
 
 describe("WorkflowService.transition", () => {
@@ -85,7 +83,7 @@ describe("WorkflowService.transition", () => {
 
     expect(na).toMatchObject({ status: "accordering_po", versie: taak.versie + 1, ronde: taak.ronde });
     const event = await db.prisma.client.auditEvent.findFirstOrThrow({
-      where: { taakinstantieId: taak.id, actie: "REVIEW_SUBMITTED" },
+      where: { taakinstantieId: taak.id, eventType: "Voorgelegd" },
     });
     expect(event).toMatchObject({ actorType: "user", rol: "recordmanager" });
     expect(event.details).toMatchObject({ van: "beoordeling", naar: "accordering_po" });
@@ -137,7 +135,7 @@ describe("WorkflowService.transition", () => {
 
     expect(uitkomsten.filter((uitkomst) => uitkomst.status === "fulfilled")).toHaveLength(1);
     expect(await lees(taak.id)).toMatchObject({ status: "accordering_po", versie: taak.versie + 1 });
-    expect(await auditActies(taak.id)).toEqual(["REVIEW_SUBMITTED"]);
+    expect(await auditActies(taak.id)).toEqual(["Voorgelegd"]);
   });
 });
 
@@ -217,13 +215,18 @@ describe("TakenService: volledige ronde via de WorkflowService", () => {
 
     expect(await lees(taak.id)).toMatchObject({ ronde: taak.ronde + 1, versie: taak.versie + 6 });
     expect(await auditActies(taak.id)).toEqual([
-      "REVIEW_SUBMITTED",
-      "APPROVAL_REJECTED",
-      "REVIEW_SUBMITTED",
-      "APPROVAL_GRANTED",
-      "DESTRUCTION_APPROVED_BY_ARCHIVIST",
-      "DESTRUCTION_ORDERED_BY_RM",
+      "Voorgelegd",
+      "Retour",
+      "Voorgelegd",
+      "Accordering",
+      "Accordering",
+      // De vrijgave door de archivaris bevriest de lijst (MDTO Bevriezing, met lijsthash).
+      "Bevriezing",
+      "Vernietigingsopdracht",
     ]);
+    const bevriezing = await db.prisma.client.auditEvent.findFirstOrThrow({ where: { taakinstantieId: taak.id, eventType: "Bevriezing" } });
+    expect(bevriezing).toMatchObject({ actorType: "system", eventTypeBegrippenlijst: "MDTO EventTypeLijst 1.0" });
+    expect(bevriezing.details).toMatchObject({ na: "Accordering", lijstHash: expect.any(String) });
     expect(await db.prisma.client.outbox.count({ where: { taakinstantieId: taak.id, queue: "vernietiging" } })).toBe(1);
   });
 
@@ -251,7 +254,7 @@ describe("worker-overgangen", () => {
     );
 
     const event = await db.prisma.client.auditEvent.findFirstOrThrow({ where: { taakinstantieId: taak.id } });
-    expect(event).toMatchObject({ actie: "EXECUTION_COMPLETED", actorType: "system", actorId: "systeem" });
+    expect(event).toMatchObject({ eventType: "Uitvoering afgerond", actorType: "system", actorId: "systeem" });
     expect((await lees(taak.id)).afgerondOp).not.toBeNull();
   });
 });

@@ -81,7 +81,7 @@ export default function DestructionResultRecordPanel({
       <ContentPanelBody>
         <ContentPanelHeader
           eyebrow="Taakuitvoering"
-          title={record.titel}
+          title={record.naam}
           subtitle="Inzicht in de uitvoerstatus en vervolgactie voor dit record."
           aside={
             <div className="flex flex-wrap items-center justify-end gap-3">
@@ -128,7 +128,7 @@ export default function DestructionResultRecordPanel({
                 </div>
                 <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-start">
                   <div className="shrink-0">
-                    <StatusBadge status={record.vernietigingsstatus} size="md" />
+                    <StatusBadge status={record.resultaat} size="md" />
                   </div>
                   <p className="max-w-3xl text-sm leading-6 text-slate-600">
                     {context.statusDetail}
@@ -145,8 +145,8 @@ export default function DestructionResultRecordPanel({
                 hint="Gebruikte connector in deze uitvoer."
               />
               <ContentPanelStat
-                label="Vernietigingsdatum"
-                value={formatPlannedDestructionDate(record.vernietigingsdatum)}
+                label="Einddatum bewaartermijn"
+                value={formatPlannedDestructionDate(record.termijnEinddatum)}
                 icon={<TimerReset size={16} />}
                 hint="Gepland vernietigingsmoment volgens de vernietigingslijst."
               />

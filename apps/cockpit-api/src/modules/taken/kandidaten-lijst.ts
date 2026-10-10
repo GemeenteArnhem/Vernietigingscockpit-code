@@ -6,25 +6,27 @@ import { ACTIEVE_SELECTIE } from "./actieve-selectie.js";
 // De zoek- en filtermogelijkheden volgen wat de beoordelings- en accorderingsschermen tonen.
 
 export const SORTEERSLEUTELS = [
-  "omschrijving",
+  "naam",
   "status",
   "volgnummer",
-  "code",
+  "classificatie",
   "selectielijst",
-  "grondslag",
-  "bewaartermijn",
-  "vernietigingsdatum",
+  "informatiecategorie",
+  "termijnLooptijd",
+  "termijnEinddatum",
   "opmerking",
   "aantalObjecten",
   "aantalBetrokkenen",
-  "periode",
+  "dekkingInTijd",
   "stekker",
-  "bronId",
+  "identificatie",
+  "aggregatieniveau",
+  "waardering",
 ] as const;
 
 export type Sorteersleutel = (typeof SORTEERSLEUTELS)[number];
 
-export const ZOEKVELDEN = ["all", "omschrijving", "code", "vernietigingsdatum", "bronId"] as const;
+export const ZOEKVELDEN = ["all", "naam", "classificatie", "termijnEinddatum", "identificatie"] as const;
 
 // Status zoals de schermen hem tonen, met de beoordeling in de database.
 export const STATUS_NAAR_BEOORDELING = {
@@ -43,7 +45,7 @@ export type KandidatenQuery = {
   ids?: string[];
   selectielijst?: string;
   stekker?: string;
-  bewaartermijn?: string;
+  termijnLooptijd?: string;
   sort: Sorteersleutel;
   richting: "asc" | "desc";
 };
@@ -68,8 +70,8 @@ export function kandidatenWhere(taakinstantieId: string, query: Omit<KandidatenQ
   if (query.selectielijst) {
     voorwaarden.push({ selectielijst: query.selectielijst });
   }
-  if (query.bewaartermijn) {
-    voorwaarden.push({ bewaartermijn: query.bewaartermijn });
+  if (query.termijnLooptijd) {
+    voorwaarden.push({ termijnLooptijd: query.termijnLooptijd });
   }
   if (query.zoek) {
     voorwaarden.push(zoekVoorwaarde(query.zoek, query.zoekIn));
@@ -79,25 +81,25 @@ export function kandidatenWhere(taakinstantieId: string, query: Omit<KandidatenQ
 }
 
 // Zoeken zoals in de tabel: tekst bevat de zoekterm (hoofdletterongevoelig). Voor de
-// vernietigingsdatum, die de schermen als JJJJ-MM tonen, kan op jaar of jaar-maand.
+// einddatum van de bewaartermijn, die de schermen als JJJJ-MM tonen, kan op jaar of jaar-maand.
 function zoekVoorwaarde(zoek: string, zoekIn: KandidatenQuery["zoekIn"]): Prisma.VernietigingskandidaatWhereInput {
-  const bevat = (veld: "omschrijving" | "classificatiesleutel" | "bronId") => ({
+  const bevat = (veld: "naam" | "classificatieBegripCode" | "identificatieKenmerken") => ({
     [veld]: { contains: zoek, mode: "insensitive" as const },
   });
   const datum = datumBereik(zoek);
-  const opDatum = datum ? { vernietigingsdatum: { gte: datum.van, lt: datum.tot } } : null;
+  const opDatum = datum ? { termijnEinddatum: { gte: datum.van, lt: datum.tot } } : null;
 
   switch (zoekIn) {
-    case "omschrijving":
-      return bevat("omschrijving");
-    case "code":
-      return bevat("classificatiesleutel");
-    case "bronId":
-      return bevat("bronId");
-    case "vernietigingsdatum":
+    case "naam":
+      return bevat("naam");
+    case "classificatie":
+      return bevat("classificatieBegripCode");
+    case "identificatie":
+      return bevat("identificatieKenmerken");
+    case "termijnEinddatum":
       return opDatum ?? { id: { in: [] } };
     default:
-      return { OR: [bevat("omschrijving"), bevat("classificatiesleutel"), bevat("bronId"), ...(opDatum ? [opDatum] : [])] };
+      return { OR: [bevat("naam"), bevat("classificatieBegripCode"), bevat("identificatieKenmerken"), ...(opDatum ? [opDatum] : [])] };
   }
 }
 
@@ -127,40 +129,44 @@ export function kandidatenOrderBy(sort: Sorteersleutel, richting: "asc" | "desc"
     [{ [veld]: richting } as Prisma.VernietigingskandidaatOrderByWithRelationInput, ...vast];
 
   switch (sort) {
-    case "omschrijving":
-      return op("omschrijving");
+    case "naam":
+      return op("naam");
     case "status":
       // AKKOORD < OPGENOMEN < RETOUR < UITGESLOTEN: dezelfde volgorde als de labels
       // Akkoord, Open, Retour, Uitgesloten.
       return op("beoordeling");
     case "volgnummer":
-      return [{ vernietigingsdatum: richting }, ...vast];
-    case "code":
-      return op("classificatiesleutel");
+      return [{ termijnEinddatum: richting }, ...vast];
+    case "classificatie":
+      return op("classificatieBegripCode");
     case "selectielijst":
       return op("selectielijst");
-    case "grondslag":
-      return op("grondslag");
-    case "bewaartermijn":
-      return op("bewaartermijn");
-    case "vernietigingsdatum":
-      return op("vernietigingsdatum");
+    case "informatiecategorie":
+      return op("informatiecategorieBegripLabel");
+    case "termijnLooptijd":
+      return op("termijnLooptijd");
+    case "termijnEinddatum":
+      return op("termijnEinddatum");
     case "opmerking":
       return op("toelichting");
     case "aantalObjecten":
       return op("aantalObjecten");
     case "aantalBetrokkenen":
       return op("aantalBetrokkenen");
-    case "periode":
-      return [{ begindatum: richting }, { einddatum: richting }, ...vast];
+    case "dekkingInTijd":
+      return [{ dekkingInTijdBegindatum: richting }, { dekkingInTijdEinddatum: richting }, ...vast];
     case "stekker":
       return [{ selectie: { stekkerConfiguratie: { stekker: { naam: richting } } } }, ...vast];
-    case "bronId":
-      return op("bronId");
+    case "identificatie":
+      return op("identificatieKenmerken");
+    case "aggregatieniveau":
+      return op("aggregatieniveau");
+    case "waardering":
+      return op("waarderingBegripLabel");
   }
 }
 
-// Volgnummer: de plek in de vaste volgorde van de taak (vernietigingsdatum, kandidaat-id),
+// Volgnummer: de plek in de vaste volgorde van de taak (einddatum bewaartermijn, kandidaat-id),
 // los van zoeken, filteren en sorteren, zoals de schermen het tot nu toe toonden.
 export async function volgnummers(tx: Prisma.TransactionClient, taakinstantieId: string, ids: string[]) {
   if (ids.length === 0) {
@@ -170,7 +176,7 @@ export async function volgnummers(tx: Prisma.TransactionClient, taakinstantieId:
   const rijen = await tx.$queryRaw<Array<{ id: string; volgnummer: bigint }>>`
     WITH genummerd AS (
       SELECT k."id",
-             ROW_NUMBER() OVER (ORDER BY k."vernietigingsdatum" ASC NULLS LAST, k."kandidaat_id" ASC, k."id" ASC) AS "volgnummer"
+             ROW_NUMBER() OVER (ORDER BY k."termijn_einddatum" ASC NULLS LAST, k."kandidaat_id" ASC, k."id" ASC) AS "volgnummer"
       FROM "vernietigingskandidaat" k
       JOIN "selectie" s ON s."id" = k."selectie_id"
       WHERE s."taakinstantie_id" = ${taakinstantieId}::uuid AND s."status" <> 'VERVANGEN'
@@ -183,10 +189,10 @@ export async function volgnummers(tx: Prisma.TransactionClient, taakinstantieId:
 // Facetten (keuzes in de filtermenu's) over de hele lijst van de taak.
 export async function facetten(tx: Prisma.TransactionClient, taakinstantieId: string) {
   const basis = { selectie: { taakinstantieId, ...ACTIEVE_SELECTIE } };
-  const [beoordelingen, selectielijsten, bewaartermijnen, stekkers] = await Promise.all([
+  const [beoordelingen, selectielijsten, looptijden, stekkers] = await Promise.all([
     tx.vernietigingskandidaat.groupBy({ by: ["beoordeling"], where: basis }),
     tx.vernietigingskandidaat.groupBy({ by: ["selectielijst"], where: basis }),
-    tx.vernietigingskandidaat.groupBy({ by: ["bewaartermijn"], where: basis }),
+    tx.vernietigingskandidaat.groupBy({ by: ["termijnLooptijd"], where: basis }),
     tx.selectie.findMany({
       where: { taakinstantieId, ...ACTIEVE_SELECTIE, kandidaten: { some: {} } },
       select: { stekkerConfiguratie: { select: { stekker: { select: { naam: true } } } } },
@@ -197,7 +203,7 @@ export async function facetten(tx: Prisma.TransactionClient, taakinstantieId: st
   return {
     status: beoordelingen.map((groep) => naarStatus[groep.beoordeling]).filter(Boolean),
     selectielijst: selectielijsten.map((groep) => groep.selectielijst).filter((waarde): waarde is string => Boolean(waarde)).sort(),
-    bewaartermijn: bewaartermijnen.map((groep) => groep.bewaartermijn).filter((waarde): waarde is string => Boolean(waarde)).sort(),
+    termijnLooptijd: looptijden.map((groep) => groep.termijnLooptijd).filter((waarde): waarde is string => Boolean(waarde)).sort(),
     stekker: Array.from(new Set(stekkers.map((selectie) => selectie.stekkerConfiguratie.stekker.naam))).sort(),
   };
 }
@@ -206,13 +212,15 @@ export async function facetten(tx: Prisma.TransactionClient, taakinstantieId: st
 // of `null` als de selectie meerdere waarden heeft.
 export function samenvatting(
   rijen: Array<{
-    classificatiesleutel: string | null;
+    classificatieBegripCode: string | null;
     selectielijst: string | null;
-    grondslag: string | null;
-    bewaartermijn: string | null;
-    begindatum: Date | null;
-    einddatum: Date | null;
-    vernietigingsdatum: Date | null;
+    informatiecategorieBegripLabel: string | null;
+    termijnLooptijd: string | null;
+    dekkingInTijdBegindatum: string | null;
+    dekkingInTijdEinddatum: string | null;
+    termijnEinddatum: Date | null;
+    aggregatieniveau: string;
+    waarderingBegripLabel: string;
     beoordeling: string;
     aantalObjecten: number;
     aantalBetrokkenen: number;
@@ -224,20 +232,22 @@ export function samenvatting(
     const uniek = Array.from(new Set(waarden.map((waarde) => JSON.stringify(waarde ?? null))));
     return uniek.length === 1 ? { waarde: JSON.parse(uniek[0]) as T | null, verschillend: false } : { waarde: null, verschillend: uniek.length > 1 };
   };
-  const datums = rijen.map((rij) => rij.vernietigingsdatum?.toISOString() ?? null).filter((d): d is string => d !== null).sort();
+  const datums = rijen.map((rij) => rij.termijnEinddatum?.toISOString() ?? null).filter((d): d is string => d !== null).sort();
   const nummers = rijen.map((rij) => rij.volgnummer).filter((n) => n > 0);
 
   return {
     aantal: rijen.length,
     aantalObjecten: rijen.reduce((som, rij) => som + rij.aantalObjecten, 0),
     aantalBetrokkenen: rijen.reduce((som, rij) => som + rij.aantalBetrokkenen, 0),
-    code: gedeeld(rijen.map((rij) => rij.classificatiesleutel)),
+    classificatie: gedeeld(rijen.map((rij) => rij.classificatieBegripCode)),
     selectielijst: gedeeld(rijen.map((rij) => rij.selectielijst)),
-    grondslag: gedeeld(rijen.map((rij) => rij.grondslag)),
-    bewaartermijn: gedeeld(rijen.map((rij) => rij.bewaartermijn)),
+    informatiecategorie: gedeeld(rijen.map((rij) => rij.informatiecategorieBegripLabel)),
+    termijnLooptijd: gedeeld(rijen.map((rij) => rij.termijnLooptijd)),
     stekker: gedeeld(rijen.map((rij) => rij.stekker)),
-    periode: gedeeld(rijen.map((rij): [string | null, string | null] => [rij.begindatum?.toISOString() ?? null, rij.einddatum?.toISOString() ?? null])),
-    vernietigingsdatum: { van: datums[0] ?? null, tot: datums.at(-1) ?? null },
+    aggregatieniveau: gedeeld(rijen.map((rij) => rij.aggregatieniveau)),
+    waardering: gedeeld(rijen.map((rij) => rij.waarderingBegripLabel)),
+    dekkingInTijd: gedeeld(rijen.map((rij): [string | null, string | null] => [rij.dekkingInTijdBegindatum, rij.dekkingInTijdEinddatum])),
+    termijnEinddatum: { van: datums[0] ?? null, tot: datums.at(-1) ?? null },
     volgnummer: { van: nummers.length ? Math.min(...nummers) : null, tot: nummers.length ? Math.max(...nummers) : null },
     statussen: Array.from(new Set(rijen.map((rij) => rij.beoordeling))).sort(),
   };

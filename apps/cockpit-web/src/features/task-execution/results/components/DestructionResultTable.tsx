@@ -7,7 +7,7 @@ import type {
   DestructionResultStatus,
 } from "../../../../shared/types/destructionResult";
 
-type SortKey = "titel" | "stekker" | "vernietigingsstatus";
+type SortKey = "naam" | "stekker" | "resultaat";
 type SortDir = "asc" | "desc" | null;
 
 type Props = {
@@ -36,7 +36,7 @@ export default function DestructionResultTable({
   statusFilter,
   searchQuery,
 }: Props) {
-  const [sortKey, setSortKey] = useState<SortKey>("titel");
+  const [sortKey, setSortKey] = useState<SortKey>("naam");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const col = (key: DestructionResultColumnKey) => visibleColumns[key];
 
@@ -64,7 +64,7 @@ export default function DestructionResultTable({
     const query = searchQuery.trim().toLowerCase();
 
     const filtered = rows.filter((row) => {
-      if (statusFilter && row.vernietigingsstatus !== statusFilter) {
+      if (statusFilter && row.resultaat !== statusFilter) {
         return false;
       }
 
@@ -96,11 +96,11 @@ export default function DestructionResultTable({
         <thead className="sticky top-0 z-10 bg-gray-50 text-left">
           <tr>
             <th
-              onClick={() => toggleSort("titel")}
+              onClick={() => toggleSort("naam")}
               className="w-[28%] cursor-pointer px-4 py-3 text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-900"
             >
               Titel
-              <SortIcon active={sortKey === "titel"} dir={sortDir} />
+              <SortIcon active={sortKey === "naam"} dir={sortDir} />
             </th>
             <th
               onClick={() => toggleSort("stekker")}
@@ -110,12 +110,12 @@ export default function DestructionResultTable({
               <SortIcon active={sortKey === "stekker"} dir={sortDir} />
             </th>
             <th
-              onClick={() => toggleSort("vernietigingsstatus")}
+              onClick={() => toggleSort("resultaat")}
               className="w-[18%] cursor-pointer px-4 py-3 text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-900"
             >
               Vernietigingstatus
               <SortIcon
-                active={sortKey === "vernietigingsstatus"}
+                active={sortKey === "resultaat"}
                 dir={sortDir}
               />
             </th>
@@ -125,27 +125,27 @@ export default function DestructionResultTable({
                 Omvang
               </th>
             )}
-            {col("vernietigingsdatum") && (
+            {col("termijnEinddatum") && (
               <th className="w-[12%] px-4 py-3 text-xs font-medium uppercase tracking-wide text-gray-500">
                 Vernietigingsdatum
               </th>
             )}
-            {col("bron_id") && (
+            {col("identificatie") && (
               <th className="w-[14%] px-4 py-3 text-xs font-medium uppercase tracking-wide text-gray-500">
                 Bron-ID
               </th>
             )}
-            {col("code") && (
+            {col("classificatie") && (
               <th className="w-[8%] px-4 py-3 text-xs font-medium uppercase tracking-wide text-gray-500">
                 Code
               </th>
             )}
-            {col("grondslag") && (
+            {col("informatiecategorie") && (
               <th className="w-[16%] px-4 py-3 text-xs font-medium uppercase tracking-wide text-gray-500">
                 Grondslag
               </th>
             )}
-            {col("bron_systeem") && (
+            {col("stekker") && (
               <th className="w-[12%] px-4 py-3 text-xs font-medium uppercase tracking-wide text-gray-500">
                 Bronsysteem
               </th>
@@ -162,37 +162,37 @@ export default function DestructionResultTable({
           {filteredRows.map((row) => (
             <tr key={row.id} className="border-t border-gray-200 text-gray-700 transition-colors hover:bg-gray-50">
               <td className="px-4 py-3 font-medium text-gray-900">
-                {row.titel}
+                {row.naam}
               </td>
               <td className="px-4 py-3">{row.stekker}</td>
               <td className="px-4 py-3">
-                <StatusBadge status={row.vernietigingsstatus} />
+                <StatusBadge status={row.resultaat} />
               </td>
 
               {col("omvang") && (
                 <td className="px-4 py-3 text-gray-500">{row.omvang ?? "-"}</td>
               )}
-              {col("vernietigingsdatum") && (
+              {col("termijnEinddatum") && (
                 <td className="px-4 py-3 text-gray-500">
-                  {row.vernietigingsdatum ?? "-"}
+                  {row.termijnEinddatum ?? "-"}
                 </td>
               )}
-              {col("bron_id") && (
-                <td className="truncate px-4 py-3 text-gray-500" title={row.bron_id}>
-                  {row.bron_id ?? "-"}
+              {col("identificatie") && (
+                <td className="truncate px-4 py-3 text-gray-500" title={row.identificatie}>
+                  {row.identificatie ?? "-"}
                 </td>
               )}
-              {col("code") && (
-                <td className="px-4 py-3 text-gray-500">{row.code ?? "-"}</td>
+              {col("classificatie") && (
+                <td className="px-4 py-3 text-gray-500">{row.classificatie ?? "-"}</td>
               )}
-              {col("grondslag") && (
-                <td className="truncate px-4 py-3 text-gray-500" title={row.grondslag}>
-                  {row.grondslag ?? "-"}
+              {col("informatiecategorie") && (
+                <td className="truncate px-4 py-3 text-gray-500" title={row.informatiecategorie}>
+                  {row.informatiecategorie ?? "-"}
                 </td>
               )}
-              {col("bron_systeem") && (
+              {col("stekker") && (
                 <td className="px-4 py-3 text-gray-500">
-                  {row.bron_systeem ?? "-"}
+                  {row.stekker ?? "-"}
                 </td>
               )}
               {col("melding") && (

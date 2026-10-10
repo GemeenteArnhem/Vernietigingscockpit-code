@@ -39,7 +39,7 @@ describe("selectie starten", () => {
     expect(outbox).toHaveLength(1);
     expect(outbox[0]).toMatchObject({ jobNaam: "selectie:start", verzondenOp: null });
     expect((outbox[0].payload as { selectieId: string }).selectieId).toBe(selectieId);
-    expect(audit.map((event) => event.actie)).toEqual(["SELECTION_REQUESTED"]);
+    expect(audit.map((event) => event.eventType)).toEqual(["Selectie aangevraagd"]);
   });
 
   it("weigert een tweede start zonder gefaalde stekker om te herkansen", async () => {

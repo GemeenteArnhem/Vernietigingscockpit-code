@@ -136,7 +136,7 @@ export class DossierService {
       });
       await schrijfAuditEvent(tx, { type: "user", user, rol: "recordmanager" }, {
         taakinstantieId: taak.id,
-        actie: "ARCHIVING_REQUESTED",
+        eventType: "Archivering aangevraagd",
         entiteitType: "taakinstantie",
         entiteitId: taak.id,
         details: { archiveringId: nieuw.id },

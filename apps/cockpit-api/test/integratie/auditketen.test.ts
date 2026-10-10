@@ -57,7 +57,7 @@ const schrijf = (taakinstantieId: string, nummer: number) =>
   db.prisma.client.$transaction((tx) =>
     schrijfAuditEvent(tx, { type: "user", user: rm, rol: "recordmanager" }, {
       taakinstantieId,
-      actie: "OBJECT_INCLUDED",
+      eventType: "Kandidaat opgenomen",
       entiteitType: "vernietigingskandidaat",
       entiteitId: `k-${nummer}`,
       details: { nummer, genest: { b: 2, a: 1 } },
@@ -117,7 +117,7 @@ describe("keten per taakinstantie", () => {
       [1, 2, 3].map((nummer) =>
         db.prisma.client.$transaction((tx) =>
           schrijfConfiguratieEvent(tx, actor, {
-            actie: "MASTER_DATA_IMPORTED",
+            eventType: "Stamgegevens geïmporteerd",
             entiteitType: "stamgegevens",
             entiteitId: "stamgegevens",
             details: { nummer },
@@ -128,7 +128,7 @@ describe("keten per taakinstantie", () => {
 
     // Eén keten over alle configuratie-events (ook de USER_LINKED-events van eerdere tests).
     const events = await db.prisma.client.configuratieEvent.findMany({ orderBy: { id: "asc" } });
-    expect(events.filter((event) => event.actie === "MASTER_DATA_IMPORTED")).toHaveLength(3);
+    expect(events.filter((event) => event.eventType === "Stamgegevens geïmporteerd")).toHaveLength(3);
     expect(events.map((event) => event.vorigeHash)).toEqual([null, ...events.slice(0, -1).map((event) => event.hash)]);
   });
 });
@@ -159,17 +159,17 @@ describe("databasebescherming (applicatierol)", () => {
     await expect(app.query('SELECT count(*) FROM "audit_event"')).resolves.toBeTruthy();
     await expect(
       app.query(
-        `INSERT INTO "audit_event" ("taakinstantie_id", "actor_type", "actie", "entiteit_type", "entiteit_id", "details", "hash")
-         VALUES ($1::uuid, 'system', 'TASK_COMPLETED', 'taakinstantie', $2, '{}', 'x')`,
+        `INSERT INTO "audit_event" ("taakinstantie_id", "actor_type", "event_type", "event_type_begrippenlijst", "entiteit_type", "entiteit_id", "details", "hash")
+         VALUES ($1::uuid, 'system', 'Export', 'MDTO EventTypeLijst 1.0', 'taakinstantie', $2, '{}', 'x')`,
         [taak.id, taak.id]
       )
     ).resolves.toBeTruthy();
 
     for (const opdracht of [
-      'UPDATE "audit_event" SET "actie" = \'X\'',
+      'UPDATE "audit_event" SET "event_type" = \'X\'',
       'DELETE FROM "audit_event"',
       'TRUNCATE "audit_event"',
-      'UPDATE "configuratie_event" SET "actie" = \'X\'',
+      'UPDATE "configuratie_event" SET "event_type" = \'X\'',
       'TRUNCATE "configuratie_event"',
       'SELECT * FROM "_prisma_migrations"',
     ]) {

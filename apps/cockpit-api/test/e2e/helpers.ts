@@ -1,3 +1,4 @@
+import { gunzipSync } from "node:zlib";
 import { ConfigService } from "@nestjs/config";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -19,7 +20,7 @@ export const STEKKER_GEHEIM = geheimen.E2E_STEKKER_GEHEIM;
 
 export const prisma = new PrismaService(new ConfigService({ DATABASE_URL }));
 
-export type Rol = "rm" | "po" | "arch" | "auditor";
+export type Rol = "rm" | "po" | "arch" | "auditor" | "beheer";
 // De nep-IdP geeft tokens van 300 s; na 240 s een nieuw token (lange tests, zoals scenario F).
 const tokens: Partial<Record<Rol, { token: string; tot: number }>> = {};
 const gebruikers: Record<Rol, { username: string; rol: string }> = {
@@ -27,6 +28,7 @@ const gebruikers: Record<Rol, { username: string; rol: string }> = {
   po: { username: "po1", rol: "proceseigenaar" },
   arch: { username: "arch1", rol: "archivaris" },
   auditor: { username: "auditor1", rol: "auditor" },
+  beheer: { username: "fb1", rol: "functioneel_beheerder" },
 };
 
 export async function token(wie: Rol) {
@@ -97,7 +99,14 @@ export async function maakTaak(naam: string, stekkerBaseUrl: string, timeouts: R
     db.medewerker.upsert({
       where: { email: `${externId}@example.test` },
       update: {},
-      create: { naam: volledigeNaam, email: `${externId}@example.test`, rollen: [rol], bron: "e2e", externId },
+      create: {
+        naam: volledigeNaam,
+        email: `${externId}@example.test`,
+        rollen: [rol],
+        bron: "e2e",
+        externId,
+        ...(rol === "proceseigenaar" ? { archiefvormer: { verwijzingNaam: "Gemeente E2E" } } : {}),
+      },
     });
 
   const rm = await medewerker("Rita Recordmanager", "rm1", "recordmanager");
@@ -116,7 +125,7 @@ export async function maakTaak(naam: string, stekkerBaseUrl: string, timeouts: R
       secretRef: "STEKKER_SECRET",
       scopes: ["selectie.read", "selectie.write", "vernietiging.read", "vernietiging.write"],
       parameters: {},
-      verwachteApiMajor: 1,
+      verwachteApiMajor: 2,
       timeouts,
       aangemaaktDoor: "e2e",
     },
@@ -132,7 +141,7 @@ export async function maakTaak(naam: string, stekkerBaseUrl: string, timeouts: R
       stekkers: { create: { stekkerId: stekker.id, selectieparameters: {} } },
     },
   });
-  // Via de API, zodat de auditketen van de taak met TASK_CREATED begint.
+  // Via de API, zodat de auditketen van de taak met Creatie begint.
   const taak = await api("rm", `/taakdefinities/${definitie.id}/instanties`, {
     method: "POST",
     body: { naam, peildatum: "2026-01-01" },
@@ -144,12 +153,12 @@ export async function maakTaak(naam: string, stekkerBaseUrl: string, timeouts: R
   return { taakId: taak.body.id as string, stekkerId: stekker.id };
 }
 
-// Actienamen uit het auditlog van een taak, in volgorde (alle pagina's).
+// Eventtypen uit het auditlog van een taak, in volgorde (alle pagina's).
 export async function auditActies(taakId: string) {
   const acties: string[] = [];
   for (let pagina = 1; ; pagina += 1) {
     const { body } = await api("rm", `/taken/${taakId}/auditlog?pagina=${pagina}&perPagina=200`);
-    acties.push(...body.items.map((item: { actie: string }) => item.actie));
+    acties.push(...body.items.map((item: { eventType: string }) => item.eventType));
     if (acties.length >= body.totaal) {
       return acties;
     }
@@ -167,7 +176,7 @@ export async function totVrijgegeven(taakId: string, uitsluiten = 0) {
       method: "PATCH",
       body:
         index < uitsluiten
-          ? { beoordeling: "UITGESLOTEN", uitsluitReden: "Lopende bezwaarprocedure", toelichting: "E2E" }
+          ? { beoordeling: "UITGESLOTEN", uitsluitReden: "Lopend verzoek of procedure", toelichting: "E2E: lopende bezwaarprocedure" }
           : { beoordeling: "AKKOORD" },
     });
   }
@@ -191,7 +200,8 @@ export async function stekkerGet(baseUrl: string, pad: string) {
       scope: "vernietiging.read",
     }),
   }).then((antwoord) => antwoord.json() as Promise<{ access_token: string }>);
-  const antwoord = await fetch(`${baseUrl}${pad}`, { headers: { authorization: `Bearer ${token.access_token}` } });
+  // Stekker API v2: alle paden onder /v2.
+  const antwoord = await fetch(`${baseUrl}/v2${pad}`, { headers: { authorization: `Bearer ${token.access_token}` } });
   expect(antwoord.status, `${pad}`).toBe(200);
   return antwoord.json();
 }
@@ -215,8 +225,19 @@ export async function controleerBijStekker(stekkerUrl: string, taakId: string, a
   const regels = await prisma.client.uitvoeringsresultaat.findMany({ where: { vernietiging: { taakinstantieId: taakId } } });
   expect(regels).toHaveLength(aantalKandidaten);
   expect(regels.every((regel) => regel.resultaat !== null)).toBe(true);
+
+  // Stekker API v2 (ADR-0005): bij SUCCESS het event Vernietigen met tijdstip en een echte
+  // MDTO-XML-specificatie; per uitvoering de vernietigingsmethode.
+  for (const regel of regels.filter((r) => r.resultaat === "SUCCESS")) {
+    expect(regel.eventTijd).toBeInstanceOf(Date);
+    const xml = gunzipSync(Buffer.from(regel.specificatie!)).toString("utf8");
+    expect(xml).toMatch(/<MDTO xmlns="https:\/\/www\.nationaalarchief\.nl\/mdto"/);
+    expect(xml).toMatch(/<begripLabel>Vernietigen<\/begripLabel>/);
+  }
+  const vernietiging = await prisma.client.vernietiging.findFirstOrThrow({ where: { taakinstantieId: taakId } });
+  expect(vernietiging.vernietigingsmethode).toMatchObject({ begripLabel: expect.any(String) });
   const objectEvents = await prisma.client.auditEvent.count({
-    where: { taakinstantieId: taakId, actie: { in: ["OBJECT_PROCESSED", "OBJECT_FAILED"] } },
+    where: { taakinstantieId: taakId, eventType: { in: ["Vernietigen", "Niet vernietigd"] } },
   });
   expect(objectEvents).toBe(aantalKandidaten);
   expect(uitvoering.body.stekkers[0]).toMatchObject({ vernietigingStatus: "COMPLETED", fout: null });

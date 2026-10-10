@@ -88,11 +88,17 @@ export type ApiMe = {
 
 // --- stamgegevens en stekkers ------------------------------------------------------------
 
+export type ApiVerwijzing = {
+  verwijzingNaam: string;
+  verwijzingIdentificatie?: { identificatieKenmerk: string; identificatieBron: string };
+};
+
 export type ApiStamgegevensMedewerker = {
   id: string;
   naam: string;
   email: string;
   rollen: string[];
+  archiefvormer?: ApiVerwijzing | null;
   afdeling?: {
     naam: string;
     code: string;
@@ -205,24 +211,59 @@ export type ApiTaakContext = {
     proceseigenaar: ApiPersoon;
     archivaris: ApiPersoon;
   };
+  // Archiefvormer van de taak (vastgepind bij aanmaken, ADR-0005 B-M3); geldt voor elke
+  // kandidaat zonder eigen archiefvormer.
+  archiefvormer?: ApiVerwijzing | null;
 };
 
-export type ApiKandidaat = {
-  id: string;
-  volgnummer: number;
-  kandidaatId: string;
-  bronId: string;
-  bronIdNaam?: string | null;
-  omschrijving: string;
-  classificatiesleutel?: string | null;
-  selectielijst?: string | null;
-  grondslag?: string | null;
-  bewaartermijn?: string | null;
-  begindatum?: string | null;
-  einddatum?: string | null;
-  vernietigingsdatum?: string | null;
+// --- MDTO (ADR-0005): de gegevens van een vernietigingskandidaat --------------------------
+
+export type ApiIdentificatie = { identificatieKenmerk: string; identificatieBron: string };
+
+export type ApiBegrip = {
+  begripLabel: string;
+  begripCode?: string;
+  begripBegrippenlijst: ApiVerwijzing;
+};
+
+export type ApiDekkingInTijd = {
+  dekkingInTijdType: ApiBegrip;
+  dekkingInTijdBegindatum: string;
+  dekkingInTijdEinddatum?: string;
+};
+
+export type ApiBewaartermijn = {
+  termijnTriggerStartLooptijd: ApiBegrip | null;
+  termijnStartdatumLooptijd: string | null;
+  termijnLooptijd: string | null;
+  termijnEinddatum: string;
+};
+
+// Het MDTO-profiel van een kandidaat (Stekker API v2), zoals de cockpit het teruggeeft.
+export type ApiMdtoKandidaat = {
+  vernietigingskandidaatId: string;
+  identificatie: ApiIdentificatie[];
+  naam: string;
+  omschrijving: string[] | null;
+  aggregatieniveau: string;
+  classificatie: ApiBegrip[] | null;
+  dekkingInTijd: ApiDekkingInTijd[] | null;
+  waardering: ApiBegrip;
+  bewaartermijn: ApiBewaartermijn;
+  informatiecategorie: ApiBegrip;
+  informatiecategorieAfwijking: { toelichting: string; norm?: ApiVerwijzing } | null;
+  gerelateerdInformatieobject: unknown[] | null;
+  archiefvormer: ApiVerwijzing[] | null;
+  activiteit: ApiVerwijzing | null;
   aantalObjecten: number;
   aantalBetrokkenen: number;
+  // Toelichting van de stekker (cockpituitbreiding).
+  stekkerToelichting: string | null;
+};
+
+export type ApiKandidaat = ApiMdtoKandidaat & {
+  id: string;
+  volgnummer: number;
   beoordeling: string;
   uitsluitReden?: string | null;
   toelichting?: string | null;
@@ -236,7 +277,7 @@ export type ApiKandidatenPagina = {
   // Deze pagina, plus tellingen en filterkeuzes over de hele lijst.
   pagina: { offset: number; limit: number; totaal: number };
   tellingen: { totaal: number; opgenomen: number; akkoord: number; uitgesloten: number; retour: number };
-  facetten: { status: string[]; selectielijst: string[]; bewaartermijn: string[]; stekker: string[] };
+  facetten: { status: string[]; selectielijst: string[]; termijnLooptijd: string[]; stekker: string[] };
   kandidaten: ApiKandidaat[];
 };
 
@@ -248,13 +289,15 @@ export type ApiSelectieSamenvatting = {
   aantal: number;
   aantalObjecten: number;
   aantalBetrokkenen: number;
-  code: ApiGedeeld<string>;
+  classificatie: ApiGedeeld<string>;
   selectielijst: ApiGedeeld<string>;
-  grondslag: ApiGedeeld<string>;
-  bewaartermijn: ApiGedeeld<string>;
+  informatiecategorie: ApiGedeeld<string>;
+  termijnLooptijd: ApiGedeeld<string>;
   stekker: ApiGedeeld<string>;
-  periode: ApiGedeeld<[string | null, string | null]>;
-  vernietigingsdatum: { van: string | null; tot: string | null };
+  aggregatieniveau: ApiGedeeld<string>;
+  waardering: ApiGedeeld<string>;
+  dekkingInTijd: ApiGedeeld<[string | null, string | null]>;
+  termijnEinddatum: { van: string | null; tot: string | null };
   volgnummer: { van: number | null; tot: number | null };
   statussen: string[];
 };
@@ -315,6 +358,9 @@ export type ApiUitvoeringStekker = {
   batchGrootte?: number;
   aantalObjecten: number;
   fout?: string | null;
+  // Wijze van vernietiging volgens de stekker (B-M4), vanaf de vrijgave.
+  vernietigingsmethode?: string | null;
+  vernietigingsmethodeToelichting?: string | null;
   resultaatTellingen: ApiResultaatTellingen;
   toegestaneActies?: string[];
 };
@@ -325,23 +371,14 @@ export type ApiUitvoering = {
   stekkers: ApiUitvoeringStekker[];
 };
 
-export type ApiVernietigingsresultaat = {
+export type ApiVernietigingsresultaat = ApiMdtoKandidaat & {
   id: string;
-  kandidaatId: string;
-  bronId: string;
-  bronIdNaam?: string | null;
-  omschrijving: string;
-  classificatiesleutel?: string | null;
-  selectielijst?: string | null;
-  grondslag?: string | null;
-  bewaartermijn?: string | null;
-  begindatum?: string | null;
-  einddatum?: string | null;
-  vernietigingsdatum?: string | null;
-  aantalObjecten: number;
-  aantalBetrokkenen: number;
   // Leeg zolang de stekker nog geen resultaat heeft gemeld (CC-8).
-  vernietigingsstatus: string | null;
+  resultaat: string | null;
+  // Tijdstip van vernietiging (MDTO-event Vernietigen), alleen bij SUCCESS.
+  eventTijd: string | null;
+  // Vernietigingsmethode van de stekker (B-M4).
+  vernietigingsmethode: string | null;
   foutcode?: string | null;
   foutmelding?: string | null;
   bronstatus?: string | null;
@@ -357,7 +394,8 @@ export type ApiArchivering = {
   status: "PENDING" | "SUCCESS" | "FAILED";
   adapter: string;
   locatie: string | null;
-  manifestSha256: string | null;
+  // SHA-256 van dossier.mdto.xml in het archiefpakket.
+  dossierSha256: string | null;
   fout: string | null;
   aangevraagdOp: string;
   afgerondOp: string | null;
@@ -413,3 +451,41 @@ export type ApiVernietigingsverklaring = {
 };
 
 export type ApiVerklaring = ApiVernietigingsverklaring | ApiVerklaringNietBeschikbaar;
+
+// --- Werkkopie en grafsteen (ADR-0006) -----------------------------------------------------
+
+export type ApiWerkkopieBewaartermijn = {
+  sleutel: "werkkopie_bewaartermijn";
+  waarde: string;
+  // "standaard": nog niet vastgelegd; geldt de beginwaarde WERKKOPIE_BEWAARTERMIJN.
+  bron: "instelling" | "standaard";
+  gewijzigdOp: string | null;
+};
+
+export type ApiGrafsteen = {
+  id: string;
+  taakinstantieId: string;
+  taakdefinitieId: string;
+  archiefvormer: ApiVerwijzing;
+  archivering: { id: string; adapter: string; locatie: string; openzaakZaakId: string | null; dossierSha256: string };
+  verificatie: { tijdstip: string; uitkomst: string; aantalBestanden: number };
+  auditlog: { aantalEvents: number; laatsteHash: string };
+  lijstHash: string | null;
+  verklaring: { versie: number | null; pdfSha256: string | null };
+  afgerondOp: string | null;
+  gearchiveerdOp: string;
+  verwijderdOp: string;
+  bewaartermijnWerkkopie: string;
+  hash: string;
+};
+
+export type ApiDossier =
+  | { status: "werkkopie_aanwezig"; taakinstantieId: string; taakStatus: string }
+  | { status: "werkkopie_verwijderd"; taakinstantieId: string; grafsteen: ApiGrafsteen };
+
+export type ApiGrafsteenVerificatie = {
+  intact: boolean;
+  aantal: number;
+  laatsteHash: string | null;
+  fouten: Array<{ id: string; reden: "hash" | "schakel" }>;
+};

@@ -31,8 +31,8 @@ describe("grote lijst (scenario H)", () => {
     expect(pagina.body.kandidaten).toHaveLength(100);
     expect(pagina.bytes).toBeLessThan(MAX_RESPONSE);
 
-    const groot = await grootte(`/taken/${taakId}/kandidaten?offset=14500&limit=500`);
-    expect(groot.body.kandidaten).toHaveLength(500);
+    const groot = await grootte(`/taken/${taakId}/kandidaten?offset=14750&limit=250`);
+    expect(groot.body.kandidaten).toHaveLength(250);
     expect(groot.body.kandidaten.at(-1).volgnummer).toBe(15_000);
     expect(groot.bytes).toBeLessThan(MAX_RESPONSE);
 

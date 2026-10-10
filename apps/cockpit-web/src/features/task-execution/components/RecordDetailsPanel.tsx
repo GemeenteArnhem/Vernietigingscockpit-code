@@ -20,7 +20,7 @@ type RecordDetailsItem = {
 type RecordDetailsTab = "details" | "opmerkingen";
 
 type Props = {
-  record: Pick<VernietigingsKandidaat, "titel">;
+  record: Pick<VernietigingsKandidaat, "naam">;
   comments: TaskExecutionComment[];
   currentIndex: number;
   totalCount: number;
@@ -120,7 +120,7 @@ export default function RecordDetailsPanel({
 
         <div className={showTabs ? "pt-4" : ""}>
           {(!showTabs || activeTab === "details") ? (
-            <section aria-label={`Details van ${record.titel}`}>
+            <section aria-label={`Details van ${record.naam}`}>
               {detailsNotice ? (
                 <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm leading-5 text-slate-600">
                   {detailsNotice}
@@ -145,8 +145,8 @@ export default function RecordDetailsPanel({
                     <dd
                       className={
                         item.stacked
-                          ? "mt-1 text-[14px] font-semibold leading-5 text-slate-900"
-                          : "text-[12.5px] font-semibold leading-5 text-slate-900"
+                          ? "mt-1 whitespace-pre-line text-[14px] font-semibold leading-5 text-slate-900"
+                          : "whitespace-pre-line text-[12.5px] font-semibold leading-5 text-slate-900"
                       }
                     >
                       {item.badgeClassName ? (

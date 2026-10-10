@@ -1,3 +1,5 @@
+import { mdtoVelden } from "./kandidaat-weergave.js";
+import { leesArchiefvormer } from "../taakdefinities/archiefvormer.js";
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import type { AuthUser } from "../auth/auth-user.js";
 import { CurrentMedewerkerService } from "../auth/current-medewerker.service.js";
@@ -35,6 +37,7 @@ export class UitvoeringService {
         status: true,
         stapSinds: true,
         versie: true,
+        archiefvormer: true,
         recordmanagerId: true,
         recordmanager: {
           select: {
@@ -62,6 +65,7 @@ export class UitvoeringService {
                 stekker: true,
               },
             },
+            vernietiging: { select: { vernietigingsmethode: true } },
             kandidaten: {
               where: {
                 beoordeling: "AKKOORD",
@@ -72,7 +76,7 @@ export class UitvoeringService {
               },
               orderBy: [
                 {
-                  vernietigingsdatum: "asc",
+                  termijnEinddatum: "asc",
                 },
                 {
                   kandidaatId: "asc",
@@ -98,6 +102,7 @@ export class UitvoeringService {
           proceseigenaar: taak.proceseigenaar,
           archivaris: taak.archivaris,
         },
+        archiefvormer: leesArchiefvormer(taak.archiefvormer),
         // Archivering (CC-18): laatste poging en of de recordmanager nu kan archiveren.
         archivering: archief.archivering,
         toegestaneActies: archief.toegestaneActies,
@@ -108,22 +113,11 @@ export class UitvoeringService {
 
           return {
             id: kandidaat.id,
-            kandidaatId: kandidaat.kandidaatId,
-            bronId: kandidaat.bronId,
-            bronIdNaam: kandidaat.bronIdNaam,
-            omschrijving: kandidaat.omschrijving,
-            classificatiesleutel: kandidaat.classificatiesleutel,
-            selectielijst: kandidaat.selectielijst,
-            grondslag: kandidaat.grondslag,
-            bewaartermijn: kandidaat.bewaartermijn,
-            begindatum: kandidaat.begindatum?.toISOString() ?? null,
-            einddatum: kandidaat.einddatum?.toISOString() ?? null,
-            vernietigingsdatum:
-              kandidaat.vernietigingsdatum?.toISOString() ?? null,
-            aantalObjecten: kandidaat.aantalObjecten,
-            aantalBetrokkenen: kandidaat.aantalBetrokkenen,
+            ...mdtoVelden(kandidaat),
             // Leeg zolang de stekker nog geen resultaat heeft gemeld; geen standaardwaarde.
-            vernietigingsstatus: resultaat?.resultaat ?? null,
+            resultaat: resultaat?.resultaat ?? null,
+            eventTijd: resultaat?.eventTijd?.toISOString() ?? null,
+            vernietigingsmethode: methodeLabel(selectie.vernietiging?.vernietigingsmethode),
             foutcode: resultaat?.foutcode ?? null,
             foutmelding: resultaat?.foutmelding ?? null,
             bronstatus: resultaat?.bronstatus ?? null,
@@ -248,6 +242,8 @@ export class UitvoeringService {
           batchGrootte: vernietiging?.batchGrootte ?? leesBatchGrootte(selectie.stekkerConfiguratie.parameters),
           aantalObjecten: selectie.totaalObjecten,
           fout,
+          vernietigingsmethode: methodeLabel(vernietiging?.vernietigingsmethode),
+          vernietigingsmethodeToelichting: vernietiging?.vernietigingsmethodeToelichting ?? null,
           resultaatTellingen: telResultaten(vernietiging?.resultaten ?? []),
           // De UI leidt geen rechten af; welke acties per stekker kunnen, bepaalt de API.
           toegestaneActies:
@@ -277,7 +273,7 @@ export class UitvoeringService {
 
         // TODO(CC-9): het id van het archivarisbesluit zodra dat een eigen record heeft.
         const vrijgave = await tx.auditEvent.findFirst({
-          where: { taakinstantieId: taak.id, actie: "DESTRUCTION_APPROVED_BY_ARCHIVIST" },
+          where: { taakinstantieId: taak.id, eventType: "Accordering" },
           orderBy: { id: "desc" },
           select: { id: true },
         });
@@ -377,7 +373,7 @@ export class UitvoeringService {
         await this.prisma.client.$transaction((tx) =>
           schrijfAuditEvent(tx, { type: "user", user, rol: "recordmanager" }, {
             taakinstantieId: taak.id,
-            actie: "EXECUTION_FAILED",
+            eventType: "Uitvoering mislukt",
             entiteitType: "taakinstantie",
             entiteitId: taak.id,
             details: { reden: "LIST_CHANGED", vrijgegevenHash: error.vrijgegevenHash, huidigeHash: error.huidigeHash },
@@ -464,7 +460,7 @@ export class UitvoeringService {
 
       await schrijfAuditEvent(tx, { type: "user", user, rol: "recordmanager" }, {
         taakinstantieId,
-        actie: "EXECUTION_RETRY_REQUESTED",
+        eventType: "Uitvoering opnieuw aangevraagd",
         entiteitType: "taakinstantie",
         entiteitId: taakinstantieId,
         details: {
@@ -480,4 +476,9 @@ export class UitvoeringService {
 
     return this.getUitvoering(user, taakinstantieId);
   }
+}
+
+// Het label van de vernietigingsmethode (begripGegevens, Cockpit-vernietigingsmethoden).
+function methodeLabel(methode: unknown) {
+  return (methode as { begripLabel?: string } | null | undefined)?.begripLabel ?? null;
 }

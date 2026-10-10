@@ -82,11 +82,11 @@ Traefik (de laatste opdracht).
 **2. Code ophalen** (beide repo's naast elkaar in dezelfde map)
 
 ```bash
-git clone -b dev5 https://github.com/GemeenteArnhem/Vernietigingscockpit-code.git
+git clone -b dev6 https://github.com/GemeenteArnhem/Vernietigingscockpit-code.git
 ```
 
 ```bash
-git clone -b dev https://github.com/GemeenteArnhem/Vernietigingscockpit-stekker-test.git
+git clone -b dev2 https://github.com/GemeenteArnhem/Vernietigingscockpit-stekker-test.git
 ```
 
 ```bash
@@ -190,7 +190,7 @@ Wissel van gebruiker via **Uitloggen** in de cockpit. Of gebruik een privévenst
 ## Wat er klaarstaat
 
 - Taakdefinitie **Sociaal domein 2026** met de teststekker. Een taakuitvoering maak je zelf
-  aan (`rm1`, actie **Nieuwe uitvoering aanmaken**); het auditlog begint dan met `TASK_CREATED`.
+  aan (`rm1`, actie **Nieuwe uitvoering aanmaken**); het auditlog begint dan met `Creatie`.
 - De teststekker (dataset *sociaal-domein-zaken*). Selectie en vernietiging duren elk een
   paar seconden, zodat je de tussenstanden ziet.
 

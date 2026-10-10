@@ -57,6 +57,9 @@ model Medewerker {
   actief                      Boolean            @default(true)
   bron                        String
   externId                    String?            @map("extern_id")
+  // Archiefvormer (MDTO verwijzingGegevens) op het profiel van de proceseigenaar; komt mee in
+  // de stamgegevens-import (ADR-0005, B-M3, besluit 2026-10-09).
+  archiefvormer               Json?
   gebruiker                   Gebruiker?
   taakdefinitiesRecordmanager Taakdefinitie[]    @relation("TaakdefinitieRecordmanager")
   taakdefinitiesPo            Taakdefinitie[]    @relation("TaakdefinitieProceseigenaar")
@@ -174,6 +177,10 @@ model Taakinstantie {
   gestartOp          DateTime?          @map("gestart_op") @db.Timestamptz
   afgerondOp         DateTime?          @map("afgerond_op") @db.Timestamptz
   versie             Int                @default(1)
+  // Archiefvormer van de proceseigenaar, vastgepind bij het aanmaken van de taakuitvoering
+  // (MDTO verwijzingGegevens). De applicatie zet hem altijd; latere wijzigingen van het
+  // profiel werken alleen door in nieuwe uitvoeringen.
+  archiefvormer      Json?
   // Vingerafdruk van de lijst bij de vrijgave door de archivaris (CC-9); gecontroleerd
   // bij de vernietigingsopdracht.
   lijstHash          String?            @map("lijst_hash")
@@ -243,45 +250,65 @@ model Selectie {
   @@map("selectie")
 }
 
+// Vernietigingskandidaat volgens Stekker API v2: precies één MDTO-informatieobject (ADR-0005).
+// Kolomnamen volgen het MDTO-pad. Gegevensgroepen die vaker kunnen voorkomen staan in JSONB
+// met MDTO-sleutels; waarden waarop gezocht, gefilterd of gesorteerd wordt, staan daarnaast in
+// eigen kolommen (afgeleid bij import).
 model Vernietigingskandidaat {
-  id                        String                 @id @default(uuid()) @db.Uuid
-  selectieId                String                 @map("selectie_id") @db.Uuid
-  selectie                  Selectie               @relation(fields: [selectieId], references: [id])
-  kandidaatId               String                 @map("kandidaat_id")
-  bronId                    String                 @map("bron_id")
-  bronIdNaam                String?                @map("bron_id_naam")
-  omschrijving              String
-  classificatieschema       String?
-  classificatiesleutel      String?
-  classificatieomschrijving String?
-  selectielijst             String?
-  grondslag                 String?
-  grondslagAfwijkend        String?                @map("grondslag_afwijkend")
-  resultaat                 String?
-  bewaartermijn             String?
-  waardering                String?
-  begindatum                DateTime?              @db.Date
-  einddatum                 DateTime?              @db.Date
-  vernietigingsdatum        DateTime?              @db.Date
-  aantalObjecten            Int                    @default(0) @map("aantal_objecten")
-  aantalBetrokkenen         Int                    @default(0) @map("aantal_betrokkenen")
-  relatieType               String?                @map("relatie_type")
-  relatieId                 String?                @map("relatie_id")
-  bron                      Json
-  beoordeling               String                 @default("OPGENOMEN")
-  uitsluitReden             String?                @map("uitsluit_reden")
-  toelichting               String?
-  beoordeeldDoor            String?                @map("beoordeeld_door") @db.Uuid
+  id                                String                 @id @default(uuid()) @db.Uuid
+  selectieId                        String                 @map("selectie_id") @db.Uuid
+  selectie                          Selectie               @relation(fields: [selectieId], references: [id])
+  kandidaatId                       String                 @map("kandidaat_id")
+  // MDTO identificatie (identificatieGegevens[]), letterlijk zoals de stekker hem leverde.
+  identificatie                     Json
+  // Alle identificatiekenmerken achter elkaar, om te zoeken en te sorteren.
+  identificatieKenmerken            String                 @map("identificatie_kenmerken")
+  naam                              String
+  omschrijving                      Json?
+  aggregatieniveau                  String
+  classificatie                     Json?
+  // Eerste classificatie (code, label, schema), om te zoeken, filteren en sorteren.
+  classificatieBegripCode           String?                @map("classificatie_begrip_code")
+  classificatieBegripLabel          String?                @map("classificatie_begrip_label")
+  classificatieBegrippenlijst       String?                @map("classificatie_begrippenlijst")
+  dekkingInTijd                     Json?                  @map("dekking_in_tijd")
+  // Eerste dekking in tijd; MDTO-datum (jaar, jaar-maand of datum), als tekst sorteerbaar.
+  dekkingInTijdBegindatum           String?                @map("dekking_in_tijd_begindatum")
+  dekkingInTijdEinddatum            String?                @map("dekking_in_tijd_einddatum")
+  waarderingBegripCode              String                 @map("waardering_begrip_code")
+  waarderingBegripLabel             String                 @map("waardering_begrip_label")
+  termijnTriggerStartLooptijd       Json?                  @map("termijn_trigger_start_looptijd")
+  termijnStartdatumLooptijd         DateTime?              @map("termijn_startdatum_looptijd") @db.Date
+  termijnLooptijd                   String?                @map("termijn_looptijd")
+  termijnEinddatum                  DateTime               @map("termijn_einddatum") @db.Date
+  informatiecategorieBegripCode     String?                @map("informatiecategorie_begrip_code")
+  informatiecategorieBegripLabel    String                 @map("informatiecategorie_begrip_label")
+  informatiecategorieBegrippenlijst Json                   @map("informatiecategorie_begrippenlijst")
+  // Naam van de selectielijst (begrippenlijst van de informatiecategorie), voor het filter.
+  selectielijst                     String
+  informatiecategorieAfwijking      Json?                  @map("informatiecategorie_afwijking")
+  isOnderdeelVan                    Json?                  @map("is_onderdeel_van")
+  gerelateerdInformatieobject       Json?                  @map("gerelateerd_informatieobject")
+  archiefvormer                     Json?
+  activiteit                        Json?
+  aantalObjecten                    Int                    @default(0) @map("aantal_objecten")
+  aantalBetrokkenen                 Int                    @default(0) @map("aantal_betrokkenen")
+  // Toelichting van de stekker (cockpituitbreiding); niet die van de recordmanager.
+  stekkerToelichting                String?                @map("stekker_toelichting")
+  beoordeling                       String                 @default("OPGENOMEN")
+  uitsluitReden                     String?                @map("uitsluit_reden")
+  toelichting                       String?
+  beoordeeldDoor                    String?                @map("beoordeeld_door") @db.Uuid
   // Laatste beoordeling door de recordmanager; toelichting en beoordeeld_door zijn van de RM.
-  beoordeeldOp              DateTime?              @map("beoordeeld_op") @db.Timestamptz
-  versie                    Int                    @default(1)
-  uitvoeringsresultaten     Uitvoeringsresultaat[]
-  besluiten                 KandidaatBesluit[]
+  beoordeeldOp                      DateTime?              @map("beoordeeld_op") @db.Timestamptz
+  versie                            Int                    @default(1)
+  uitvoeringsresultaten             Uitvoeringsresultaat[]
+  besluiten                         KandidaatBesluit[]
 
   @@unique([selectieId, kandidaatId])
   @@index([selectieId, beoordeling])
-  @@index([vernietigingsdatum])
-  @@index([grondslag])
+  @@index([termijnEinddatum], map: "idx_vernietigingskandidaat_termijn_einddatum")
+  @@index([informatiecategorieBegripLabel], map: "idx_vernietigingskandidaat_informatiecategorie")
   @@map("vernietigingskandidaat")
 }
 
@@ -294,7 +321,9 @@ model AuditEvent {
   actorId         String?        @map("actor_id")
   actorNaam       String?        @map("actor_naam")
   rol             AppRole?
-  actie           String
+  // Eventtype als begrip (ADR-0005 §5): label en begrippenlijst (naam + versie).
+  eventType                String         @map("event_type")
+  eventTypeBegrippenlijst  String         @map("event_type_begrippenlijst")
   entiteitType    String         @map("entiteit_type")
   entiteitId      String         @map("entiteit_id")
   details         Json
@@ -313,7 +342,8 @@ model ConfiguratieEvent {
   actorId      String?        @map("actor_id")
   actorNaam    String?        @map("actor_naam")
   rol          AppRole?
-  actie        String
+  eventType               String         @map("event_type")
+  eventTypeBegrippenlijst String         @map("event_type_begrippenlijst")
   entiteitType String         @map("entiteit_type")
   entiteitId   String         @map("entiteit_id")
   details      Json
@@ -348,31 +378,35 @@ model Outbox {
 // Uitvoering per selectie (stekker), CC-8. De cockpit legt elke stap zelf vast, zodat een
 // nieuwe poging (na een fout of een gecrashte worker) afgeronde stappen overslaat.
 model Vernietiging {
-  id                   String                 @id @default(uuid()) @db.Uuid
-  taakinstantieId      String                 @map("taakinstantie_id") @db.Uuid
-  taakinstantie        Taakinstantie          @relation(fields: [taakinstantieId], references: [id])
-  selectieId           String                 @unique @map("selectie_id") @db.Uuid
-  selectie             Selectie               @relation(fields: [selectieId], references: [id])
-  besluitReferentie    String                 @map("besluit_referentie")
-  batchGrootte         Int                    @map("batch_grootte")
-  aantalKandidaten     Int                    @map("aantal_kandidaten")
+  id                              String                 @id @default(uuid()) @db.Uuid
+  taakinstantieId                 String                 @map("taakinstantie_id") @db.Uuid
+  taakinstantie                   Taakinstantie          @relation(fields: [taakinstantieId], references: [id])
+  selectieId                      String                 @unique @map("selectie_id") @db.Uuid
+  selectie                        Selectie               @relation(fields: [selectieId], references: [id])
+  besluitReferentie               String                 @map("besluit_referentie")
+  batchGrootte                    Int                    @map("batch_grootte")
+  aantalKandidaten                Int                    @map("aantal_kandidaten")
   // LOPEND, MISLUKT (opdracht niet gelukt), INTEGRITEIT_MISLUKT of AFGEROND.
-  status               String                 @default("LOPEND")
-  externVernietigingId String?                @map("extern_vernietiging_id")
+  status                          String                 @default("LOPEND")
+  externVernietigingId            String?                @map("extern_vernietiging_id")
+  // Wijze van vernietiging volgens de stekker (begripGegevens, Cockpit-vernietigingsmethoden),
+  // vanaf vrijgave (ADR-0005, B-M4).
+  vernietigingsmethode            Json?                  @map("vernietigingsmethode")
+  vernietigingsmethodeToelichting String?                @map("vernietigingsmethode_toelichting")
   // Status volgens de stekker: IDLE, RUNNING, COMPLETED, PARTIAL of FAILED.
-  stekkerStatus        String?                @map("stekker_status")
-  vrijgegevenOp        DateTime?              @map("vrijgegeven_op") @db.Timestamptz
-  stekkerStarttijd     DateTime?              @map("stekker_starttijd") @db.Timestamptz
-  stekkerEindtijd      DateTime?              @map("stekker_eindtijd") @db.Timestamptz
-  volgendePollOp       DateTime?              @map("volgende_poll_op") @db.Timestamptz
-  pollPogingen         Int                    @default(0) @map("poll_pogingen")
-  fout                 String?
-  aangemaaktOp         DateTime               @default(now()) @map("aangemaakt_op") @db.Timestamptz
-  afgerondOp           DateTime?              @map("afgerond_op") @db.Timestamptz
-  geclaimdTot          DateTime?              @map("geclaimd_tot") @db.Timestamptz
-  geclaimdDoor         String?                @map("geclaimd_door")
-  batches              VernietigingBatch[]
-  resultaten           Uitvoeringsresultaat[]
+  stekkerStatus                   String?                @map("stekker_status")
+  vrijgegevenOp                   DateTime?              @map("vrijgegeven_op") @db.Timestamptz
+  stekkerStarttijd                DateTime?              @map("stekker_starttijd") @db.Timestamptz
+  stekkerEindtijd                 DateTime?              @map("stekker_eindtijd") @db.Timestamptz
+  volgendePollOp                  DateTime?              @map("volgende_poll_op") @db.Timestamptz
+  pollPogingen                    Int                    @default(0) @map("poll_pogingen")
+  fout                            String?
+  aangemaaktOp                    DateTime               @default(now()) @map("aangemaakt_op") @db.Timestamptz
+  afgerondOp                      DateTime?              @map("afgerond_op") @db.Timestamptz
+  geclaimdTot                     DateTime?              @map("geclaimd_tot") @db.Timestamptz
+  geclaimdDoor                    String?                @map("geclaimd_door")
+  batches                         VernietigingBatch[]
+  resultaten                      Uitvoeringsresultaat[]
 
   @@index([taakinstantieId])
   @@map("vernietiging")
@@ -394,21 +428,31 @@ model VernietigingBatch {
 
 // Eén regel per aangeboden kandidaat, vooraf aangemaakt; `resultaat` vult de stekker.
 model Uitvoeringsresultaat {
-  id             String                 @id @default(uuid()) @db.Uuid
-  vernietigingId String                 @map("vernietiging_id") @db.Uuid
-  vernietiging   Vernietiging           @relation(fields: [vernietigingId], references: [id])
-  batchId        String                 @map("batch_id") @db.Uuid
-  batch          VernietigingBatch      @relation(fields: [batchId], references: [id])
-  kandidaatId    String                 @map("kandidaat_id") @db.Uuid
-  kandidaat      Vernietigingskandidaat @relation(fields: [kandidaatId], references: [id])
+  id                  String                 @id @default(uuid()) @db.Uuid
+  vernietigingId      String                 @map("vernietiging_id") @db.Uuid
+  vernietiging        Vernietiging           @relation(fields: [vernietigingId], references: [id])
+  batchId             String                 @map("batch_id") @db.Uuid
+  batch               VernietigingBatch      @relation(fields: [batchId], references: [id])
+  kandidaatId         String                 @map("kandidaat_id") @db.Uuid
+  kandidaat           Vernietigingskandidaat @relation(fields: [kandidaatId], references: [id])
   // SUCCESS, FAILED, SKIPPED, NOT_FOUND of CHANGED (OpenAPI); leeg tot de stekker het meldt.
-  resultaat      String?
-  foutcode       String?
-  foutmelding    String?
-  bronstatus     String?
-  logReference   String?                @map("log_reference")
-  correlatieId   String?                @map("correlatie_id")
-  ontvangenOp    DateTime?              @map("ontvangen_op") @db.Timestamptz
+  resultaat           String?
+  foutcode            String?
+  foutmelding         String?
+  bronstatus          String?
+  logReference        String?                @map("log_reference")
+  correlatieId        String?                @map("correlatie_id")
+  toelichting         String?
+  // MDTO identificatie zoals de stekker hem in het resultaat terugmeldde.
+  identificatie       Json?
+  // MDTO-event Vernietigen (bij SUCCESS); eventTijd is het tijdstip van vernietiging.
+  event               Json?
+  eventTijd           DateTime?              @map("event_tijd") @db.Timestamptz
+  bronEventReferentie String?                @map("bron_event_referentie")
+  // MDTO-XML-specificatie van de stekker (gzip) en de SHA-256 van de XML (ADR-0005, B-M2).
+  specificatie        Bytes?
+  specificatieSha256  String?                @map("specificatie_sha256")
+  ontvangenOp         DateTime?              @map("ontvangen_op") @db.Timestamptz
 
   @@unique([vernietigingId, kandidaatId])
   @@index([batchId])
@@ -449,7 +493,8 @@ model Archivering {
   adapter          String
   verklaringVersie Int?          @map("verklaring_versie")
   locatie          String?
-  manifestSha256   String?       @map("manifest_sha256")
+  // SHA-256 van dossier.mdto.xml, de MDTO-beschrijving van het gearchiveerde dossier.
+  dossierSha256    String?       @map("dossier_sha256")
   openzaakZaakId   String?       @map("openzaak_zaak_id")
   fout             String?
   aangevraagdDoor  String        @map("aangevraagd_door")
@@ -458,4 +503,44 @@ model Archivering {
 
   @@index([taakinstantieId])
   @@map("archivering")
+}
+
+// Instellingen per organisatie (sleutel/waarde). Wijzigingen staan ook in configuratie_event
+// ('Instelling gewijzigd'). Nu: werkkopie_bewaartermijn (ADR-0006, ISO 8601-duur).
+model Instelling {
+  sleutel       String   @id
+  waarde        String
+  gewijzigdOp   DateTime @default(now()) @map("gewijzigd_op") @db.Timestamptz
+  gewijzigdDoor String?  @map("gewijzigd_door")
+
+  @@map("instelling")
+}
+
+// Grafsteen van een verwijderde werkkopie (ADR-0006 §5): insert-only, eigen hashketen,
+// geen persoons- of kandidaatgegevens. verwijderd_op zet de database (now() van de
+// transactie); verwijder_werkkopie() controleert daarop.
+model DossierGrafsteen {
+  id                     BigInt    @id @default(autoincrement())
+  taakinstantieId        String    @unique @map("taakinstantie_id") @db.Uuid
+  taakdefinitieId        String    @map("taakdefinitie_id") @db.Uuid
+  archiefvormer          Json
+  archiveringId          String    @map("archivering_id") @db.Uuid
+  archiefAdapter         String    @map("archief_adapter")
+  archiefLocatie         String    @map("archief_locatie")
+  openzaakZaakId         String?   @map("openzaak_zaak_id")
+  dossierSha256          String    @map("dossier_sha256")
+  verificatie            Json
+  auditAantalEvents      Int       @map("audit_aantal_events")
+  auditLaatsteHash       String    @map("audit_laatste_hash")
+  lijstHash              String?   @map("lijst_hash")
+  verklaringPdfSha256    String?   @map("verklaring_pdf_sha256")
+  verklaringVersie       Int?      @map("verklaring_versie")
+  afgerondOp             DateTime? @map("afgerond_op") @db.Timestamptz
+  gearchiveerdOp         DateTime  @map("gearchiveerd_op") @db.Timestamptz
+  verwijderdOp           DateTime  @default(dbgenerated("now()")) @map("verwijderd_op") @db.Timestamptz
+  bewaartermijnWerkkopie String    @map("bewaartermijn_werkkopie")
+  vorigeHash             String?   @map("vorige_hash")
+  hash                   String
+
+  @@map("dossier_grafsteen")
 }

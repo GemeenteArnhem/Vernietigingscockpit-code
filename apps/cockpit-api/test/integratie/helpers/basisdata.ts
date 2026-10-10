@@ -7,7 +7,15 @@ export async function maakBasisdata(prisma: PrismaService) {
   const db = prisma.client;
   const medewerker = (naam: string, externId: string, rol: "recordmanager" | "proceseigenaar" | "archivaris") =>
     db.medewerker.create({
-      data: { naam, email: `${externId}@example.test`, rollen: [rol], bron: "test", externId },
+      data: {
+        naam,
+        email: `${externId}@example.test`,
+        rollen: [rol],
+        bron: "test",
+        externId,
+        // De archiefvormer staat op het profiel van de proceseigenaar (ADR-0005, B-M3).
+        ...(rol === "proceseigenaar" ? { archiefvormer: { verwijzingNaam: "Gemeente Test" } } : {}),
+      },
     });
 
   const rm = await medewerker("Rita Recordmanager", "rm1", "recordmanager");
@@ -23,7 +31,7 @@ export async function maakBasisdata(prisma: PrismaService) {
       authType: "none",
       scopes: [],
       parameters: {},
-      verwachteApiMajor: 1,
+      verwachteApiMajor: 2,
       timeouts: {},
       aangemaaktDoor: "test",
     },
@@ -49,6 +57,7 @@ export async function maakBasisdata(prisma: PrismaService) {
       recordmanagerId: rm.id,
       proceseigenaarId: po.id,
       archivarisId: arch.id,
+      archiefvormer: { verwijzingNaam: "Gemeente Test" },
     },
   });
 

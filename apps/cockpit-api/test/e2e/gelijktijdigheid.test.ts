@@ -49,7 +49,7 @@ describe("statuswijzigingen over HTTP: If-Match en foutcodes", () => {
 
     // Na het gelijktijdige voorleggen: één REVIEW_SUBMITTED en een keten zonder vertakkingen.
     const acties = await auditActies(taakId);
-    expect(acties.filter((actie) => actie === "REVIEW_SUBMITTED")).toHaveLength(1);
+    expect(acties.filter((actie) => actie === "Voorgelegd")).toHaveLength(1);
     expect((await api("rm", `/taken/${taakId}/auditlog/verificatie`)).body).toMatchObject({ intact: true, fouten: [] });
   });
 

@@ -1,5 +1,6 @@
 import { ContentPanelSection } from "../../../components/ContentPanel";
 import type { VernietigingsKandidaat } from "../../../shared/types/destruction";
+import { AANTAL_OBJECTEN_UITLEG } from "../review/bulkDetails";
 
 type Props = {
   record: VernietigingsKandidaat;
@@ -24,28 +25,28 @@ export default function RecordDetailsSection({
           <h3 className="text-sm font-semibold text-slate-900">Herkomst</h3>
           <dl className="mt-3 grid gap-x-5 gap-y-3 sm:grid-cols-2">
             <div className="border-b border-slate-100 pb-2">
-              <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Bron-ID</dt>
-              <dd className="mt-1 text-sm font-medium text-slate-900">{record.bron_id ?? "-"}</dd>
+              <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Identificatie</dt>
+              <dd className="mt-1 text-sm font-medium text-slate-900">{record.identificatie ?? "-"}</dd>
             </div>
             <div className="border-b border-slate-100 pb-2">
-              <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Bronsysteem</dt>
-              <dd className="mt-1 text-sm font-medium text-slate-900">{record.bron_systeem ?? "-"}</dd>
+              <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Stekker</dt>
+              <dd className="mt-1 text-sm font-medium text-slate-900">{record.stekker ?? "-"}</dd>
             </div>
             <div className="border-b border-slate-100 pb-2">
-              <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Code</dt>
-              <dd className="mt-1 text-sm font-medium text-slate-900">{record.code ?? "-"}</dd>
+              <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Classificatie</dt>
+              <dd className="mt-1 text-sm font-medium text-slate-900">{record.classificatie ?? "-"}</dd>
             </div>
             <div className="border-b border-slate-100 pb-2">
-              <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Grondslag</dt>
-              <dd className="mt-1 text-sm font-medium text-slate-900">{record.grondslag ?? "-"}</dd>
+              <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Informatiecategorie</dt>
+              <dd className="mt-1 text-sm font-medium text-slate-900">{record.informatiecategorie ?? "-"}</dd>
             </div>
             <div className="border-b border-slate-100 pb-2">
-              <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Startdatum record</dt>
-              <dd className="mt-1 text-sm font-medium text-slate-900">{record.startdatum ?? "-"}</dd>
+              <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Begindatum dekking in tijd</dt>
+              <dd className="mt-1 text-sm font-medium text-slate-900">{record.dekkingInTijdBegindatum ?? "-"}</dd>
             </div>
             <div className="border-b border-slate-100 pb-2">
-              <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Einddatum record</dt>
-              <dd className="mt-1 text-sm font-medium text-slate-900">{record.einddatum ?? "-"}</dd>
+              <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Einddatum dekking in tijd</dt>
+              <dd className="mt-1 text-sm font-medium text-slate-900">{record.dekkingInTijdEinddatum ?? "-"}</dd>
             </div>
           </dl>
         </div>
@@ -59,10 +60,10 @@ export default function RecordDetailsSection({
             </div>
             <div className="border-b border-slate-100 pb-2">
               <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Bewaartermijn</dt>
-              <dd className="mt-1 text-sm font-medium text-slate-900">{record.bewaartermijn} jaar</dd>
+              <dd className="mt-1 text-sm font-medium text-slate-900">{record.termijnLooptijd}</dd>
             </div>
             <div className="border-b border-slate-100 pb-2">
-              <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Vernietigbaar sinds</dt>
+              <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Einddatum bewaartermijn</dt>
               <dd className="mt-1 text-sm font-medium text-slate-900">{vernietigbaarSinds}</dd>
             </div>
             <div className="border-b border-slate-100 pb-2">
@@ -70,7 +71,7 @@ export default function RecordDetailsSection({
               <dd className="mt-1 text-sm font-medium text-slate-900">{record.reden ?? "-"}</dd>
             </div>
             <div className="border-b border-slate-100 pb-2">
-              <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Aantal objecten</dt>
+              <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400" title={AANTAL_OBJECTEN_UITLEG}>Aantal objecten</dt>
               <dd className="mt-1 text-sm font-medium text-slate-900">
                 {record.aantalObjecten} object{record.aantalObjecten === 1 ? "" : "en"}
               </dd>

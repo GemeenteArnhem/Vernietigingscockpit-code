@@ -13,7 +13,7 @@ import type { ApiArchivering } from "@vernietigingscockpit/api-contract";
 
 export type BesluitRol = "recordmanager" | "proceseigenaar" | "archivaris";
 
-export const STANDAARD_KANDIDATEN_QUERY: KandidatenQuery = { offset: 0, limit: 500, zoekIn: "all", sort: "volgnummer", richting: "asc" };
+export const STANDAARD_KANDIDATEN_QUERY: KandidatenQuery = { offset: 0, limit: 250, zoekIn: "all", sort: "volgnummer", richting: "asc" };
 
 export type StartSelectieInput = {
   peildatum?: string | null;
@@ -128,7 +128,7 @@ export function mapArchivering(archivering: {
   status: string;
   adapter: string;
   locatie: string | null;
-  manifestSha256: string | null;
+  dossierSha256: string | null;
   fout: string | null;
   aangevraagdOp: Date;
   afgerondOp: Date | null;
@@ -139,7 +139,7 @@ export function mapArchivering(archivering: {
     status: archivering.status as ApiArchivering["status"],
     adapter: archivering.adapter,
     locatie: archivering.locatie,
-    manifestSha256: archivering.manifestSha256,
+    dossierSha256: archivering.dossierSha256,
     fout: archivering.fout,
     aangevraagdOp: archivering.aangevraagdOp.toISOString(),
     afgerondOp: archivering.afgerondOp?.toISOString() ?? null,
@@ -261,7 +261,7 @@ export async function bulkKandidaten(tx: Prisma.TransactionClient, taakinstantie
   const uniek = Array.from(new Set(ids));
   const kandidaten = await tx.vernietigingskandidaat.findMany({
     where: { id: { in: uniek }, selectie: { taakinstantieId, ...ACTIEVE_SELECTIE } },
-    select: { id: true, beoordeling: true },
+    select: { id: true, beoordeling: true, uitsluitReden: true },
     orderBy: { id: "asc" },
   });
 

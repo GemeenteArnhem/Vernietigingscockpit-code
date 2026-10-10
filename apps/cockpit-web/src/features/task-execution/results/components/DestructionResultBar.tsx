@@ -48,7 +48,7 @@ export default function DestructionResultBar({ rows }: Props) {
       <div className="grid gap-3 md:grid-cols-5">
         {STAT_ORDER.map((stat) => {
           const count = rows.filter(
-            (row) => row.vernietigingsstatus === stat.key
+            (row) => row.resultaat === stat.key
           ).length;
 
           return (

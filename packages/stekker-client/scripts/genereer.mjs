@@ -15,7 +15,7 @@ const spec = path.resolve(
   process.env.STEKKER_SPEC ?? path.join(repo, "..", "Vernietigingscockpit", "designrules", "api", "stekker-openapi-spec.yaml")
 );
 const doel = path.join(pakket, "src", "stekker-api.ts");
-const VERWACHTE_VERSIE = "1.0.0";
+const VERWACHTE_VERSIE = "2.0.0";
 
 const tekst = await readFile(spec, "utf8").catch(() => {
   console.error(`Spec niet gevonden: ${spec}. Zet STEKKER_SPEC of check de architectuurrepo naast deze repo uit.`);

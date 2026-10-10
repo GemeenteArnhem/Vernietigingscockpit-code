@@ -58,7 +58,7 @@ describe("stekker aanmaken en bewerken", () => {
     expect(ontsleutel(configuratie.secretVersleuteld!, sleutel)).toBe("heel-geheim-1");
 
     const [event] = await events(stekker.id);
-    expect(event).toMatchObject({ actie: "CONNECTOR_CREATED", actorType: "user" });
+    expect(event).toMatchObject({ eventType: "Stekker aangemaakt", actorType: "user" });
     expect(JSON.stringify(event.details)).not.toContain("heel-geheim-1");
   });
 
@@ -73,7 +73,7 @@ describe("stekker aanmaken en bewerken", () => {
     expect(ontsleutel(v2.secretVersleuteld!, sleutel)).toBe("heel-geheim-1");
 
     await expect(beheer.bewerken(fb, stekker.id, 1, invoer())).rejects.toMatchObject({ status: 412 });
-    expect((await events(stekker.id)).map((event) => event.actie)).toEqual(["CONNECTOR_CREATED", "CONNECTOR_UPDATED"]);
+    expect((await events(stekker.id)).map((event) => event.eventType)).toEqual(["Stekker aangemaakt", "Stekker gewijzigd"]);
   });
 
   it("een nieuw secret vervangt het oude; naar 'geen authenticatie' wist het", async () => {
@@ -106,10 +106,10 @@ describe("deactiveren en verwijderen", () => {
     expect(await beheer.zetActief(fb, stekker.id, false)).toMatchObject({ actief: false, toegestaneActies: expect.arrayContaining(["stekker.activeren"]) });
     await expect(beheer.zetActief(fb, stekker.id, false)).rejects.toMatchObject({ status: 409 });
     expect(await beheer.zetActief(fb, stekker.id, true)).toMatchObject({ actief: true });
-    expect((await events(stekker.id)).map((event) => event.actie)).toEqual([
-      "CONNECTOR_CREATED",
-      "CONNECTOR_DEACTIVATED",
-      "CONNECTOR_ACTIVATED",
+    expect((await events(stekker.id)).map((event) => event.eventType)).toEqual([
+      "Stekker aangemaakt",
+      "Stekker gedeactiveerd",
+      "Stekker geactiveerd",
     ]);
   });
 
@@ -118,7 +118,7 @@ describe("deactiveren en verwijderen", () => {
     expect(ongebruikt.toegestaneActies).toContain("stekker.verwijderen");
     await beheer.verwijderen(fb, ongebruikt.id);
     expect(await db.prisma.client.stekker.count({ where: { id: ongebruikt.id } })).toBe(0);
-    expect((await events(ongebruikt.id)).at(-1)).toMatchObject({ actie: "CONNECTOR_DELETED" });
+    expect((await events(ongebruikt.id)).at(-1)).toMatchObject({ eventType: "Stekker verwijderd" });
 
     // De teststekker uit de basisdata hangt aan een taakdefinitie.
     const gebruikt = await beheer.detail(basis.stekker.id);

@@ -19,30 +19,42 @@ export type DestructionResultActionOption = {
 
 export type DestructionResultRow = {
   id: string;
-  titel: string;
+  naam: string;
   stekker: string;
-  vernietigingsstatus: DestructionResultStatus;
+  resultaat: DestructionResultStatus;
   omvang?: number;
   aantalBetrokkenen?: number;
-  bewaartermijn?: number;
-  vernietigingsdatum?: string;
-  bron_id?: string;
-  code?: string;
-  startdatum?: string;
-  einddatum?: string;
+  termijnLooptijd?: string;
+  termijnEinddatum?: string;
+  identificatie?: string;
+  classificatie?: string;
+  dekkingInTijdBegindatum?: string;
+  dekkingInTijdEinddatum?: string;
   selectielijst?: string;
-  grondslag?: string;
-  bron_systeem?: string;
+  informatiecategorie?: string;
+  // MDTO (ADR-0005): aggregatieniveau, waardering, identificaties als "kenmerk (bron)" en
+  // de archiefvormer (van de kandidaat, anders die van de taak).
+  aggregatieniveau?: string;
+  waardering?: string;
+  identificaties?: string[];
+  archiefvormer?: string;
+  // Tijdstip van vernietiging (MDTO eventTijd) en vernietigingsmethode van de stekker.
+  eventTijd?: string;
+  eventTijdIso?: string;
+  vernietigingsmethode?: string;
   melding?: string;
 };
 
 export type DestructionResultColumnKey =
   | "omvang"
-  | "vernietigingsdatum"
-  | "bron_id"
-  | "code"
-  | "grondslag"
-  | "bron_systeem"
+  | "termijnEinddatum"
+  | "identificatie"
+  | "classificatie"
+  | "informatiecategorie"
+  | "stekker"
+  | "aggregatieniveau"
+  | "waardering"
+  | "eventTijd"
   | "melding";
 
 export const DESTRUCTION_RESULT_COLUMN_LABELS: Record<
@@ -50,11 +62,14 @@ export const DESTRUCTION_RESULT_COLUMN_LABELS: Record<
   string
 > = {
   omvang: "Omvang",
-  vernietigingsdatum: "Vernietigingsdatum",
-  bron_id: "Bron-ID",
-  code: "Code",
-  grondslag: "Grondslag",
-  bron_systeem: "Bronsysteem",
+  termijnEinddatum: "Einddatum bewaartermijn",
+  identificatie: "Identificatie",
+  classificatie: "Classificatie",
+  informatiecategorie: "Informatiecategorie",
+  stekker: "Stekker",
+  aggregatieniveau: "Aggregatieniveau",
+  waardering: "Waardering",
+  eventTijd: "Tijdstip vernietiging",
   melding: "Melding",
 };
 
@@ -64,11 +79,11 @@ export const DESTRUCTION_RESULT_COLUMN_GROUPS: {
 }[] = [
   {
     label: "Recordgegevens",
-    keys: ["omvang", "vernietigingsdatum", "bron_id"],
+    keys: ["omvang", "termijnEinddatum", "identificatie"],
   },
   {
     label: "Context",
-    keys: ["code", "grondslag", "bron_systeem", "melding"],
+    keys: ["classificatie", "informatiecategorie", "stekker", "melding"],
   },
 ];
 

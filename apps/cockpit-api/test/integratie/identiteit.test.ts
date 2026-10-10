@@ -35,7 +35,7 @@ function gebruiker(sub: string, velden: Partial<AuthUser> = {}): AuthUser {
 }
 
 const koppelEvents = (sub: string) =>
-  db.prisma.client.configuratieEvent.findMany({ where: { actie: "USER_LINKED", entiteitId: sub } });
+  db.prisma.client.configuratieEvent.findMany({ where: { eventType: "Gebruiker gekoppeld", entiteitId: sub } });
 
 describe("identiteit op sub (CC-12)", () => {
   it("koppelt bij de eerste login op gebruikersnaam, met een USER_LINKED-event", async () => {

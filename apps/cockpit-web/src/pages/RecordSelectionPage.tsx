@@ -343,7 +343,7 @@ export default function RecordSelectionPage() {
       <AppShellPortal slot="detail">
         <RecordDetailsPanel
           heading="Stekkerdetails"
-          record={{ titel: selectedConnector.naam }}
+          record={{ naam: selectedConnector.naam }}
           comments={[]}
           showTabs={false}
           currentIndex={selectedConnectorIndex >= 0 ? selectedConnectorIndex + 1 : 0}

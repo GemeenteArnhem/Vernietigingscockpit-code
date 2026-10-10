@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { gebruiker, maakBasisdata } from "./helpers/basisdata.js";
 import { startDatabase, type TestDatabase } from "./helpers/database.js";
 import { maakTaakServices, type TaakServices } from "./helpers/taken.js";
+import { mdtoKandidaat } from "./helpers/kandidaat.js";
 
 let db: TestDatabase;
 let basis: Awaited<ReturnType<typeof maakBasisdata>>;
@@ -45,7 +46,7 @@ async function maakTaak() {
       externSelectieId: `sel-${taak.id}`,
       status: "GEIMPORTEERD",
       kandidaten: {
-        create: [0, 1].map((i) => ({ kandidaatId: `vk-${i}`, bronId: `bron-${i}`, omschrijving: `Zaak ${i}`, bron: {} })),
+        create: [0, 1].map((i) => mdtoKandidaat(`vk-${i}`, { kenmerk: `bron-${i}`, naam: `Zaak ${i}` })),
       },
     },
   });
@@ -156,7 +157,7 @@ describe("lijstcontrole bij de vernietigingsopdracht (CC-9)", () => {
 
     expect((await db.prisma.client.taakinstantie.findUniqueOrThrow({ where: { id: taak.id } })).status).toBe("vrijgegeven");
     expect(await db.prisma.client.vernietiging.count({ where: { taakinstantieId: taak.id } })).toBe(0);
-    const event = await db.prisma.client.auditEvent.findFirstOrThrow({ where: { taakinstantieId: taak.id, actie: "EXECUTION_FAILED" } });
+    const event = await db.prisma.client.auditEvent.findFirstOrThrow({ where: { taakinstantieId: taak.id, eventType: "Uitvoering mislukt" } });
     expect(event.details).toMatchObject({ reden: "LIST_CHANGED" });
   });
 });

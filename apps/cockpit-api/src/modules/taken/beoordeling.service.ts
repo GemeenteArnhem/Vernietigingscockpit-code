@@ -1,4 +1,7 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { UITSLUITREDEN_WAARDERING } from "@vernietigingscockpit/api-contract";
+import { mdtoVelden } from "./kandidaat-weergave.js";
+import { leesArchiefvormer } from "../taakdefinities/archiefvormer.js";
+import { BadRequestException, ForbiddenException, Inject, Injectable, ConflictException } from "@nestjs/common";
 import type { AuthUser } from "../auth/auth-user.js";
 import { CurrentMedewerkerService } from "../auth/current-medewerker.service.js";
 import { PrismaService } from "../../shared/db/prisma.service.js";
@@ -63,6 +66,7 @@ export class BeoordelingService {
           proceseigenaar: taak.proceseigenaar,
           archivaris: taak.archivaris,
         },
+        archiefvormer: leesArchiefvormer(taak.archiefvormer),
       },
       pagina: { offset: query.offset, limit: query.limit, totaal },
       tellingen,
@@ -70,26 +74,7 @@ export class BeoordelingService {
       kandidaten: kandidaten.map((kandidaat) => ({
         volgnummer: nummers.get(kandidaat.id) ?? 0,
         id: kandidaat.id,
-        kandidaatId: kandidaat.kandidaatId,
-        bronId: kandidaat.bronId,
-        bronIdNaam: kandidaat.bronIdNaam,
-        omschrijving: kandidaat.omschrijving,
-        classificatieschema: kandidaat.classificatieschema,
-        classificatiesleutel: kandidaat.classificatiesleutel,
-        classificatieomschrijving: kandidaat.classificatieomschrijving,
-        selectielijst: kandidaat.selectielijst,
-        grondslag: kandidaat.grondslag,
-        grondslagAfwijkend: kandidaat.grondslagAfwijkend,
-        resultaat: kandidaat.resultaat,
-        bewaartermijn: kandidaat.bewaartermijn,
-        waardering: kandidaat.waardering,
-        begindatum: kandidaat.begindatum?.toISOString() ?? null,
-        einddatum: kandidaat.einddatum?.toISOString() ?? null,
-        vernietigingsdatum: kandidaat.vernietigingsdatum?.toISOString() ?? null,
-        aantalObjecten: kandidaat.aantalObjecten,
-        aantalBetrokkenen: kandidaat.aantalBetrokkenen,
-        relatieType: kandidaat.relatieType,
-        relatieId: kandidaat.relatieId,
+        ...mdtoVelden(kandidaat),
         beoordeling: kandidaat.beoordeling,
         uitsluitReden: kandidaat.uitsluitReden,
         // Wat de schermen tonen, is ongewijzigd: de toelichting van wie het laatst
@@ -133,13 +118,15 @@ export class BeoordelingService {
       where: kandidatenWhere(taak.id, { ids, zoekIn: "all" }),
       select: {
         id: true,
-        classificatiesleutel: true,
+        classificatieBegripCode: true,
         selectielijst: true,
-        grondslag: true,
-        bewaartermijn: true,
-        begindatum: true,
-        einddatum: true,
-        vernietigingsdatum: true,
+        informatiecategorieBegripLabel: true,
+        termijnLooptijd: true,
+        dekkingInTijdBegindatum: true,
+        dekkingInTijdEinddatum: true,
+        termijnEinddatum: true,
+        aggregatieniveau: true,
+        waarderingBegripLabel: true,
         beoordeling: true,
         aantalObjecten: true,
         aantalBetrokkenen: true,
@@ -168,11 +155,12 @@ export class BeoordelingService {
     const taak = await this.toegang.taakVoorBesluit(user, taakinstantieId, "recordmanager", "beoordeling.voorleggen", verwachteVersie);
     const beoordeling = parseKandidaatBeoordeling(input.beoordeling);
     const toelichting = normalizeOptionalText(input.toelichting);
-    const uitsluitReden = beoordeling === "UITGESLOTEN" ? normalizeOptionalText(input.uitsluitReden) ?? toelichting : null;
+    const uitsluitReden = beoordeling === "UITGESLOTEN" ? normalizeOptionalText(input.uitsluitReden) : null;
 
     return this.prisma.client.$transaction(
       async (tx) => {
         const kandidaten = await bulkKandidaten(tx, taak.id, input.ids);
+        weigerVastUitgesloten(kandidaten);
         await tx.vernietigingskandidaat.updateMany({
           where: { id: { in: kandidaten.map((kandidaat) => kandidaat.id) } },
           data: {
@@ -189,7 +177,7 @@ export class BeoordelingService {
           { type: "user", user, rol: "recordmanager" },
           kandidaten.map((kandidaat) => ({
             taakinstantieId: taak.id,
-            actie: beoordeling === "UITGESLOTEN" ? "OBJECT_EXCLUDED" : "OBJECT_INCLUDED",
+            eventType: beoordeling === "UITGESLOTEN" ? "Kandidaat uitgesloten" : "Kandidaat opgenomen",
             entiteitType: "vernietigingskandidaat",
             entiteitId: kandidaat.id,
             details: { vorigeBeoordeling: kandidaat.beoordeling, beoordeling, uitsluitReden, toelichting, bulk: true },
@@ -218,10 +206,7 @@ export class BeoordelingService {
 
     const beoordeling = parseKandidaatBeoordeling(input.beoordeling);
     const toelichting = normalizeOptionalText(input.toelichting);
-    const uitsluitReden =
-      beoordeling === "UITGESLOTEN"
-        ? normalizeOptionalText(input.uitsluitReden) ?? toelichting
-        : null;
+    const uitsluitReden = beoordeling === "UITGESLOTEN" ? normalizeOptionalText(input.uitsluitReden) : null;
 
     const kandidaat = await this.prisma.client.vernietigingskandidaat.findFirst({
       where: {
@@ -238,6 +223,7 @@ export class BeoordelingService {
       select: {
         id: true,
         beoordeling: true,
+        uitsluitReden: true,
         selectie: {
           select: {
             taakinstantieId: true,
@@ -251,6 +237,8 @@ export class BeoordelingService {
         "Deze kandidaat kan niet worden beoordeeld vanuit de huidige taakstatus."
       );
     }
+
+    weigerVastUitgesloten([kandidaat]);
 
     const updated = await this.prisma.client.$transaction(async (tx) => {
       const result = await tx.vernietigingskandidaat.update({
@@ -278,7 +266,7 @@ export class BeoordelingService {
 
       await schrijfAuditEvent(tx, { type: "user", user, rol: "recordmanager" }, {
         taakinstantieId,
-        actie: beoordeling === "UITGESLOTEN" ? "OBJECT_EXCLUDED" : "OBJECT_INCLUDED",
+        eventType: beoordeling === "UITGESLOTEN" ? "Kandidaat uitgesloten" : "Kandidaat opgenomen",
         entiteitType: "vernietigingskandidaat",
         entiteitId: kandidaat.id,
         details: {
@@ -326,5 +314,17 @@ export class BeoordelingService {
     });
 
     return taakStatusAntwoord(updated);
+  }
+}
+
+// Een kandidaat met een waardering anders dan V heeft het systeem bij import uitgesloten
+// (ADR-0005, B-M1). Die beslissing ligt vast: de recordmanager kan hem niet opnemen of wijzigen.
+function weigerVastUitgesloten(kandidaten: Array<{ uitsluitReden: string | null }>) {
+  const vast = kandidaten.filter((kandidaat) => kandidaat.uitsluitReden === UITSLUITREDEN_WAARDERING).length;
+
+  if (vast > 0) {
+    throw new ConflictException(
+      `${vast} kandidaat/kandidaten zijn automatisch uitgesloten (${UITSLUITREDEN_WAARDERING}) en kunnen niet worden gewijzigd.`
+    );
   }
 }

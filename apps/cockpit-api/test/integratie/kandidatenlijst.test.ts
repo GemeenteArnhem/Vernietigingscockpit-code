@@ -7,6 +7,7 @@ import { kandidatenQuerySchema } from "@vernietigingscockpit/api-contract";
 import { gebruiker, maakBasisdata } from "./helpers/basisdata.js";
 import { startDatabase, type TestDatabase } from "./helpers/database.js";
 import { maakTaakServices, type TaakServices } from "./helpers/taken.js";
+import { mdtoKandidaat } from "./helpers/kandidaat.js";
 
 let db: TestDatabase;
 let basis: Awaited<ReturnType<typeof maakBasisdata>>;
@@ -50,15 +51,15 @@ beforeAll(async () => {
   await client.vernietigingskandidaat.createMany({
     data: Array.from({ length: AANTAL }, (_, i) => ({
       selectieId: selectie.id,
-      kandidaatId: `vk-${String(i).padStart(5, "0")}`,
-      bronId: `BRON-${i}`,
-      omschrijving: i % 100 === 0 ? `Bijzondere zaak ${i}` : `Zaak ${i}`,
-      classificatiesleutel: i % 2 === 0 ? "A.1" : "B.2",
-      selectielijst: i % 3 === 0 ? "2017" : "2020",
-      bewaartermijn: i % 2 === 0 ? "7 jaar" : "10 jaar",
-      vernietigingsdatum: new Date(Date.UTC(2020, i % 12, 1)),
-      aantalObjecten: i,
-      bron: {},
+      ...mdtoKandidaat(`vk-${String(i).padStart(5, "0")}`, {
+        kenmerk: `BRON-${i}`,
+        naam: i % 100 === 0 ? `Bijzondere zaak ${i}` : `Zaak ${i}`,
+        classificatieBegripCode: i % 2 === 0 ? "A.1" : "B.2",
+        selectielijst: i % 3 === 0 ? "2017" : "2020",
+        termijnLooptijd: i % 2 === 0 ? "P7Y" : "P10Y",
+        termijnEinddatum: new Date(Date.UTC(2020, i % 12, 1)),
+        aantalObjecten: i,
+      }),
     })),
   });
 });
@@ -70,11 +71,11 @@ afterAll(async () => {
 describe("kandidatenlijst op de server (CC-10)", () => {
   it("pagineert zonder overlap, met volgnummers in de vaste volgorde en een response onder 1 MB", async () => {
     const paginas = await Promise.all(
-      [0, 500, 1000].map((offset) => taken.beoordeling.getKandidaten(rm, taakId, query({ offset: String(offset), limit: "500" })))
+      [0, 250, 500, 750, 1000].map((offset) => taken.beoordeling.getKandidaten(rm, taakId, query({ offset: String(offset), limit: "250" })))
     );
 
-    expect(paginas.map((pagina) => pagina.kandidaten.length)).toEqual([500, 500, 200]);
-    expect(paginas[0].pagina).toEqual({ offset: 0, limit: 500, totaal: AANTAL });
+    expect(paginas.map((pagina) => pagina.kandidaten.length)).toEqual([250, 250, 250, 250, 200]);
+    expect(paginas[0].pagina).toEqual({ offset: 0, limit: 250, totaal: AANTAL });
     const ids = paginas.flatMap((pagina) => pagina.kandidaten.map((kandidaat) => kandidaat.id));
     expect(new Set(ids).size).toBe(AANTAL);
     expect(paginas.flatMap((pagina) => pagina.kandidaten.map((kandidaat) => kandidaat.volgnummer))).toEqual(
@@ -90,7 +91,7 @@ describe("kandidatenlijst op de server (CC-10)", () => {
     expect(pagina.facetten).toEqual({
       status: ["nog-te-beoordelen"],
       selectielijst: ["2017", "2020"],
-      bewaartermijn: ["10 jaar", "7 jaar"],
+      termijnLooptijd: ["P10Y", "P7Y"],
       stekker: ["Teststekker"],
     });
   });
@@ -99,16 +100,18 @@ describe("kandidatenlijst op de server (CC-10)", () => {
     const opSelectielijst = await taken.beoordeling.getKandidaten(rm, taakId, query({ selectielijst: "2017", limit: "1" }));
     expect(opSelectielijst.pagina.totaal).toBe(400);
 
-    const opTermijn = await taken.beoordeling.getKandidaten(rm, taakId, query({ bewaartermijn: "10 jaar", limit: "1" }));
+    const opTermijn = await taken.beoordeling.getKandidaten(rm, taakId, query({ termijnLooptijd: "P10Y", limit: "1" }));
     expect(opTermijn.pagina.totaal).toBe(600);
 
-    const zoeken = await taken.beoordeling.getKandidaten(rm, taakId, query({ zoek: "bijzondere", zoekIn: "omschrijving" }));
+    const zoeken = await taken.beoordeling.getKandidaten(rm, taakId, query({ zoek: "bijzondere", zoekIn: "naam" }));
     expect(zoeken.kandidaten).toHaveLength(12);
 
-    const opMaand = await taken.beoordeling.getKandidaten(rm, taakId, query({ zoek: "2020-03", zoekIn: "vernietigingsdatum", limit: "1" }));
+    const opMaand = await taken.beoordeling.getKandidaten(rm, taakId, query({ zoek: "2020-03", zoekIn: "termijnEinddatum", limit: "1" }));
     expect(opMaand.pagina.totaal).toBe(100);
 
     const grootste = await taken.beoordeling.getKandidaten(rm, taakId, query({ sort: "aantalObjecten", richting: "desc", limit: "1" }));
+    await expect(taken.beoordeling.getKandidaten(rm, taakId, query({ sort: "waardering", limit: "1" }))).resolves.toBeTruthy();
+    await expect(taken.beoordeling.getKandidaten(rm, taakId, query({ sort: "aggregatieniveau", limit: "1" }))).resolves.toBeTruthy();
     expect(grootste.kandidaten[0].aantalObjecten).toBe(AANTAL - 1);
 
     const ids = await taken.beoordeling.getKandidaatIds(rm, taakId, query({ selectielijst: "2017" }));
@@ -125,8 +128,10 @@ describe("kandidatenlijst op de server (CC-10)", () => {
       aantal: 400,
       selectielijst: { waarde: "2017", verschillend: false },
       stekker: { waarde: "Teststekker", verschillend: false },
-      code: { waarde: null, verschillend: true },
-      vernietigingsdatum: { van: "2020-01-01T00:00:00.000Z", tot: "2020-10-01T00:00:00.000Z" },
+      classificatie: { waarde: null, verschillend: true },
+      aggregatieniveau: { waarde: "Dossier", verschillend: false },
+      waardering: { waarde: "Tijdelijk te bewaren", verschillend: false },
+      termijnEinddatum: { van: "2020-01-01T00:00:00.000Z", tot: "2020-10-01T00:00:00.000Z" },
       volgnummer: { van: 1, tot: expect.any(Number) },
     });
   });
@@ -158,7 +163,7 @@ describe("bulkbesluiten (CC-10)", () => {
 
     const pagina = await taken.beoordeling.getKandidaten(rm, taakId, query({ limit: "1" }));
     expect(pagina.tellingen).toMatchObject({ opgenomen: 0, akkoord: AANTAL });
-    expect(await db.prisma.client.auditEvent.count({ where: { taakinstantieId: taakId, actie: "OBJECT_INCLUDED" } })).toBe(AANTAL);
+    expect(await db.prisma.client.auditEvent.count({ where: { taakinstantieId: taakId, eventType: "Kandidaat opgenomen" } })).toBe(AANTAL);
     const verificatie = await new AuditService(db.prisma, new CurrentMedewerkerService(db.prisma)).verifieer(rm, taakId);
     expect(verificatie).toMatchObject({ intact: true, aantalEvents: AANTAL });
   });
@@ -166,7 +171,7 @@ describe("bulkbesluiten (CC-10)", () => {
   it("een bulkbesluit van de PO legt per kandidaat een besluit vast", async () => {
     await taken.beoordeling.beoordelingVoorleggen(rm, taakId, (await db.prisma.client.taakinstantie.findUniqueOrThrow({ where: { id: taakId } })).versie);
     const versie = (await db.prisma.client.taakinstantie.findUniqueOrThrow({ where: { id: taakId } })).versie;
-    const { ids } = await taken.beoordeling.getKandidaatIds(po, taakId, query({ zoek: "bijzondere", zoekIn: "omschrijving" }));
+    const { ids } = await taken.beoordeling.getKandidaatIds(po, taakId, query({ zoek: "bijzondere", zoekIn: "naam" }));
 
     await taken.besluitvorming.bulkBesluit(po, taakId, versie, { ids, besluit: "RETOUR", toelichting: "Nakijken" }, "proceseigenaar");
 

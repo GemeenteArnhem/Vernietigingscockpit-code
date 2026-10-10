@@ -620,7 +620,7 @@ export default function DashboardPage() {
           <RecordDetailsPanel
             heading="Taakuitvoering details"
             record={{
-              titel: selectedRecord.naam,
+              naam: selectedRecord.naam,
             }}
             comments={[]}
             showTabs={false}

@@ -38,6 +38,7 @@ export function verbindingVan(configuratie: StekkerVerbinding): StekkerVerbindin
     secretVersleuteld: configuratie.secretVersleuteld ?? null,
     scopes: configuratie.scopes,
     timeouts: configuratie.timeouts,
+    verwachteApiMajor: configuratie.verwachteApiMajor,
   };
 }
 

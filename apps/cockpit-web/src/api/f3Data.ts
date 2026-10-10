@@ -36,6 +36,8 @@ import type {
   ApiKandidaatBeoordeling,
   ApiKandidaatIds,
   ApiKandidatenPagina,
+  ApiMdtoKandidaat,
+  ApiVerwijzing,
   ApiSelectieSamenvatting,
   ApiSelectieStekker,
   ApiStamgegevensMedewerker,
@@ -195,7 +197,7 @@ export type KandidatenLijstQuery = {
   ids?: string[];
   selectielijst?: string;
   stekker?: string;
-  bewaartermijn?: string;
+  termijnLooptijd?: string;
   sort?: KandidatenSortering;
   richting?: "asc" | "desc";
 };
@@ -232,7 +234,7 @@ export async function getReviewCandidatesPagina(
     pagina: response.pagina,
     tellingen: response.tellingen,
     facetten: response.facetten,
-    rows: response.kandidaten.map(mapReviewCandidate),
+    rows: response.kandidaten.map((candidate) => mapReviewCandidate(candidate, response.taak.archiefvormer)),
     contexts: response.kandidaten.map((candidate) =>
       mapReviewContext(candidate, response.taak)
     ),
@@ -282,18 +284,20 @@ export async function getReviewSelectionSummary(
 
   return {
     aantal: samenvatting.aantal,
-    code: gedeeld(samenvatting.code, "Meerdere codes", (waarde) => waarde),
+    classificatie: gedeeld(samenvatting.classificatie, "Meerdere codes", (waarde) => waarde),
     selectielijst: gedeeld(samenvatting.selectielijst, "Meerdere selectielijsten", (waarde) => waarde),
-    grondslag: gedeeld(samenvatting.grondslag, "Meerdere grondslagen", (waarde) => waarde),
-    bewaartermijn: gedeeld(samenvatting.bewaartermijn, "Meerdere termijnen", (waarde) => `${parseRetentionYears(waarde)} jaar`),
+    informatiecategorie: gedeeld(samenvatting.informatiecategorie, "Meerdere informatiecategorieën", (waarde) => waarde),
+    termijnLooptijd: gedeeld(samenvatting.termijnLooptijd, "Meerdere termijnen", (waarde) => formatTermijnLooptijd(waarde)),
     stekker: gedeeld(samenvatting.stekker, "Meerdere stekkers", (waarde) => waarde),
-    periode: gedeeld(
-      samenvatting.periode,
+    aggregatieniveau: gedeeld(samenvatting.aggregatieniveau, "Meerdere aggregatieniveaus", (waarde) => waarde),
+    waardering: gedeeld(samenvatting.waardering, "Meerdere waarderingen", (waarde) => waarde),
+    dekkingInTijd: gedeeld(
+      samenvatting.dekkingInTijd,
       "Meerdere periodes",
       ([van, tot]) => `${formatMonthYear(van)} / ${formatMonthYear(tot)}`
     ),
-    vernietigingsdatum: samenvatting.vernietigingsdatum.van
-      ? `${formatYearMonth(samenvatting.vernietigingsdatum.van)} t/m ${formatYearMonth(samenvatting.vernietigingsdatum.tot)}`
+    termijnEinddatum: samenvatting.termijnEinddatum.van
+      ? `${formatYearMonth(samenvatting.termijnEinddatum.van)} t/m ${formatYearMonth(samenvatting.termijnEinddatum.tot)}`
       : "-",
     volgnummer:
       samenvatting.volgnummer.van !== null
@@ -307,9 +311,26 @@ export async function getReviewSelectionSummary(
 
 export type SelectieSamenvatting = Awaited<ReturnType<typeof getReviewSelectionSummary>>;
 
-// Weergave van een bewaartermijn zoals in de tabel ("7 jaar"), voor de filterkeuzes.
-export function formatBewaartermijnLabel(value: string) {
-  return `${parseRetentionYears(value)} jaar`;
+// Weergave van de looptijd van een bewaartermijn (MDTO: ISO 8601-duur, bijv. "P7Y") zoals
+// in de tabel: "7 jaar", "6 maanden", "1 jaar en 6 maanden". Een andere waarde blijft staan.
+export function formatTermijnLooptijd(value?: string | null) {
+  if (!value) {
+    return "-";
+  }
+
+  const match = value.match(/^P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)D)?$/);
+
+  if (!match || !(match[1] || match[2] || match[3])) {
+    return value;
+  }
+
+  const delen = [
+    match[1] ? `${Number(match[1])} jaar` : null,
+    match[2] ? `${Number(match[2])} ${Number(match[2]) === 1 ? "maand" : "maanden"}` : null,
+    match[3] ? `${Number(match[3])} ${Number(match[3]) === 1 ? "dag" : "dagen"}` : null,
+  ].filter((deel): deel is string => deel !== null);
+
+  return delen.join(" en ");
 }
 
 // Bulkbesluiten (CC-10): één verzoek voor de hele selectie, met de taakversie (If-Match).
@@ -354,7 +375,7 @@ export async function getDestructionResults(
       accessToken,
     }
   );
-  const rows = response.resultaten.map(mapDestructionResult);
+  const rows = response.resultaten.map((result) => mapDestructionResult(result, response.taak.archiefvormer));
 
   return {
     taak: response.taak,
@@ -691,26 +712,21 @@ function mapTaskSelection(selectie: ApiTaakSelectie) {
   };
 }
 
-function mapReviewCandidate(candidate: ApiKandidaat): VernietigingsKandidaat {
+function mapReviewCandidate(candidate: ApiKandidaat, taakArchiefvormer?: ApiVerwijzing | null): VernietigingsKandidaat {
   return {
     id: candidate.id,
-    titel: candidate.omschrijving,
+    naam: candidate.naam,
     omvang: candidate.aantalObjecten,
     aantalObjecten: candidate.aantalObjecten,
     aantalBetrokkenen: candidate.aantalBetrokkenen,
-    bewaartermijn: parseRetentionYears(candidate.bewaartermijn),
-    vernietigingsdatum: formatYearMonth(candidate.vernietigingsdatum),
+    termijnLooptijd: formatTermijnLooptijd(candidate.bewaartermijn.termijnLooptijd),
+    termijnEinddatum: formatYearMonth(candidate.bewaartermijn.termijnEinddatum),
     uitgesloten: candidate.beoordeling === "UITGESLOTEN",
     reden: candidate.uitsluitReden ?? undefined,
     toelichting: candidate.toelichting ?? undefined,
     beoordeling: mapApiBeoordeling(candidate.beoordeling),
-    bron_id: candidate.bronId,
-    code: candidate.classificatiesleutel ?? undefined,
-    startdatum: formatMonthYear(candidate.begindatum),
-    einddatum: formatMonthYear(candidate.einddatum),
-    selectielijst: candidate.selectielijst ?? undefined,
-    grondslag: candidate.grondslag ?? undefined,
-    bron_systeem: candidate.stekker.naam,
+    ...mdtoWeergave(candidate, taakArchiefvormer),
+    stekker: candidate.stekker.naam,
   };
 }
 
@@ -725,7 +741,7 @@ function mapReviewContext(
     proceseigenaar: task.verantwoordelijken.proceseigenaar.naam,
     archivaris: task.verantwoordelijken.archivaris.naam,
     startdatumTaak: formatDate(task.stapSinds),
-    vernietigbaarSinds: formatYearMonth(candidate.vernietigingsdatum),
+    vernietigbaarSinds: formatYearMonth(candidate.bewaartermijn.termijnEinddatum),
     risiconiveau: "laag",
     queueStatus:
       candidate.beoordeling === "UITGESLOTEN"
@@ -736,9 +752,9 @@ function mapReviewContext(
             ? "retour"
           : "nog-te-beoordelen",
     beoordelingsRedenen: [
-      candidate.grondslag ?? "Selectie uit stekker",
-      candidate.bewaartermijn
-        ? `Bewaartermijn ${candidate.bewaartermijn}`
+      candidate.informatiecategorie.begripLabel,
+      candidate.bewaartermijn.termijnLooptijd
+        ? `Bewaartermijn ${formatTermijnLooptijd(candidate.bewaartermijn.termijnLooptijd)}`
         : "Bewaartermijn uit bron",
     ],
     workflow: [
@@ -767,23 +783,20 @@ function mapReviewContext(
   };
 }
 
-function mapDestructionResult(result: ApiVernietigingsresultaat): DestructionResultRow {
+function mapDestructionResult(result: ApiVernietigingsresultaat, taakArchiefvormer?: ApiVerwijzing | null): DestructionResultRow {
   return {
     id: result.id,
-    titel: result.omschrijving,
+    naam: result.naam,
     stekker: result.stekker.naam,
-    vernietigingsstatus: mapDestructionStatus(result.vernietigingsstatus),
+    resultaat: mapDestructionStatus(result.resultaat),
     omvang: result.aantalObjecten,
     aantalBetrokkenen: result.aantalBetrokkenen,
-    bewaartermijn: parseRetentionYears(result.bewaartermijn),
-    vernietigingsdatum: formatYearMonth(result.vernietigingsdatum),
-    bron_id: result.bronId,
-    code: result.classificatiesleutel ?? undefined,
-    startdatum: formatMonthYear(result.begindatum),
-    einddatum: formatMonthYear(result.einddatum),
-    selectielijst: result.selectielijst ?? undefined,
-    grondslag: result.grondslag ?? undefined,
-    bron_systeem: result.stekker.naam,
+    termijnLooptijd: formatTermijnLooptijd(result.bewaartermijn.termijnLooptijd),
+    termijnEinddatum: formatYearMonth(result.bewaartermijn.termijnEinddatum),
+    ...mdtoWeergave(result, taakArchiefvormer),
+    eventTijd: result.eventTijd ? formatDateTime(result.eventTijd) : undefined,
+    eventTijdIso: result.eventTijd ?? undefined,
+    vernietigingsmethode: result.vernietigingsmethode ?? undefined,
     melding: result.foutmelding ?? result.bronstatus ?? result.logReference ?? undefined,
   };
 }
@@ -808,6 +821,9 @@ function mapDestructionExecutionConnector(
     versie: item.versie ? `v${item.versie}` : "-",
     stekkerStatus: item.stekkerStatus === "FOUT" ? "FOUT" : "SUCCES",
     vernietigingsStatus: destructionStatus,
+    vernietigingsmethode: item.vernietigingsmethode
+      ? `${item.vernietigingsmethode}${item.vernietigingsmethodeToelichting ? ` – ${item.vernietigingsmethodeToelichting}` : ""}`
+      : "-",
     voortgang: mapDestructionExecutionProgress(
       destructionStatus,
       completed,
@@ -831,7 +847,7 @@ function mapDestructionResultContext(
   result: ApiVernietigingsresultaat,
   task: ApiVernietigingsresultaten["taak"]
 ): DestructionResultContext {
-  const status = mapDestructionStatus(result.vernietigingsstatus);
+  const status = mapDestructionStatus(result.resultaat);
 
   return {
     recordId: result.id,
@@ -874,10 +890,10 @@ function mapResultSummaryStats(
   rows: DestructionResultRow[]
 ): TaskExecutionHeaderSummaryStats {
   return {
-    teBeoordelen: rows.filter((row) => row.vernietigingsstatus === "FAILED").length,
-    akkoord: rows.filter((row) => row.vernietigingsstatus === "SUCCESS").length,
-    retour: rows.filter((row) => row.vernietigingsstatus === "NOT_FOUND").length,
-    uitgesloten: rows.filter((row) => row.vernietigingsstatus === "SKIPPED").length,
+    teBeoordelen: rows.filter((row) => row.resultaat === "FAILED").length,
+    akkoord: rows.filter((row) => row.resultaat === "SUCCESS").length,
+    retour: rows.filter((row) => row.resultaat === "NOT_FOUND").length,
+    uitgesloten: rows.filter((row) => row.resultaat === "SKIPPED").length,
   };
 }
 
@@ -1011,14 +1027,30 @@ function mapApiBeoordelingToDecision(value: string): ReviewDecision {
   }
 }
 
-function parseRetentionYears(value?: string | null) {
-  if (!value) {
-    return 0;
-  }
+// De MDTO-gegevens van een kandidaat (ADR-0005) zoals de tabellen ze tonen: per gegevensgroep
+// het eerste voorkomen, identificatiekenmerken achter elkaar. In het detailpaneel staat per
+// identificatie het kenmerk met de bron. Zonder eigen archiefvormer geldt die van de taak.
+function mdtoWeergave(kandidaat: ApiMdtoKandidaat, taakArchiefvormer?: ApiVerwijzing | null) {
+  const dekking = kandidaat.dekkingInTijd?.[0];
+  const classificatie = kandidaat.classificatie?.[0];
 
-  const match = value.match(/\d+/);
-
-  return match ? Number(match[0]) : 0;
+  return {
+    identificatie: kandidaat.identificatie.map((identificatie) => identificatie.identificatieKenmerk).join(", "),
+    classificatie: classificatie ? (classificatie.begripCode ?? classificatie.begripLabel) : undefined,
+    dekkingInTijdBegindatum: formatMonthYear(dekking?.dekkingInTijdBegindatum),
+    dekkingInTijdEinddatum: formatMonthYear(dekking?.dekkingInTijdEinddatum),
+    selectielijst: kandidaat.informatiecategorie.begripBegrippenlijst.verwijzingNaam,
+    informatiecategorie: kandidaat.informatiecategorie.begripLabel,
+    aggregatieniveau: kandidaat.aggregatieniveau,
+    waardering: kandidaat.waardering.begripLabel,
+    identificaties: kandidaat.identificatie.map(
+      (identificatie) => `${identificatie.identificatieKenmerk} (${identificatie.identificatieBron})`
+    ),
+    archiefvormer:
+      (kandidaat.archiefvormer?.length
+        ? kandidaat.archiefvormer.map((verwijzing) => verwijzing.verwijzingNaam).join(", ")
+        : taakArchiefvormer?.verwijzingNaam) ?? undefined,
+  };
 }
 
 function formatYearMonth(value?: string | null) {

@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, dev, dev5]
+    branches: [main, dev, dev5, dev6]
   pull_request:
 
 jobs:
@@ -29,7 +29,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: GemeenteArnhem/Vernietigingscockpit
-          ref: Review
+          # Stekker API v2 en MDTO (ADR-0005) staan op de branch dev van de architectuurrepo.
+          ref: dev
           path: architectuur
           sparse-checkout: designrules/api
 

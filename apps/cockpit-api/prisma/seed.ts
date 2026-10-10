@@ -16,7 +16,7 @@ const prisma = createPrismaClient(databaseUrl);
 
 // Vaste id's (geldige UUID's), zodat de seed bij elke start opnieuw kan draaien zonder
 // dubbele gegevens. Taakuitvoeringen maakt de seed bewust niet: die maak je in de cockpit,
-// zodat het auditlog met TASK_CREATED begint.
+// zodat het auditlog met Creatie begint.
 const TEST_STEKKER_ID = "f6d4934b-4073-4763-8212-b460d662e6a9";
 const TEST_TAAKDEFINITIE_ID = "ccc80546-381c-4e21-afda-7d430c0e60aa";
 
@@ -43,10 +43,13 @@ async function main() {
     },
   });
 
+  // De archiefvormer staat op het profiel van de proceseigenaar (ADR-0005, B-M3).
+  const archiefvormer = { verwijzingNaam: "Gemeente Voorbeeld" };
   const po = await prisma.medewerker.upsert({
     where: { email: "peter.proceseigenaar@example.local" },
-    update: {},
+    update: { archiefvormer },
     create: {
+      archiefvormer,
       naam: "Peter Proceseigenaar",
       email: "peter.proceseigenaar@example.local",
       rollen: ["proceseigenaar"],
@@ -106,7 +109,7 @@ async function main() {
       ...stekkerVerbinding,
       scopes: ["selectie.read", "selectie.write", "vernietiging.read", "vernietiging.write"],
       parameters: {},
-      verwachteApiMajor: 1,
+      verwachteApiMajor: 2,
       timeouts: { connectMs: 5000, requestMs: 30000 },
       aangemaaktDoor: "seed",
     },

@@ -319,7 +319,7 @@ export default function RecordDestructionPage() {
       <AppShellPortal slot="detail">
         <RecordDetailsPanel
           heading="Stekkerdetails"
-          record={{ titel: selectedConnector.naam }}
+          record={{ naam: selectedConnector.naam }}
           comments={[]}
           showTabs={false}
           currentIndex={selectedConnectorIndex >= 0 ? selectedConnectorIndex + 1 : 0}
@@ -347,6 +347,7 @@ export default function RecordDestructionPage() {
             { label: "Versie", value: selectedConnector.versie },
             { label: "Laatste run", value: selectedConnector.laatsteRun },
             { label: "Te vernietigen objecten", value: selectedConnector.aantalObjecten },
+            { label: "Vernietigingsmethode", value: selectedConnector.vernietigingsmethode },
             { label: "Voortgang", value: `${selectedConnector.voortgang}%` },
             {
               label: "Volgende stap",

@@ -9,8 +9,10 @@ const DOEL = process.env.DOEL ?? 'http://stekker:3000';
 const tellingen = {};
 const vernietigingen = {};
 
+// Tellingen zonder de versieprefix van de Stekker API (/v2).
 function sjabloon(pad) {
   return pad
+    .replace(/^\/v\d+/, '')
     .replace(/^\/selecties\/[^/]+/, '/selecties/{id}')
     .replace(/^\/vernietigingen\/[^/]+/, '/vernietigingen/{id}')
     .replace(/\/batches\/[^/]+$/, '/batches/{nr}');
@@ -62,13 +64,15 @@ http
       const inhoud = Buffer.from(await antwoord.arrayBuffer());
 
       // Welke vernietigingen de stekker werkelijk heeft aangemaakt (ook bij herhaalde POST's).
-      if (request.method === 'POST' && url.pathname === '/vernietigingen' && antwoord.ok) {
+      if (request.method === 'POST' && sjabloon(url.pathname) === '/vernietigingen' && antwoord.ok) {
         const id = JSON.parse(inhoud.toString('utf8')).vernietigingId;
         (vernietigingen[taak] ??= new Set()).add(id);
       }
-      response.writeHead(antwoord.status, {
-        'content-type': antwoord.headers.get('content-type') ?? 'application/json',
-      });
+      // Headers van de stekker doorgeven (o.a. API-Version, die de cockpit controleert).
+      const doorgeven = Object.fromEntries(
+        [...antwoord.headers.entries()].filter(([naam]) => !['content-length', 'transfer-encoding', 'connection', 'content-encoding'].includes(naam))
+      );
+      response.writeHead(antwoord.status, doorgeven);
       response.end(inhoud);
     } catch (error) {
       response.writeHead(502, { 'content-type': 'application/json' });

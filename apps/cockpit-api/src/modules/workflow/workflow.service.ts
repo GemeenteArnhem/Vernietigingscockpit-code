@@ -6,7 +6,7 @@ import {
 } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import { schrijfAuditEvent, type AuditActor } from "../audit/audit-keten.js";
-import { isTerugsturen, TRANSITIES, type TransitieActie } from "./transitions.js";
+import { isTerugsturen, TRANSITIES, type Transitie, type TransitieActie } from "./transitions.js";
 
 export type TransitieOpdracht = {
   taakinstantieId: string;
@@ -32,7 +32,7 @@ export type TransitieOpdracht = {
 @Injectable()
 export class WorkflowService {
   async transition(tx: Prisma.TransactionClient, opdracht: TransitieOpdracht) {
-    const transitie = TRANSITIES[opdracht.actie];
+    const transitie: Transitie = TRANSITIES[opdracht.actie];
     const { count } = await tx.taakinstantie.updateMany({
       where: {
         id: opdracht.taakinstantieId,
@@ -54,7 +54,7 @@ export class WorkflowService {
 
     await schrijfAuditEvent(tx, opdracht.actor, {
       taakinstantieId: opdracht.taakinstantieId,
-      actie: transitie.auditActie,
+      eventType: transitie.eventType,
       entiteitType: "taakinstantie",
       entiteitId: opdracht.taakinstantieId,
       details: {
@@ -65,6 +65,19 @@ export class WorkflowService {
         naar: transitie.naar,
       },
     });
+
+    // Bijv. bij de vrijgave door de archivaris: de lijst is daarmee bevroren (MDTO Bevriezing),
+    // met de vingerafdruk van de lijst in de details.
+    if (transitie.vervolgEventType) {
+      const extra = (opdracht.extraData ?? {}) as { lijstHash?: unknown };
+      await schrijfAuditEvent(tx, { type: "system" }, {
+        taakinstantieId: opdracht.taakinstantieId,
+        eventType: transitie.vervolgEventType,
+        entiteitType: "taakinstantie",
+        entiteitId: opdracht.taakinstantieId,
+        details: { na: transitie.eventType, ...(typeof extra.lijstHash === "string" ? { lijstHash: extra.lijstHash } : {}) },
+      });
+    }
 
     return tx.taakinstantie.findUniqueOrThrow({
       where: { id: opdracht.taakinstantieId },

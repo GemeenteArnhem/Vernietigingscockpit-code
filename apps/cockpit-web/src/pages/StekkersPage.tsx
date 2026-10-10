@@ -206,7 +206,7 @@ export default function StekkersPage() {
         {geselecteerd ? (
           <RecordDetailsPanel
             heading="Stekker details"
-            record={{ titel: geselecteerd.naam }}
+            record={{ naam: geselecteerd.naam }}
             comments={[]}
             showTabs={false}
             currentIndex={index >= 0 ? index + 1 : 0}

@@ -210,7 +210,7 @@ export class SelectieService {
 
         await schrijfAuditEvent(tx, { type: "user", user, rol: "recordmanager" }, {
           taakinstantieId: taak.id,
-          actie: "SELECTION_RETRY_REQUESTED",
+          eventType: "Selectie opnieuw aangevraagd",
           entiteitType: "selectie",
           entiteitId: nieuwe.id,
           details: {
@@ -278,7 +278,7 @@ export class SelectieService {
 
       await schrijfAuditEvent(tx, { type: "user", user, rol: "recordmanager" }, {
         taakinstantieId: taak.id,
-        actie: "SELECTION_REQUESTED",
+        eventType: "Selectie aangevraagd",
         entiteitType: "taakinstantie",
         entiteitId: taak.id,
         details: {

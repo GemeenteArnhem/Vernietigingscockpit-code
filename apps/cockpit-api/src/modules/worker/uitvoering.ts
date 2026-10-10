@@ -1,8 +1,11 @@
+import { createHash } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import { ConflictException, Logger } from "@nestjs/common";
 import type { Outbox, Prisma } from "@prisma/client";
 import type { PrismaService } from "../../shared/db/prisma.service.js";
 import { schrijfAuditEvent } from "../audit/audit-keten.js";
-import type { StekkerClient, StekkerUitvoeringsresultaat } from "../stekker/stekker-client.js";
+import type { IdentificatieGegevens } from "@vernietigingscockpit/stekker-client";
+import type { StekkerClient, StekkerUitvoeringsresultaat, StekkerVernietiging } from "../stekker/stekker-client.js";
 import type { WorkflowService } from "../workflow/workflow.service.js";
 import { claimVernietigingen, ClaimVerlorenFout, geefVernietigingVrij, type Claim, type ClaimSoort } from "./claim.js";
 import { bepaalVervolg, type RetryConfig } from "./retrybeleid.js";
@@ -24,7 +27,9 @@ import {
 //   vernietiging:batches   -> POST …/batches, per batch vastleggen dat hij is geaccepteerd
 //   vernietiging:vrijgeven -> POST …/vrijgeven
 // Daarna een statusvraag met backoff en, als de stekker klaar is, het ophalen van de
-// resultaten met een integriteitscontrole.
+// resultaten met een integriteitscontrole. Voor elke vernietigde kandidaat haalt de worker
+// daarna de MDTO-XML-specificatie op (Stekker API v2, ADR-0005 B-M2); pas als die er
+// allemaal zijn, is de uitvoering afgerond.
 //
 // Elke stap leest eerst de eigen database en slaat over wat al is gebeurd. De
 // Idempotency-Keys hangen aan het eigen vernietigingsrecord, zodat een herhaalde aanroep
@@ -163,7 +168,7 @@ export class UitvoeringVerwerker {
       });
       await schrijfAuditEvent(tx, SYSTEEM, {
         taakinstantieId: vernietiging.taakinstantieId,
-        actie: "EXECUTION_STARTED",
+        eventType: "Uitvoering gestart",
         entiteitType: "taakinstantie",
         entiteitId: vernietiging.taakinstantieId,
         details: {
@@ -192,7 +197,7 @@ export class UitvoeringVerwerker {
       include: {
         resultaten: {
           orderBy: { kandidaat: { kandidaatId: "asc" } },
-          include: { kandidaat: { select: { kandidaatId: true, bronId: true } } },
+          include: { kandidaat: { select: { kandidaatId: true, identificatie: true } } },
         },
       },
     });
@@ -204,9 +209,10 @@ export class UitvoeringVerwerker {
           externId,
           {
             batchNummer: batch.batchNummer,
-            objecten: batch.resultaten.map((regel) => ({
+            // De identificatie letterlijk zoals de stekker hem bij de selectie leverde.
+            vernietigingskandidaten: batch.resultaten.map((regel) => ({
               vernietigingskandidaatId: regel.kandidaat.kandidaatId,
-              bronId: regel.kandidaat.bronId,
+              identificatie: regel.kandidaat.identificatie as unknown as IdentificatieGegevens[],
             })),
           },
           `vernietiging-${vernietiging.id}-batch-${batch.batchNummer}`,
@@ -222,7 +228,7 @@ export class UitvoeringVerwerker {
         });
         await schrijfAuditEvent(tx, SYSTEEM, {
           taakinstantieId: vernietiging.taakinstantieId,
-          actie: "BATCH_STARTED",
+          eventType: "Batch aangeboden",
           entiteitType: "batch",
           entiteitId: batch.id,
           details: { vernietigingId: vernietiging.id, externVernietigingId: externId, batchNummer: batch.batchNummer, aantal: batch.aantal },
@@ -268,6 +274,7 @@ export class UitvoeringVerwerker {
           data: {
             vrijgegevenOp: new Date(),
             stekkerStatus: antwoord.status,
+            ...vernietigingsmethodeVan(antwoord),
             stekkerStarttijd: parseDate(antwoord.starttijd),
             volgendePollOp: new Date(),
             pollPogingen: 0,
@@ -301,7 +308,7 @@ export class UitvoeringVerwerker {
         if (vervolg.status === "MISLUKT") {
           await schrijfAuditEvent(tx, SYSTEEM, {
             taakinstantieId: vernietiging.taakinstantieId,
-            actie: "EXECUTION_FAILED",
+            eventType: "Uitvoering mislukt",
             entiteitType: "taakinstantie",
             entiteitId: vernietiging.taakinstantieId,
             details: {
@@ -374,43 +381,133 @@ export class UitvoeringVerwerker {
       batch.resultaten.map((resultaat) => ({ ...resultaat, batchNummer: resultaat.batchNummer ?? batch.batchNummer }))
     );
 
-    await this.prisma.client.$transaction(async (tx) => {
+    // 1. Resultaten vastleggen; bij een integriteitsfout direct afsluiten.
+    const integer = await this.prisma.client.$transaction(async (tx) => {
       const problemen = await this.legResultatenVast(tx, vernietiging, resultaten);
-      const integer = problemen.length === 0;
 
-      // Afsluiten, alleen als de uitvoering nog loopt en de claim nog van ons is.
-      const { count } = await tx.vernietiging.updateMany({
-        where: { id, status: "LOPEND", geclaimdDoor: this.werk.workerId },
-        data: {
-          status: integer ? "AFGEROND" : "INTEGRITEIT_MISLUKT",
-          stekkerStatus: stand.status,
-          stekkerStarttijd: parseDate(stand.starttijd) ?? vernietiging.stekkerStarttijd,
-          stekkerEindtijd: parseDate(stand.eindtijd),
-          afgerondOp: integer ? new Date() : null,
-          fout: integer
-            ? stand.status === "FAILED"
-              ? "Vernietiging mislukt bij de stekker."
-              : null
-            : `Integriteitscontrole mislukt (INTEGRITY_CHECK_FAILED): ${problemen.slice(0, 5).join("; ")}.`,
-        },
+      if (problemen.length === 0) {
+        await this.controleerVernietigingClaim(tx, id);
+        return true;
+      }
+
+      await this.sluitAf(tx, id, vernietiging, stand, {
+        status: "INTEGRITEIT_MISLUKT",
+        afgerondOp: null,
+        fout: `Integriteitscontrole mislukt (INTEGRITY_CHECK_FAILED): ${problemen.slice(0, 5).join("; ")}.`,
       });
-
-      if (count === 0) {
-        throw new ClaimVerlorenFout("vernietiging", id);
-      }
-
-      if (!integer) {
-        await schrijfAuditEvent(tx, SYSTEEM, {
-          taakinstantieId: vernietiging.taakinstantieId,
-          actie: "EXECUTION_FAILED",
-          entiteitType: "taakinstantie",
-          entiteitId: vernietiging.taakinstantieId,
-          details: { vernietigingId: id, reden: "INTEGRITY_CHECK_FAILED", problemen: problemen.slice(0, 20) },
-        });
-      }
+      await schrijfAuditEvent(tx, SYSTEEM, {
+        taakinstantieId: vernietiging.taakinstantieId,
+        eventType: "Uitvoering mislukt",
+        entiteitType: "taakinstantie",
+        entiteitId: vernietiging.taakinstantieId,
+        details: { vernietigingId: id, reden: "INTEGRITY_CHECK_FAILED", problemen: problemen.slice(0, 20) },
+      });
+      return false;
     });
 
+    if (!integer) {
+      await this.rondTaakAf(vernietiging.taakinstantieId);
+      return;
+    }
+
+    // 2. De MDTO-specificatie per vernietigde kandidaat. Gaat dit mis, dan blijft de
+    //    uitvoering LOPEND en probeert de volgende statusvraag het opnieuw.
+    await this.haalSpecificatiesOp(vernietiging, externId, verbinding, corr);
+
+    // 3. Afsluiten.
+    await this.prisma.client.$transaction((tx) =>
+      this.sluitAf(tx, id, vernietiging, stand, {
+        status: "AFGEROND",
+        afgerondOp: new Date(),
+        fout: stand.status === "FAILED" ? "Vernietiging mislukt bij de stekker." : null,
+      })
+    );
+
     await this.rondTaakAf(vernietiging.taakinstantieId);
+  }
+
+  // Uitvoering afsluiten, alleen als hij nog loopt en de claim nog van ons is.
+  private async sluitAf(
+    tx: Prisma.TransactionClient,
+    id: string,
+    vernietiging: VernietigingRecord,
+    stand: StekkerVernietiging,
+    data: { status: "AFGEROND" | "INTEGRITEIT_MISLUKT"; afgerondOp: Date | null; fout: string | null }
+  ) {
+    const { count } = await tx.vernietiging.updateMany({
+      where: { id, status: "LOPEND", geclaimdDoor: this.werk.workerId },
+      data: {
+        ...data,
+        stekkerStatus: stand.status,
+        ...vernietigingsmethodeVan(stand),
+        stekkerStarttijd: parseDate(stand.starttijd) ?? vernietiging.stekkerStarttijd,
+        stekkerEindtijd: parseDate(stand.eindtijd),
+      },
+    });
+
+    if (count === 0) {
+      throw new ClaimVerlorenFout("vernietiging", id);
+    }
+  }
+
+  private async controleerVernietigingClaim(tx: Prisma.TransactionClient, id: string) {
+    const nogVanOns = await tx.vernietiging.count({ where: { id, status: "LOPEND", geclaimdDoor: this.werk.workerId } });
+
+    if (nogVanOns === 0) {
+      throw new ClaimVerlorenFout("vernietiging", id);
+    }
+  }
+
+  // Specificaties ophalen voor de vernietigde kandidaten die er nog geen hebben: in brokken,
+  // een paar tegelijk, met een verlengde lease per groep. De XML gaat gecomprimeerd in de
+  // database, met de SHA-256 van de XML zelf.
+  private async haalSpecificatiesOp(vernietiging: VernietigingRecord, externId: string, verbinding: ReturnType<typeof verbindingVan>, corr: string) {
+    const BROK = 50;
+    const TEGELIJK = 10;
+
+    for (;;) {
+      const open = await this.prisma.client.uitvoeringsresultaat.findMany({
+        where: { vernietigingId: vernietiging.id, resultaat: "SUCCESS", specificatie: null },
+        select: { id: true, kandidaat: { select: { kandidaatId: true } } },
+        orderBy: { id: "asc" },
+        take: BROK,
+      });
+
+      if (open.length === 0) {
+        return;
+      }
+
+      const opgehaald: Array<{ id: string; xml: string }> = [];
+
+      for (let i = 0; i < open.length; i += TEGELIJK) {
+        // Heartbeat per groep: een trage stekker mag de lease niet laten verlopen.
+        await this.werk.verleng("vernietiging", vernietiging.id);
+        const deel = open.slice(i, i + TEGELIJK);
+        opgehaald.push(
+          ...(await Promise.all(
+            deel.map(async (regel) => ({
+              id: regel.id,
+              xml: await this.stekker.getSpecificatie(verbinding, externId, regel.kandidaat.kandidaatId, corr),
+            }))
+          ))
+        );
+      }
+
+      await this.prisma.client.$transaction(async (tx) => {
+        await this.controleerVernietigingClaim(tx, vernietiging.id);
+
+        for (const { id, xml } of opgehaald) {
+          await tx.uitvoeringsresultaat.update({
+            where: { id },
+            data: {
+              specificatie: gzipSync(Buffer.from(xml, "utf8")),
+              specificatieSha256: createHash("sha256").update(xml, "utf8").digest("hex"),
+            },
+          });
+        }
+      });
+      await this.werk.verleng("vernietiging", vernietiging.id);
+    }
   }
 
   // Resultaten vastleggen per aangeboden kandidaat en controleren dat elke kandidaat
@@ -460,21 +557,27 @@ export class UitvoeringVerwerker {
         continue; // al vastgelegd bij een eerdere poging
       }
 
+      const eventTijd = resultaat.event ? parseDate(resultaat.event.eventTijd) : null;
       await tx.uitvoeringsresultaat.update({
         where: { id: regel.id },
         data: {
           resultaat: resultaat.resultaat,
+          identificatie: resultaat.identificatie as unknown as Prisma.InputJsonValue,
+          event: resultaat.event ? (resultaat.event as unknown as Prisma.InputJsonValue) : undefined,
+          eventTijd,
+          bronEventReferentie: resultaat.bronEventReferentie ?? null,
           foutcode: resultaat.foutcode ?? null,
           foutmelding: resultaat.foutmelding ?? null,
           bronstatus: resultaat.bronstatus ?? null,
           logReference: resultaat.logReference ?? null,
           correlatieId: resultaat.correlatieId ?? null,
+          toelichting: resultaat.toelichting ?? null,
           ontvangenOp: new Date(),
         },
       });
       await schrijfAuditEvent(tx, SYSTEEM, {
         taakinstantieId: vernietiging.taakinstantieId,
-        actie: resultaat.resultaat === "SUCCESS" ? "OBJECT_PROCESSED" : "OBJECT_FAILED",
+        eventType: resultaat.resultaat === "SUCCESS" ? "Vernietigen" : "Niet vernietigd",
         entiteitType: "vernietigingskandidaat",
         entiteitId: regel.kandidaatId,
         details: {
@@ -482,6 +585,7 @@ export class UitvoeringVerwerker {
           batchNummer: regel.batch.batchNummer,
           kandidaatId: sleutel,
           resultaat: resultaat.resultaat,
+          ...(eventTijd ? { eventTijd: eventTijd.toISOString() } : {}),
           ...(resultaat.foutcode ? { foutcode: resultaat.foutcode } : {}),
           ...(resultaat.foutmelding ? { foutmelding: resultaat.foutmelding } : {}),
           ...(resultaat.logReference ? { logReference: resultaat.logReference } : {}),
@@ -495,10 +599,23 @@ export class UitvoeringVerwerker {
     }
 
     if (problemen.length === 0) {
-      for (const [batchId, telling] of [...perBatch.entries()].sort(([, a], [, b]) => a.batchNummer - b.batchNummer)) {
+      // Alleen batches die het event nog niet hebben: een herhaalde statusvraag (bijvoorbeeld
+      // terwijl de specificaties nog worden opgehaald) schrijft geen dubbele events.
+      const alGemeld = new Set(
+        (
+          await tx.auditEvent.findMany({
+            where: { taakinstantieId: vernietiging.taakinstantieId, eventType: "Batch verwerkt", entiteitId: { in: [...perBatch.keys()] } },
+            select: { entiteitId: true },
+          })
+        ).map((event) => event.entiteitId)
+      );
+
+      for (const [batchId, telling] of [...perBatch.entries()]
+        .filter(([batchId]) => !alGemeld.has(batchId))
+        .sort(([, a], [, b]) => a.batchNummer - b.batchNummer)) {
         await schrijfAuditEvent(tx, SYSTEEM, {
           taakinstantieId: vernietiging.taakinstantieId,
-          actie: "BATCH_COMPLETED",
+          eventType: "Batch verwerkt",
           entiteitType: "batch",
           entiteitId: batchId,
           details: { vernietigingId: vernietiging.id, ...telling },
@@ -533,7 +650,7 @@ export class UitvoeringVerwerker {
         if (count === 1 && vervolg.status === "MISLUKT") {
           await schrijfAuditEvent(tx, SYSTEEM, {
             taakinstantieId: vernietiging.taakinstantieId,
-            actie: "EXECUTION_FAILED",
+            eventType: "Uitvoering mislukt",
             entiteitType: "taakinstantie",
             entiteitId: vernietiging.taakinstantieId,
             details: { vernietigingId: id, stap: "status-opvragen", fout: melding },
@@ -596,4 +713,16 @@ export class UitvoeringVerwerker {
       throw new ClaimVerlorenFout("job", jobId);
     }
   }
+}
+
+// De wijze van vernietiging zoals de stekker die vanaf vrijgave meldt (ADR-0005, B-M4).
+function vernietigingsmethodeVan(antwoord: StekkerVernietiging) {
+  return {
+    ...(antwoord.vernietigingsmethode
+      ? { vernietigingsmethode: antwoord.vernietigingsmethode as unknown as Prisma.InputJsonValue }
+      : {}),
+    ...(antwoord.vernietigingsmethodeToelichting
+      ? { vernietigingsmethodeToelichting: antwoord.vernietigingsmethodeToelichting }
+      : {}),
+  };
 }

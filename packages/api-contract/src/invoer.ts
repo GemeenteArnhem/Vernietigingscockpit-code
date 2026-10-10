@@ -17,6 +17,31 @@ const datum = z
   .string()
   .refine((waarde) => DATUM.test(waarde) && !Number.isNaN(new Date(waarde).getTime()), "verwacht een geldige datum (JJJJ-MM-DD)");
 
+// --- MDTO (ADR-0005) -------------------------------------------------------------------
+
+// MDTO verwijzingGegevens: naam, met optioneel een identificatie (kenmerk + bron).
+export const verwijzingSchema = z.object({
+  verwijzingNaam: tekst(200).min(1),
+  verwijzingIdentificatie: z
+    .object({
+      identificatieKenmerk: tekst(200).min(1),
+      identificatieBron: tekst(200).min(1),
+    })
+    .optional(),
+});
+
+// Begrippenlijst Cockpit-uitsluitredenen (designrules/begrippenlijsten). De recordmanager kiest
+// uit UITSLUITREDENEN; 'Waardering niet V' zet alleen het systeem (ADR-0005, B-M1).
+export const UITSLUITREDENEN = [
+  "Lopend verzoek of procedure",
+  "Wettelijke uitzondering",
+  "Onbekend recordtype",
+  "Niet meer aanwezig in bronsysteem",
+  "Bestand beschadigd",
+  "Overig",
+] as const;
+export const UITSLUITREDEN_WAARDERING = "Waardering niet V";
+
 // --- taken -----------------------------------------------------------------------------
 
 export const startSelectieSchema = z
@@ -26,11 +51,29 @@ export const startSelectieSchema = z
   })
   .default({});
 
-export const kandidaatBeoordelingSchema = z.object({
+// Bij uitsluiten zijn een reden uit de lijst en een toelichting verplicht.
+const kandidaatBeoordelingBasis = z.object({
   beoordeling: z.enum(["AKKOORD", "UITGESLOTEN"]),
-  uitsluitReden: optioneleTekst(500),
+  uitsluitReden: z.enum(UITSLUITREDENEN).nullish(),
   toelichting: optioneleTekst(2000),
 });
+
+function eisRedenBijUitsluiten(
+  invoer: { beoordeling: string; uitsluitReden?: string | null; toelichting?: string | null },
+  ctx: z.RefinementCtx
+) {
+  if (invoer.beoordeling !== "UITGESLOTEN") {
+    return;
+  }
+  if (!invoer.uitsluitReden) {
+    ctx.addIssue({ code: "custom", path: ["uitsluitReden"], message: "Reden is verplicht" });
+  }
+  if (!invoer.toelichting?.trim()) {
+    ctx.addIssue({ code: "custom", path: ["toelichting"], message: "Toelichting is verplicht bij uitsluiten" });
+  }
+}
+
+export const kandidaatBeoordelingSchema = kandidaatBeoordelingBasis.superRefine(eisRedenBijUitsluiten);
 
 export const accorderingBesluitSchema = z.object({
   besluit: z.enum(["AKKOORD", "RETOUR"]),
@@ -101,6 +144,9 @@ export const stamgegevensImportSchema = z.object({
         actief: z.boolean().optional(),
         bron: tekst(50).optional(),
         externId: optioneleTekst(200),
+        // Archiefvormer op het profiel van de proceseigenaar (ADR-0005, B-M3). Weglaten laat
+        // de bestaande waarde staan; null wist hem.
+        archiefvormer: verwijzingSchema.nullish(),
       })
     )
     .max(10_000)
@@ -115,9 +161,9 @@ const MAX_BULK = 20_000;
 
 export const kandidatenQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
-  limit: z.coerce.number().int().min(1).max(500).default(500),
+  limit: z.coerce.number().int().min(1).max(250).default(250),
   zoek: z.string().trim().max(200).optional().transform((waarde) => waarde || undefined),
-  zoekIn: z.enum(["all", "omschrijving", "code", "vernietigingsdatum", "bronId"]).default("all"),
+  zoekIn: z.enum(["all", "naam", "classificatie", "termijnEinddatum", "identificatie"]).default("all"),
   status: z.enum(["nog-te-beoordelen", "afgerond", "conflict", "retour"]).optional(),
   // Beperken tot deze kandidaten (bijv. de in de browser uitgestelde records), komma-gescheiden.
   ids: z
@@ -128,23 +174,25 @@ export const kandidatenQuerySchema = z.object({
     .pipe(z.array(id()).max(200).optional()),
   selectielijst: z.string().max(200).optional(),
   stekker: z.string().max(200).optional(),
-  bewaartermijn: z.string().max(100).optional(),
+  termijnLooptijd: z.string().max(100).optional(),
   sort: z
     .enum([
-      "omschrijving",
+      "naam",
       "status",
       "volgnummer",
-      "code",
+      "classificatie",
       "selectielijst",
-      "grondslag",
-      "bewaartermijn",
-      "vernietigingsdatum",
+      "informatiecategorie",
+      "termijnLooptijd",
+      "termijnEinddatum",
       "opmerking",
       "aantalObjecten",
       "aantalBetrokkenen",
-      "periode",
+      "dekkingInTijd",
       "stekker",
-      "bronId",
+      "identificatie",
+      "aggregatieniveau",
+      "waardering",
     ])
     .default("volgnummer"),
   richting: z.enum(["asc", "desc"]).default("asc"),
@@ -154,7 +202,7 @@ const idsSchema = z.array(id()).min(1).max(MAX_BULK);
 
 export const kandidaatIdsSchema = z.object({ ids: idsSchema });
 
-export const bulkBeoordelingSchema = kandidaatBeoordelingSchema.extend({ ids: idsSchema });
+export const bulkBeoordelingSchema = kandidaatBeoordelingBasis.extend({ ids: idsSchema }).superRefine(eisRedenBijUitsluiten);
 
 export const bulkBesluitSchema = accorderingBesluitSchema.extend({ ids: idsSchema });
 
@@ -185,7 +233,7 @@ export const stekkerSchema = z
       .max(100)
       .nullish(),
     scopes: z.array(tekst(100).min(1)).max(20).default([]),
-    verwachteApiMajor: z.number().int().min(1).max(99).default(1),
+    verwachteApiMajor: z.number().int().min(1).max(99).default(2),
     timeouts: z
       .object({
         connectMs: z.number().int().min(100).max(120_000).optional(),
@@ -234,3 +282,15 @@ export type BulkBeoordelingInvoer = z.input<typeof bulkBeoordelingSchema>;
 export type BulkBesluitInvoer = z.input<typeof bulkBesluitSchema>;
 export type StekkerInvoer = z.input<typeof stekkerSchema>;
 export type StekkerGevalideerd = z.output<typeof stekkerSchema>;
+
+// Bewaartermijn van de werkkopie (ADR-0006): ISO 8601-duur, bijv. P12M, P2Y of P0D.
+export const werkkopieBewaartermijnSchema = z
+  .object({
+    waarde: z
+      .string()
+      .trim()
+      .regex(/^P(?!$)(\d+Y)?(\d+M)?(\d+W)?(\d+D)?(T(?=\d)(\d+H)?(\d+M)?(\d+S)?)?$/, "Een ISO 8601-duur, bijvoorbeeld P12M, P2Y of P0D."),
+  })
+  .strict();
+
+export type WerkkopieBewaartermijnInvoer = z.input<typeof werkkopieBewaartermijnSchema>;

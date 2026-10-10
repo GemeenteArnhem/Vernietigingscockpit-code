@@ -41,7 +41,7 @@ export default function StekkerFormPage() {
   const [clientId, setClientId] = useState("");
   const [secret, setSecret] = useState("");
   const [scopes, setScopes] = useState("selectie.read, selectie.write, vernietiging.read, vernietiging.write");
-  const [verwachteApiMajor, setVerwachteApiMajor] = useState("1");
+  const [verwachteApiMajor, setVerwachteApiMajor] = useState("2");
   const [requestMs, setRequestMs] = useState("30000");
   const [batchGrootte, setBatchGrootte] = useState("100");
 
@@ -65,7 +65,7 @@ export default function StekkerFormPage() {
         setTokenUrl(configuratie?.tokenUrl ?? "");
         setClientId(configuratie?.clientId ?? "");
         setScopes(configuratie?.scopes.join(", ") ?? "");
-        setVerwachteApiMajor(String(configuratie?.verwachteApiMajor ?? 1));
+        setVerwachteApiMajor(String(configuratie?.verwachteApiMajor ?? 2));
         setRequestMs(typeof configuratie?.timeouts.requestMs === "number" ? String(configuratie.timeouts.requestMs) : "");
         setBatchGrootte(
           typeof configuratie?.parameters.batchGrootte === "number" ? String(configuratie.parameters.batchGrootte) : ""

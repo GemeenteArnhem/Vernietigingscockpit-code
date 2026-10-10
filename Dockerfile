@@ -100,8 +100,10 @@ ENV VITE_OIDC_POST_LOGOUT_REDIRECT_URI=${VITE_OIDC_POST_LOGOUT_REDIRECT_URI}
 ENV VITE_OIDC_SCOPE=${VITE_OIDC_SCOPE}
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 
-# De web-app gebruikt alleen de types uit het contract (CC-19).
+# De web-app gebruikt de types en sinds ADR-0005 ook waarden uit het contract (bijv. de
+# uitsluitredenen); het contract wordt daarom eerst gebouwd (CC-19).
 COPY packages/api-contract packages/api-contract
+RUN npm run build --workspace @vernietigingscockpit/api-contract
 COPY apps/cockpit-web apps/cockpit-web
 
 WORKDIR /app/apps/cockpit-web

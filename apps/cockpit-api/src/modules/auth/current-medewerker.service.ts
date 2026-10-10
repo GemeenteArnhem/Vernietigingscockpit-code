@@ -78,7 +78,7 @@ export class CurrentMedewerkerService {
         }
 
         await schrijfConfiguratieEvent(tx, { type: "user", user, rol }, {
-          actie: "USER_LINKED",
+          eventType: "Gebruiker gekoppeld",
           entiteitType: "gebruiker",
           entiteitId: user.sub,
           details: { medewerkerId: medewerker.id, gekoppeldOp: opNaam ? "gebruikersnaam" : "e-mail (geverifieerd)" },

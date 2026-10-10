@@ -32,6 +32,8 @@ export type TaskExecutionDestructionConnector = Omit<
   "selectieStatus"
 > & {
   vernietigingsStatus: TaskExecutionConnectorDestructionStatus;
+  // Wijze van vernietiging volgens de stekker (ADR-0005, B-M4).
+  vernietigingsmethode: string;
   // Door de API bepaald, bijv. "vernietiging.opnieuw"; de UI leidt zelf geen rechten af.
   toegestaneActies: string[];
 };

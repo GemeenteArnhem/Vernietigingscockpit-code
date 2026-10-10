@@ -27,6 +27,7 @@ import ContentPanel, {
 } from "../../../../components/ContentPanel";
 import RecordCommentsSection from "../../components/RecordCommentsSection";
 import RecordDetailsSection from "../../components/RecordDetailsSection";
+import { AANTAL_OBJECTEN_UITLEG } from "../bulkDetails";
 import TaskExecutionHeader from "../../components/TaskExecutionHeader";
 import type { VernietigingsKandidaat } from "../../../../shared/types/destruction";
 import { getReviewQueueStatusStyle } from "../../../../shared/ui/reviewStatusStyles";
@@ -44,46 +45,50 @@ type ReviewRecordPanelSummaryStats = {
 
 type ReviewRecordTableRow = {
   id: string;
-  omschrijving: string;
+  naam: string;
   queueStatus: ReviewQueueStatus;
   volgnummer: number;
-  code: string;
+  classificatie: string;
   selectielijst: string;
-  grondslag: string;
-  bewaartermijn: string;
-  vernietigingsdatum: string;
+  informatiecategorie: string;
+  termijnLooptijd: string;
+  termijnEinddatum: string;
   opmerkingenCount: number;
   aantalObjecten: string;
   aantalBetrokkenen: string;
-  periode: string;
+  dekkingInTijd: string;
   stekker: string;
-  bronId: string;
+  identificatie: string;
+  aggregatieniveau: string;
+  waardering: string;
 };
 
 export type { ReviewRecordTableRow };
 
 type TableColumnKey =
-  | "omschrijving"
+  | "naam"
   | "status"
   | "volgnummer"
-  | "code"
+  | "classificatie"
   | "selectielijst"
-  | "grondslag"
-  | "bewaartermijn"
-  | "vernietigingsdatum"
+  | "informatiecategorie"
+  | "termijnLooptijd"
+  | "termijnEinddatum"
   | "opmerking"
   | "aantalObjecten"
   | "aantalBetrokkenen"
-  | "periode"
+  | "dekkingInTijd"
   | "stekker"
-  | "bronId";
+  | "identificatie"
+  | "aggregatieniveau"
+  | "waardering";
 
 export type ReviewRecordSortKey = TableColumnKey;
 export type ReviewRecordSortDirection = "asc" | "desc";
 
-export type SearchScope = "all" | "omschrijving" | "code" | "vernietigingsdatum" | "bronId";
+export type SearchScope = "all" | "naam" | "classificatie" | "termijnEinddatum" | "identificatie";
 
-export type FacetFilterKey = "status" | "selectielijst" | "stekker" | "bewaartermijn";
+export type FacetFilterKey = "status" | "selectielijst" | "stekker" | "termijnLooptijd";
 
 export type FacetOptie = { waarde: string; label: string };
 
@@ -201,80 +206,86 @@ function getPaginationItems(totalPages: number, currentPage: number) {
 }
 
 const DEFAULT_VISIBLE_COLUMNS: TableColumnKey[] = [
-  "omschrijving",
+  "naam",
   "status",
   "volgnummer",
-  "code",
+  "classificatie",
   "selectielijst",
-  "grondslag",
-  "bewaartermijn",
-  "vernietigingsdatum",
+  "informatiecategorie",
+  "termijnLooptijd",
+  "termijnEinddatum",
   "opmerking",
 ];
 
 const COLUMN_LABELS: Record<TableColumnKey, string> = {
-  omschrijving: "Omschrijving",
+  naam: "Naam",
   status: "Status",
   volgnummer: "Nr.",
-  code: "Code",
+  classificatie: "Classificatie",
   selectielijst: "Selectielijst",
-  grondslag: "Grondslag",
-  bewaartermijn: "Termijn",
-  vernietigingsdatum: "Vernietiging",
+  informatiecategorie: "Informatiecategorie",
+  termijnLooptijd: "Termijn",
+  termijnEinddatum: "Einddatum bewaartermijn",
   opmerking: "Opmerking",
   aantalObjecten: "Aantal objecten",
   aantalBetrokkenen: "Aantal betrokkenen",
-  periode: "Periode",
+  dekkingInTijd: "Dekking in tijd",
   stekker: "Stekker",
-  bronId: "Bron-ID",
+  identificatie: "Identificatie",
+  aggregatieniveau: "Aggregatieniveau",
+  waardering: "Waardering",
 };
 
 const COLUMN_TOOLTIPS: Record<TableColumnKey, string> = {
-  omschrijving: "Titel vernietigen informatieobjecten binnen de taak",
+  naam: "Naam van het informatieobject",
   status: "Status van beoordeling: Akkoord, Retour, Uitgesloten, Uitgesteld",
   volgnummer: "Een nummer binnen de taak die voor vernietiging in aanmerking komen",
-  code: "De VNG code of BAC van de te vernietigen informatieobjecten binnen de taak. Voor selectielijst vanaf 2017, Zaaktype gebruiken.",
+  classificatie: "De VNG code of BAC van de te vernietigen informatieobjecten binnen de taak. Voor selectielijst vanaf 2017, Zaaktype gebruiken.",
   selectielijst: "Selectielijst die van toepassing is, betreft jaartal van de selectielijst.",
-  grondslag: "De categorie/grondslag uit de vignerende selectielijst op basis waarvan de informatieobjecten vernietigd dienen te worden",
-  bewaartermijn: "De periode dat de informatieobjecten moeten worden bewaard conform de vigerende selectielijst",
-  vernietigingsdatum: "Jaar en maand waarin het dossier/informatieobject vernietigd moet worden. Format: jjjj-mm",
+  informatiecategorie: "De categorie/grondslag uit de vignerende selectielijst op basis waarvan de informatieobjecten vernietigd dienen te worden",
+  termijnLooptijd: "De periode dat de informatieobjecten moeten worden bewaard conform de vigerende selectielijst",
+  termijnEinddatum: "Jaar en maand waarin de bewaartermijn eindigt (MDTO termijnEinddatum). Format: jjjj-mm",
   opmerking: "Patel groen rondje met aantal opmerkingen. indien er geen opmerkingen zijn, leeg.",
-  aantalObjecten: "Aantal objecten",
+  aantalObjecten: AANTAL_OBJECTEN_UITLEG,
   aantalBetrokkenen: "Aantal betrokkenen",
-  periode: "Gehele periode waar de stukken binnen deze taak in vallen. Format jjjj-mm / jjjj-mm",
+  dekkingInTijd: "Gehele periode waar de stukken binnen deze taak in vallen. Format jjjj-mm / jjjj-mm",
   stekker: "Naam van de stekker waar de informatieobjecten uit komt.",
-  bronId: "Identificatie van het informatieobject uit de stekker",
+  identificatie: "Identificatie van het informatieobject uit de stekker",
+  aggregatieniveau: "Niveau van het informatieobject volgens MDTO: Archief, Serie, Dossier of Archiefstuk.",
+  waardering: "Waardering volgens de selectielijst (MDTO): alleen Tijdelijk te bewaren komt in aanmerking voor vernietiging.",
 };
 
 const COLUMN_WIDTHS: Partial<Record<TableColumnKey, string>> = {
   status: "64px",
   opmerking: "72px",
   volgnummer: "96px",
-  code: "120px",
+  classificatie: "120px",
   selectielijst: "120px",
-  grondslag: "220px",
-  bewaartermijn: "132px",
-  vernietigingsdatum: "148px",
+  informatiecategorie: "220px",
+  termijnLooptijd: "132px",
+  termijnEinddatum: "148px",
   aantalObjecten: "132px",
   aantalBetrokkenen: "132px",
-  periode: "168px",
+  dekkingInTijd: "168px",
   stekker: "160px",
-  bronId: "160px",
+  identificatie: "160px",
+  aggregatieniveau: "140px",
+  waardering: "180px",
 };
 
 const SEARCH_SCOPE_OPTIONS: Array<{ key: SearchScope; label: string }> = [
   { key: "all", label: "Alle kolommen" },
-  { key: "omschrijving", label: "Omschrijving" },
-  { key: "code", label: "Code" },
-  { key: "vernietigingsdatum", label: "Vernietiging" },
-  { key: "bronId", label: "Bron-ID" },
+  { key: "naam", label: "Naam" },
+  { key: "classificatie", label: "Classificatie" },
+  { key: "termijnEinddatum", label: "Einddatum bewaartermijn" },
+  { key: "identificatie", label: "Identificatie" },
 ];
 
 const FACET_FILTER_LABELS: Record<FacetFilterKey, string> = {
   status: "Status",
   selectielijst: "Selectielijst",
   stekker: "Stekker",
-  bewaartermijn: "Termijn",
+  termijnLooptijd: "Termijn",
 };
 
 function ReviewChunkedTable({
@@ -283,7 +294,7 @@ function ReviewChunkedTable({
   onSelectedIdsChange,
   activeRecordId,
   onActiveRecordChange,
-  sortKey = "vernietigingsdatum",
+  sortKey = "termijnEinddatum",
   sortDirection = "asc",
   onSortChange,
   enableCrossPageBulkSelection = false,
@@ -337,7 +348,7 @@ function ReviewChunkedTable({
         .map((status) => ({ waarde: status, label: getQueueStatusLabel(status as ReviewQueueStatus) })),
       selectielijst: opties(Array.from(new Set(rows.map((row) => row.selectielijst))).sort()),
       stekker: opties(Array.from(new Set(rows.map((row) => row.stekker))).sort()),
-      bewaartermijn: opties(Array.from(new Set(rows.map((row) => row.bewaartermijn))).sort()),
+      termijnLooptijd: opties(Array.from(new Set(rows.map((row) => row.termijnLooptijd))).sort()),
     };
   }, [rows, server]);
 
@@ -359,15 +370,15 @@ function ReviewChunkedTable({
         ? true
         : (() => {
             const haystack =
-              searchScope === "omschrijving"
-                ? row.omschrijving
-                : searchScope === "code"
-                  ? row.code
-                  : searchScope === "vernietigingsdatum"
-                    ? row.vernietigingsdatum
-                    : searchScope === "bronId"
-                      ? row.bronId
-                      : [row.omschrijving, row.code, row.vernietigingsdatum, row.bronId].join(" ");
+              searchScope === "naam"
+                ? row.naam
+                : searchScope === "classificatie"
+                  ? row.classificatie
+                  : searchScope === "termijnEinddatum"
+                    ? row.termijnEinddatum
+                    : searchScope === "identificatie"
+                      ? row.identificatie
+                      : [row.naam, row.classificatie, row.termijnEinddatum, row.identificatie].join(" ");
 
             return haystack.toLowerCase().includes(query);
           })();
@@ -376,7 +387,7 @@ function ReviewChunkedTable({
         (!activeFilters.status || row.queueStatus === activeFilters.status) &&
         (!activeFilters.selectielijst || row.selectielijst === activeFilters.selectielijst) &&
         (!activeFilters.stekker || row.stekker === activeFilters.stekker) &&
-        (!activeFilters.bewaartermijn || row.bewaartermijn === activeFilters.bewaartermijn);
+        (!activeFilters.termijnLooptijd || row.termijnLooptijd === activeFilters.termijnLooptijd);
 
       return matchesSearch && matchesFilters;
     });
@@ -401,20 +412,22 @@ function ReviewChunkedTable({
   const selectedVisibleCount = visibleRows.filter((row) => selectedIds.includes(row.id)).length;
 
   const orderedColumns = ([
-    "omschrijving",
+    "naam",
     "status",
     "volgnummer",
-    "code",
+    "classificatie",
     "selectielijst",
-    "grondslag",
-    "bewaartermijn",
-    "vernietigingsdatum",
+    "informatiecategorie",
+    "termijnLooptijd",
+    "termijnEinddatum",
     "opmerking",
     "aantalObjecten",
     "aantalBetrokkenen",
-    "periode",
+    "dekkingInTijd",
     "stekker",
-    "bronId",
+    "identificatie",
+    "aggregatieniveau",
+    "waardering",
   ] as TableColumnKey[]).filter((column) => visibleColumns.includes(column));
 
   useEffect(() => {
@@ -515,20 +528,22 @@ function ReviewChunkedTable({
 
       const next = [...current, column];
       const orderedKeys = [
-        "omschrijving",
+        "naam",
         "status",
         "volgnummer",
-        "code",
+        "classificatie",
         "selectielijst",
-        "grondslag",
-        "bewaartermijn",
-        "vernietigingsdatum",
+        "informatiecategorie",
+        "termijnLooptijd",
+        "termijnEinddatum",
         "opmerking",
         "aantalObjecten",
         "aantalBetrokkenen",
-        "periode",
+        "dekkingInTijd",
         "stekker",
-        "bronId",
+        "identificatie",
+        "aggregatieniveau",
+        "waardering",
       ] as TableColumnKey[];
 
       return orderedKeys.filter((item) => next.includes(item));
@@ -569,7 +584,7 @@ function ReviewChunkedTable({
                 <input
                   value={zoekWaarde}
                   onChange={(event) => zetZoek(event.target.value, zoekScope)}
-                  placeholder="Zoek op titel, selectieregel of vernietigingsdatum..."
+                  placeholder="Zoek op naam, classificatie of einddatum bewaartermijn..."
                   className="h-11 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-14 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-500"
                 />
                 <div className="absolute inset-y-1.5 right-1.5 flex items-center">
@@ -796,13 +811,13 @@ function ReviewChunkedTable({
                       : "none"
                   }
                   className={`sticky top-0 z-10 bg-white px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 ${
-                    column === "omschrijving"
+                    column === "naam"
                       ? "text-left"
                       : column === "status" || column === "opmerking"
                         ? "text-center"
-                        : column === "grondslag"
+                        : column === "informatiecategorie"
                           ? "text-left"
-                          : column === "periode"
+                          : column === "dekkingInTijd"
                             ? "text-left"
                             : "text-left"
                   }`}
@@ -867,21 +882,21 @@ function ReviewChunkedTable({
                       onChange={() => toggleRow(row.id)}
                       onClick={(event) => event.stopPropagation()}
                       className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      aria-label={`Selecteer ${row.omschrijving}`}
+                      aria-label={`Selecteer ${row.naam}`}
                     />
                   </td>
                   {orderedColumns.map((column) => (
                     <td
                       key={`${row.id}-${column}`}
                       className={`px-4 py-3 align-middle text-slate-700 ${
-                        column === "omschrijving"
+                        column === "naam"
                           ? "text-left"
                           : column === "opmerking" || column === "status"
                             ? "text-center"
                             : ""
                       }`}
                     >
-                      {column === "omschrijving" ? (
+                      {column === "naam" ? (
                         <button
                           type="button"
                           onClick={(event) => {
@@ -889,9 +904,9 @@ function ReviewChunkedTable({
                             onActiveRecordChange?.(row.id);
                           }}
                           className="truncate text-left font-medium text-slate-900 hover:text-blue-700"
-                          title={row.omschrijving}
+                          title={row.naam}
                         >
-                          {row.omschrijving}
+                          {row.naam}
                         </button>
                       ) : column === "status" ? (
                         <div className={`inline-flex h-8 w-8 items-center justify-center rounded-full border ${queueIcon.className}`}>
@@ -908,26 +923,30 @@ function ReviewChunkedTable({
                         ) : null
                       ) : column === "volgnummer" ? (
                         row.volgnummer.toLocaleString("nl-NL")
-                      ) : column === "code" ? (
-                        row.code
+                      ) : column === "classificatie" ? (
+                        row.classificatie
                       ) : column === "selectielijst" ? (
                         row.selectielijst
-                      ) : column === "grondslag" ? (
-                        row.grondslag
-                      ) : column === "bewaartermijn" ? (
-                        row.bewaartermijn
-                      ) : column === "vernietigingsdatum" ? (
-                        row.vernietigingsdatum
+                      ) : column === "informatiecategorie" ? (
+                        row.informatiecategorie
+                      ) : column === "termijnLooptijd" ? (
+                        row.termijnLooptijd
+                      ) : column === "termijnEinddatum" ? (
+                        row.termijnEinddatum
                       ) : column === "aantalObjecten" ? (
                         row.aantalObjecten
                       ) : column === "aantalBetrokkenen" ? (
                         row.aantalBetrokkenen
-                      ) : column === "periode" ? (
-                        row.periode
+                      ) : column === "dekkingInTijd" ? (
+                        row.dekkingInTijd
                       ) : column === "stekker" ? (
                         row.stekker
+                      ) : column === "aggregatieniveau" ? (
+                        row.aggregatieniveau
+                      ) : column === "waardering" ? (
+                        row.waardering
                       ) : (
-                        row.bronId
+                        row.identificatie
                       )}
                     </td>
                   ))}

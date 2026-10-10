@@ -57,7 +57,7 @@ export class BesluitvormingService {
           { type: "user", user, rol },
           kandidaten.map((kandidaat) => ({
             taakinstantieId: taak.id,
-            actie: besluit === "RETOUR" ? "APPROVAL_REJECTED" : "APPROVAL_GRANTED",
+            eventType: besluit === "RETOUR" ? "Retour" : "Accordering",
             entiteitType: "vernietigingskandidaat",
             entiteitId: kandidaat.id,
             details: {
@@ -190,7 +190,7 @@ export class BesluitvormingService {
 
       await schrijfAuditEvent(tx, { type: "user", user, rol }, {
         taakinstantieId,
-        actie: besluit === "RETOUR" ? "APPROVAL_REJECTED" : "APPROVAL_GRANTED",
+        eventType: besluit === "RETOUR" ? "Retour" : "Accordering",
         entiteitType: "vernietigingskandidaat",
         entiteitId: kandidaat.id,
         details: {

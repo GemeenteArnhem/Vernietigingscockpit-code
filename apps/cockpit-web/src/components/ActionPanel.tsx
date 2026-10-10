@@ -39,6 +39,14 @@ type ActionPanelTextareaProps = {
   maxLength?: number;
 };
 
+type ActionPanelSelectProps = {
+  label: string;
+  placeholder: string;
+  value: string;
+  options: readonly string[];
+  onChange: (value: string) => void;
+};
+
 type ActionPanelDropzoneProps = {
   label: string;
   description?: string;
@@ -260,6 +268,27 @@ export function ActionPanelTextarea({
         placeholder={placeholder}
         className="mt-2 min-h-12 w-full resize-none rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-3 text-sm leading-5 text-slate-700 outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100"
       />
+    </label>
+  );
+}
+
+// Keuzelijst in dezelfde stijl als ActionPanelTextarea.
+export function ActionPanelSelect({ label, placeholder, value, options, onChange }: ActionPanelSelectProps) {
+  return (
+    <label className="block">
+      <div className="text-sm font-semibold text-slate-900">{label}</div>
+      <select
+        value={value}
+        onChange={(event: ChangeEvent<HTMLSelectElement>) => onChange(event.target.value)}
+        className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-3 text-sm leading-5 text-slate-700 outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100"
+      >
+        <option value="">{placeholder}</option>
+        {options.map((optie) => (
+          <option key={optie} value={optie}>
+            {optie}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }
