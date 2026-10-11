@@ -40,6 +40,7 @@ import {
   useSelectieSamenvatting,
 } from "../features/task-execution/review/useKandidatenLijst";
 import { maakBulkDetails } from "../features/task-execution/review/bulkDetails";
+import { SELECTIELIJST_UITLEG, selectielijstDetail } from "../shared/selectielijst";
 import { AANTAL_OBJECTEN_UITLEG, AGGREGATIENIVEAU_UITLEG, ARCHIEFVORMER_UITLEG, WAARDERING_UITLEG } from "../features/task-execution/review/bulkDetails";
 
 // Vaste lege lijsten, zodat useMemo-afhankelijkheden niet bij elke render veranderen.
@@ -287,6 +288,7 @@ export default function ArchivistApprovalPage() {
         volgnummer: item.snapshotVolgnummer,
         classificatie: item.row.classificatie ?? "-",
         selectielijst: item.row.selectielijst ?? "-",
+        selectielijstNaam: item.row.selectielijstNaam ?? "",
         informatiecategorie: item.row.informatiecategorie ?? "-",
         termijnLooptijd: item.row.termijnLooptijd,
         termijnEinddatum: item.row.termijnEinddatum ?? "-",
@@ -558,9 +560,9 @@ export default function ArchivistApprovalPage() {
               },
               {
                 label: "Selectielijst",
-                labelTitle:
-                  "Selectielijst die van toepassing is, betreft jaartal van de selectielijst.",
-                value: selectedItem.row.selectielijst ?? "-",
+                labelTitle: SELECTIELIJST_UITLEG,
+                value: selectielijstDetail(selectedItem.row.selectielijst, selectedItem.row.selectielijstNaam),
+                valueTitle: selectedItem.row.selectielijstNaam,
               },
               {
                 label: "Informatiecategorie",

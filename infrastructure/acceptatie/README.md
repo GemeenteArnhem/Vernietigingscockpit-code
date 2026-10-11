@@ -1,7 +1,8 @@
 # Acceptatieomgeving (lokaal, Docker Desktop)
 
-Volledige cockpit met Keycloak, PostgreSQL, Gotenberg en de teststekker, om zelf de
-vernietigingscyclus door te lopen. Alleen testgegevens; niet voor productie.
+Volledige cockpit met Keycloak, PostgreSQL, Gotenberg, de teststekker en de OpenZaak-stekker
+met een eigen Open Zaak (1.30.0), om zelf de vernietigingscyclus door te lopen. Alleen
+testgegevens; niet voor productie.
 
 ## Eerste keer: wachtwoorden aanmaken
 
@@ -20,8 +21,9 @@ de omgeving niet.
 
 ## Starten en stoppen
 
-Vanuit de root van deze repo (de teststekker-repo moet naast deze repo staan, of zet
-`STEKKER_REPO`):
+Vanuit de root van deze repo. De teststekker-repo en de OpenZaak-stekker-repo moeten naast
+deze repo staan (of zet `STEKKER_REPO` en `STEKKER_OPENZAAK_REPO`). Open Zaak en het seedscript
+hebben internet nodig (images, Selectielijst API).
 
 ```bash
 docker compose -f infrastructure/acceptatie/docker-compose.yml up -d --build --wait
@@ -31,35 +33,38 @@ docker compose -f infrastructure/acceptatie/docker-compose.yml up -d --build --w
 docker compose -f infrastructure/acceptatie/docker-compose.yml stop
 ```
 
-Opnieuw beginnen met een lege database, lege Keycloak, leeg archief en lege stekkerstatus
-(verwijdert de volumes van **alleen** deze omgeving):
+Opnieuw beginnen met een lege database, lege Keycloak, leeg archief, lege stekkerstatus en
+een lege Open Zaak (verwijdert de volumes van **alleen** deze omgeving; de seed vult Open Zaak
+bij de volgende start opnieuw):
 
 ```bash
 docker compose -f infrastructure/acceptatie/docker-compose.yml down -v
 ```
 
 Na een update (`git pull`) het script opnieuw draaien: het voegt ontbrekende geheimen toe,
-zoals `ACC_SECRET_SLEUTEL` (sleutel voor stekker-secrets uit stekkerbeheer), en laat
-bestaande waarden staan.
+zoals `ACC_SECRET_SLEUTEL` (sleutel voor stekker-secrets uit stekkerbeheer) of de
+`ACC_OPENZAAK_*`-waarden, en laat bestaande waarden staan.
 
 Andere wachtwoorden:
 - **Testgebruikers:** pas `ACC_GEBRUIKERS_WACHTWOORD` in `.env` aan en start opnieuw (`up -d`). `keycloak-init` zet het wachtwoord bij elke start.
-- **Database, Keycloak-beheer of stekker-secret:** eerst `down -v`, dan `.env` verwijderen, dan het script opnieuw draaien. De database en Keycloak onthouden het wachtwoord van hun eerste start.
+- **Database, Keycloak-beheer of stekker-secret:** eerst `down -v`, dan `.env` verwijderen, dan het script opnieuw draaien. De database en Keycloak onthouden het wachtwoord van hun eerste start. Dat geldt ook voor de Open Zaak-database en -beheerder (`ACC_OPENZAAK_DB_WACHTWOORD`, `ACC_OPENZAAK_ADMIN_WACHTWOORD`); de ZGW-secrets en het secret van `cockpit-stekker-openzaak` worden bij elke start opnieuw gezet.
 
 ## Op een server (cloud-VM met Docker en Traefik)
 
-Op een server draait dezelfde omgeving achter de bestaande Traefik, op drie eigen domeinen
+Op een server draait dezelfde omgeving achter de bestaande Traefik, op vier eigen domeinen
 met HTTPS. Inloggen vereist HTTPS (of `localhost`); een kaal `http://<ip>` werkt niet.
-`docker-compose.vm.yml` komt bovenop `docker-compose.yml`. Web, API en Keycloak publiceren
-dan geen eigen poorten; Traefik routeert en verzorgt de certificaten.
+`docker-compose.vm.yml` komt bovenop `docker-compose.yml`. Web, API, Keycloak en het beheer
+van Open Zaak publiceren dan geen eigen poorten; Traefik routeert en verzorgt de certificaten.
 
 **Vooraf**
 
 - De code staat op GitHub: de server haalt alleen gecommit en gepusht werk op.
 - Docker Compose 2.24 of nieuwer (`docker compose version`).
 - Traefik draait, met een HTTPS-entrypoint en een certresolver.
-- DNS: drie A-records naar de server, bijvoorbeeld `acc.voorbeeld.nl`,
-  `api.acc.voorbeeld.nl` en `auth.acc.voorbeeld.nl`. Het script noemt ze ook.
+- DNS: vier A-records naar de server, bijvoorbeeld `acc.voorbeeld.nl`,
+  `api.acc.voorbeeld.nl`, `auth.acc.voorbeeld.nl` en `openzaak.acc.voorbeeld.nl`. Het script
+  noemt ze ook. Bij een bestaande `.env` vult het script `ACC_OPENZAAK_HOST` aan als
+  `openzaak.<web-domein>`.
 
 **1. Traefik-waarden opzoeken**
 
@@ -79,7 +84,7 @@ Uit de argumenten: de HTTPS-entrypoint (`--entrypoints.<naam>.address=:443`) en 
 certresolver (`--certificatesresolvers.<naam>...`). Het netwerk is het Docker-netwerk van
 Traefik (de laatste opdracht).
 
-**2. Code ophalen** (beide repo's naast elkaar in dezelfde map)
+**2. Code ophalen** (alle drie de repo's naast elkaar in dezelfde map)
 
 ```bash
 git clone -b dev6 https://github.com/GemeenteArnhem/Vernietigingscockpit-code.git
@@ -87,6 +92,10 @@ git clone -b dev6 https://github.com/GemeenteArnhem/Vernietigingscockpit-code.gi
 
 ```bash
 git clone -b dev2 https://github.com/GemeenteArnhem/Vernietigingscockpit-stekker-test.git
+```
+
+```bash
+git clone -b main <remote-url>/Vernietigingscockpit-stekker-openzaak.git
 ```
 
 ```bash
@@ -154,8 +163,10 @@ Gebruik op de server bij elke opdracht beide `-f`-bestanden, ook bij `stop` en `
   sterk. Wil je de console afschermen, zet dan in Traefik een IP-allowlist op het pad
   `/admin`.
 - **De database** is alleen bereikbaar vanaf de server zelf (`127.0.0.1:55434`).
-- **Eén Traefik voor meer projecten:** de routers heten `vc-acc-auth`, `vc-acc-api` en
-  `vc-acc-web`. Kies andere namen als die al bestaan.
+- **Eén Traefik voor meer projecten:** de routers heten `vc-acc-auth`, `vc-acc-api`,
+  `vc-acc-web` en `vc-acc-openzaak`. Kies andere namen als die al bestaan.
+- **Open Zaak-beheer staat publiek** op `https://openzaak.…/admin/` (gebruiker `admin`,
+  `ACC_OPENZAAK_ADMIN_WACHTWOORD`). Scherm `/admin` desgewenst af met een IP-allowlist.
 
 ## Adressen (lokaal)
 
@@ -164,6 +175,7 @@ Gebruik op de server bij elke opdracht beide `-f`-bestanden, ook bij `stop` en `
 | Cockpit (web) | http://localhost:8480 |
 | API | http://localhost:8481/api/v1 |
 | Keycloak (inloggen en beheer) | http://host.docker.internal:8482 |
+| Open Zaak (beheer) | http://localhost:8483/admin/ (gebruiker `admin`, `ACC_OPENZAAK_ADMIN_WACHTWOORD`) |
 | Database (alleen vanaf deze pc) | `localhost:55434`, database `cockpit` |
 
 ## Testaccounts
@@ -193,6 +205,15 @@ Wissel van gebruiker via **Uitloggen** in de cockpit. Of gebruik een privévenst
   aan (`rm1`, actie **Nieuwe uitvoering aanmaken**); het auditlog begint dan met `Creatie`.
 - De teststekker (dataset *sociaal-domein-zaken*). Selectie en vernietiging duren elk een
   paar seconden, zodat je de tussenstanden ziet.
+- Taakdefinitie **Zaken OpenZaak** met de OpenZaak-stekker. Open Zaak bevat 23 vernietigbare
+  zaken (archiefactiedatum 2025-06-30), onder meer het voorbeeld **ZAAK-2018-0042**: drie
+  documenten en een besluit met besluitbrief; het medisch advies hoort ook bij
+  ZAAK-2019-0107 en blijft na vernietiging bestaan (ontkoppeld). Verder een hoofdzaak met
+  deelzaak (ZAAK-2018-0200/0201; de hoofdzaak gaat pas als de deelzaak weg is) en een zaak
+  zonder archiefnominatie (waarschuwing bij de selectie). Wat er na vernietiging in Open Zaak
+  over is, zie je in het beheer (Zaken, Documenten). Wijzig je tussen selectie en vernietiging
+  iets in Open Zaak (document toevoegen, archiefactiedatum aanpassen), dan meldt de stekker
+  `CHANGED`.
 
 Een volledige ronde:
 
@@ -220,9 +241,19 @@ docker compose -f infrastructure/acceptatie/docker-compose.yml exec worker ls -R
   volume `keycloak`, zodat accounts (en hun koppeling aan medewerkers) een herstart
   overleven.
 - **keycloak-init** (`keycloak/keycloak-init.sh`) draait bij elke start. Hij zet uit `.env`
-  de wachtwoorden van de testgebruikers en het client-secret van `cockpit-stekker`, en
-  koppelt de scopes `selectie.read`, `selectie.write`, `vernietiging.read` en
-  `vernietiging.write` aan die client.
+  de wachtwoorden van de testgebruikers en de client-secrets van `cockpit-stekker` en
+  `cockpit-stekker-openzaak` (maakt die client aan als hij ontbreekt), en koppelt de scopes
+  `selectie.read`, `selectie.write`, `vernietiging.read` en `vernietiging.write` aan beide.
+  Elke stekker heeft een eigen client en audience (`teststekker`, `openzaak-stekker`): een
+  token voor de ene stekker werkt niet bij de andere.
 - **Seed.** Draait bij elke start; hij is idempotent.
 - **Stekkerverbinding.** De worker haalt via OAuth2 (client credentials) een token voor de
-  teststekker, met het secret uit `ACC_STEKKER_GEHEIM`.
+  teststekker, met het secret uit `ACC_STEKKER_GEHEIM`, en voor de OpenZaak-stekker met
+  `ACC_OPENZAAK_STEKKER_GEHEIM`.
+- **Open Zaak.** `openzaak-init` zet bij elke start de ZGW-inloggegevens van het seed-account
+  (`ACC_OPENZAAK_SEED_SECRET`, alle rechten) en van de stekker (`ACC_OPENZAAK_STEKKER_SECRET`).
+  `openzaak-seed` (script uit de stekkerrepo) maakt idempotent de catalogus, het zaaktype en
+  de zaken aan, en de applicatie van de stekker met alleen lees- en verwijderrechten (plus
+  `zaken.geforceerd-bijwerken`, nodig voor gesloten zaken). Binnen het Docker-netwerk heet
+  Open Zaak `openzaak.acceptatie.local`: Open Zaak keurt URL's met een hostnaam zonder punt
+  (`http://openzaak:8000`) af.

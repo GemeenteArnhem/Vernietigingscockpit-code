@@ -32,12 +32,20 @@ jobs:
           # Stekker API v2 en MDTO (ADR-0005) staan op de branch dev van de architectuurrepo.
           ref: dev
           path: architectuur
-          sparse-checkout: designrules/api
+          sparse-checkout: |
+            designrules/api
+            designrules/begrippenlijsten
 
       - name: Stekkertypes controleren tegen de spec
         run: npm run check:generated --workspace @vernietigingscockpit/stekker-client
         env:
           STEKKER_SPEC: ${{ github.workspace }}/architectuur/designrules/api/stekker-openapi-spec.yaml
+
+      # Register Cockpit-selectielijsten (ADR-0008): gegenereerd uit de JSON in de architectuurrepo.
+      - name: Selectielijstenregister controleren tegen de architectuurrepo
+        run: npm run check:selectielijsten --workspace @vernietigingscockpit/cockpit-api
+        env:
+          SELECTIELIJSTEN_REGISTER: ${{ github.workspace }}/architectuur/designrules/begrippenlijsten/cockpit-selectielijsten.json
 
       - name: Prisma-client genereren
         run: npm run db:generate --workspace @vernietigingscockpit/cockpit-api

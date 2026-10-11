@@ -251,7 +251,7 @@ export default function ApprovalRecordTable({
         key: "selectielijst",
         label: "Selectielijst",
         widthClassName: "w-[10%] min-w-[150px]",
-        render: (row) => formatCellValue(row.selectielijst),
+        render: (row) => <span title={row.selectielijstNaam || undefined}>{formatCellValue(row.selectielijst)}</span>,
       });
     }
 

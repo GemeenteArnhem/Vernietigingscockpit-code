@@ -44,6 +44,7 @@ import type {
   DestructionResultStatus,
 } from "../shared/types/destructionResult";
 import ActieFoutmelding from "../components/ActieFoutmelding";
+import { SELECTIELIJST_UITLEG, selectielijstDetail } from "../shared/selectielijst";
 import { AANTAL_OBJECTEN_UITLEG, AGGREGATIENIVEAU_UITLEG, ARCHIEFVORMER_UITLEG, WAARDERING_UITLEG } from "../features/task-execution/review/bulkDetails";
 
 type ResultSortKey = "naam" | "resultaat" | "eventTijd";
@@ -940,9 +941,9 @@ export default function DestructionResultPage() {
                   },
                   {
                     label: "Selectielijst",
-                    labelTitle:
-                      "Selectielijst die van toepassing is, betreft jaartal van de selectielijst.",
-                    value: selectedRow.selectielijst ?? "-",
+                    labelTitle: SELECTIELIJST_UITLEG,
+                    value: selectielijstDetail(selectedRow.selectielijst, selectedRow.selectielijstNaam),
+                    valueTitle: selectedRow.selectielijstNaam,
                   },
                   {
                     label: "Informatiecategorie",

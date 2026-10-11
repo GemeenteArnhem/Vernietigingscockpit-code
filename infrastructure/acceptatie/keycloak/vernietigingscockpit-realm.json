@@ -98,6 +98,33 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "cockpit-stekker-openzaak",
+      "name": "Cockpit naar OpenZaak-stekker (client credentials)",
+      "enabled": true,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "defaultClientScopes": [
+        "basic"
+      ],
+      "protocolMappers": [
+        {
+          "name": "audience openzaak-stekker",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "openzaak-stekker",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
     }
   ],
   "users": [

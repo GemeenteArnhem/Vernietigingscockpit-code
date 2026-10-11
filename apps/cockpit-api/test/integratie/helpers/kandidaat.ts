@@ -4,7 +4,12 @@ import type { StekkerKandidaat } from "../../../src/modules/stekker/stekker-clie
 // Testkandidaten volgens Stekker API v2 (MDTO-profiel, ADR-0005).
 
 const BRON = "Testbron (technische sleutel)";
-const SELECTIELIJST = "Testselectielijst";
+const SELECTIELIJST = "Selectielijst gemeenten en intergemeentelijke organen 2020";
+// Selectielijstcode uit Cockpit-selectielijsten (ADR-0008).
+const SELECTIELIJSTVERWIJZING = {
+  verwijzingNaam: SELECTIELIJST,
+  verwijzingIdentificatie: { identificatieKenmerk: "GEM-2020", identificatieBron: "Cockpit-selectielijsten" as const },
+};
 const begrip = (begripLabel: string, begrippenlijst: string, begripCode?: string) => ({
   begripLabel,
   ...(begripCode ? { begripCode } : {}),
@@ -28,8 +33,10 @@ export function mdtoKandidaat(
     waarderingBegripLabel: "Tijdelijk te bewaren",
     termijnEinddatum: new Date(Date.UTC(2020, 0, 1)),
     informatiecategorieBegripLabel: "Testcategorie",
-    informatiecategorieBegrippenlijst: { verwijzingNaam: SELECTIELIJST },
+    informatiecategorieBegrippenlijst: SELECTIELIJSTVERWIJZING,
     selectielijst: SELECTIELIJST,
+    selectielijstCode: "GEM-2020",
+    selectielijstBekend: true,
     ...overrides,
   };
 }
@@ -43,7 +50,7 @@ export function stekkerKandidaat(kandidaatId: string, kenmerk: string, naam: str
     aggregatieniveau: { begripLabel: "Dossier", begripBegrippenlijst: { verwijzingNaam: "Begrippenlijst Aggregatieniveaus MDTO" } },
     waardering: { begripLabel: "Tijdelijk te bewaren", begripCode: "V", begripBegrippenlijst: { verwijzingNaam: "Begrippenlijst Waarderingen MDTO" } },
     bewaartermijn: { termijnEinddatum: "2020-01-01" },
-    informatiecategorie: begrip("Testcategorie", SELECTIELIJST, "1.1"),
+    informatiecategorie: { begripLabel: "Testcategorie", begripCode: "1.1", begripBegrippenlijst: SELECTIELIJSTVERWIJZING },
   };
 }
 

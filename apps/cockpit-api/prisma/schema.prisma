@@ -284,8 +284,12 @@ model Vernietigingskandidaat {
   informatiecategorieBegripCode     String?                @map("informatiecategorie_begrip_code")
   informatiecategorieBegripLabel    String                 @map("informatiecategorie_begrip_label")
   informatiecategorieBegrippenlijst Json                   @map("informatiecategorie_begrippenlijst")
-  // Naam van de selectielijst (begrippenlijst van de informatiecategorie), voor het filter.
+  // Naam van de selectielijst (begrippenlijst van de informatiecategorie) zoals de stekker hem leverde.
   selectielijst                     String
+  // Selectielijstcode uit Cockpit-selectielijsten (ADR-0008), voor filter, facet en sortering;
+  // `selectielijst_bekend` = de code stond bij import in het register (anders: waarschuwing).
+  selectielijstCode                 String                 @map("selectielijst_code")
+  selectielijstBekend               Boolean                @map("selectielijst_bekend")
   informatiecategorieAfwijking      Json?                  @map("informatiecategorie_afwijking")
   isOnderdeelVan                    Json?                  @map("is_onderdeel_van")
   gerelateerdInformatieobject       Json?                  @map("gerelateerd_informatieobject")

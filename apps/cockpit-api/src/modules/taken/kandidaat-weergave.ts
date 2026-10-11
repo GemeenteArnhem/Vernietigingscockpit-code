@@ -1,5 +1,6 @@
 import type { Prisma, Vernietigingskandidaat } from "@prisma/client";
 import type { ApiMdtoKandidaat } from "@vernietigingscockpit/api-contract";
+import { selectielijstWeergave } from "../selectielijsten/selectielijstcode.js";
 
 // De MDTO-gegevens van een kandidaat (ADR-0005) zoals de cockpit-API ze teruggeeft: de
 // gegevensgroepen ongewijzigd uit de kolommen, met MDTO-namen.
@@ -28,6 +29,7 @@ export function mdtoVelden(kandidaat: Vernietigingskandidaat): ApiMdtoKandidaat 
       ...(kandidaat.informatiecategorieBegripCode ? { begripCode: kandidaat.informatiecategorieBegripCode } : {}),
       begripBegrippenlijst: json(kandidaat.informatiecategorieBegrippenlijst) ?? { verwijzingNaam: kandidaat.selectielijst },
     },
+    selectielijst: selectielijstWeergave(kandidaat.selectielijstCode),
     informatiecategorieAfwijking: json(kandidaat.informatiecategorieAfwijking),
     gerelateerdInformatieobject: json(kandidaat.gerelateerdInformatieobject),
     archiefvormer: json(kandidaat.archiefvormer),

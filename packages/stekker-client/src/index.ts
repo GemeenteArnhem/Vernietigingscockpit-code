@@ -16,6 +16,8 @@ export type GerelateerdInformatieobjectGegevens = Schemas["gerelateerdInformatie
 export type Aggregatieniveau = Schemas["Aggregatieniveau"];
 export type Waardering = Schemas["Waardering"];
 export type Bewaartermijn = Schemas["Bewaartermijn"];
+export type Informatiecategorie = Schemas["Informatiecategorie"];
+export type Selectielijstverwijzing = Schemas["Selectielijstverwijzing"];
 export type InformatiecategorieAfwijking = Schemas["InformatiecategorieAfwijking"];
 export type VernietigingsEvent = Schemas["VernietigingsEvent"];
 

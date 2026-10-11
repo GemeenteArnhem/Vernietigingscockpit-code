@@ -46,6 +46,28 @@ services:
       traefik.http.routers.vc-acc-web.tls.certresolver: ${TRAEFIK_CERTRESOLVER}
       traefik.http.services.vc-acc-web.loadbalancer.server.port: "8080"
 
+  # Beheer van Open Zaak op een eigen subdomein (ACC_OPENZAAK_HOST). De stekker blijft binnen
+  # het Docker-netwerk met http://openzaak.acceptatie.local:8000 praten (alias blijft staan).
+  openzaak:
+    networks:
+      default:
+        aliases:
+          - openzaak.acceptatie.local
+      traefik: {}
+    ports: !reset []
+    environment:
+      # Alleen cookies en HSTS; de URL's volgen het adres van het verzoek (intern http).
+      IS_HTTPS: "true"
+      # Inloggen in het beheer via https://openzaak.… (Django-CSRF-controle op de origin).
+      CSRF_TRUSTED_ORIGINS: https://${ACC_OPENZAAK_HOST}
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: ${TRAEFIK_NETWORK}
+      traefik.http.routers.vc-acc-openzaak.rule: Host(`${ACC_OPENZAAK_HOST:?zet ACC_OPENZAAK_HOST in .env (init-geheimen.mjs vult hem aan)}`)
+      traefik.http.routers.vc-acc-openzaak.entrypoints: ${TRAEFIK_ENTRYPOINT}
+      traefik.http.routers.vc-acc-openzaak.tls.certresolver: ${TRAEFIK_CERTRESOLVER}
+      traefik.http.services.vc-acc-openzaak.loadbalancer.server.port: "8000"
+
 networks:
   traefik:
     external: true

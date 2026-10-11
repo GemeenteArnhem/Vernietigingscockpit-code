@@ -421,7 +421,9 @@ export default function ReviewResultTable({
                   )}
 
                   {col("selectielijst") && (
-                    <td className="p-3 text-gray-500">{formatCellValue(row.selectielijst)}</td>
+                    <td className="p-3 text-gray-500" title={row.selectielijstNaam || undefined}>
+                      {formatCellValue(row.selectielijst)}
+                    </td>
                   )}
 
                   {col("informatiecategorie") && (

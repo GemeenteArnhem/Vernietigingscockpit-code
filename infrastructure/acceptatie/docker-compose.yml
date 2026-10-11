@@ -1,13 +1,13 @@
 # Acceptatieomgeving voor lokaal testen in Docker Desktop: de volledige cockpit (web, API,
-# worker), PostgreSQL, Keycloak, Gotenberg en de teststekker. Alleen testgegevens; niet voor
-# productie. Wachtwoorden en secrets staan in .env naast dit bestand (niet in git), gemaakt
+# worker), PostgreSQL, Keycloak, Gotenberg, de teststekker en de OpenZaak-stekker met een eigen
+# Open Zaak. Alleen testgegevens; niet voor productie. Wachtwoorden en secrets staan in .env naast dit bestand (niet in git), gemaakt
 # met init-geheimen.mjs (zie README.md in deze map).
 #
 #   node infrastructure/acceptatie/init-geheimen.mjs
 #   docker compose -f infrastructure/acceptatie/docker-compose.yml up -d --build
 #
-# Adressen: lokaal (standaard) web op http://localhost:8480, API op :8481 en Keycloak op
-# http://host.docker.internal:8482 (voor browser én containers gelijk, zodat de issuer in de
+# Adressen: lokaal (standaard) web op http://localhost:8480, API op :8481, Open Zaak-beheer op
+# http://localhost:8483/admin/ en Keycloak op http://host.docker.internal:8482 (voor browser én containers gelijk, zodat de issuer in de
 # tokens overal klopt; Docker Desktop zet die naam in het hosts-bestand van Windows).
 # Op een server: ACC_WEB_URL, ACC_API_URL en ACC_AUTH_URL in .env (https-domeinen) en
 # docker-compose.vm.yml erbij voor Traefik; zie README.md.
@@ -71,6 +71,7 @@ services:
       GEBRUIKERS_WACHTWOORD: ${ACC_GEBRUIKERS_WACHTWOORD:?maak eerst .env met init-geheimen.mjs}
       STEKKER_GEHEIM: ${ACC_STEKKER_GEHEIM:?maak eerst .env met init-geheimen.mjs}
       WEB_URL: ${ACC_WEB_URL:-http://localhost:8480}
+      OPENZAAK_STEKKER_GEHEIM: ${ACC_OPENZAAK_STEKKER_GEHEIM:?maak eerst .env met init-geheimen.mjs}
     volumes:
       - ./keycloak/keycloak-init.sh:/init/keycloak-init.sh:ro
     depends_on:
@@ -106,6 +107,156 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  # --- Open Zaak (1.30.0) met de OpenZaak-stekker -------------------------------------------
+  # Eigen database en Redis. Beheer op :8483 (gebruiker admin, ACC_OPENZAAK_ADMIN_WACHTWOORD).
+  # Binnen het Docker-netwerk heet Open Zaak openzaak.acceptatie.local: Open Zaak keurt URL's
+  # zonder punt in de hostnaam (zoals http://openzaak:8000) af als ongeldig. De URL's in Open
+  # Zaak volgen het adres waarmee ze worden opgevraagd.
+  openzaak-db:
+    image: postgis/postgis:15-3.4
+    environment:
+      POSTGRES_DB: openzaak
+      POSTGRES_USER: openzaak
+      POSTGRES_PASSWORD: ${ACC_OPENZAAK_DB_WACHTWOORD:?maak eerst .env met init-geheimen.mjs}
+    volumes:
+      - openzaak-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openzaak -d openzaak"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  openzaak-redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  openzaak:
+    image: openzaak/open-zaak:1.30.0
+    environment: &openzaak-env
+      DJANGO_SETTINGS_MODULE: openzaak.conf.docker
+      SECRET_KEY: ${ACC_OPENZAAK_SECRET_KEY:?maak eerst .env met init-geheimen.mjs}
+      DB_HOST: openzaak-db
+      DB_NAME: openzaak
+      DB_USER: openzaak
+      DB_PASSWORD: ${ACC_OPENZAAK_DB_WACHTWOORD:?maak eerst .env met init-geheimen.mjs}
+      ALLOWED_HOSTS: "*"
+      CACHE_DEFAULT: openzaak-redis:6379/0
+      CACHE_AXES: openzaak-redis:6379/0
+      CELERY_BROKER_URL: redis://openzaak-redis:6379/1
+      CELERY_RESULT_BACKEND: redis://openzaak-redis:6379/1
+      NOTIFICATIONS_DISABLED: "true"
+      DISABLE_2FA: "true"
+      IS_HTTPS: ${ACC_OPENZAAK_HTTPS:-false}
+      # Geen OpenTelemetry-collector in deze opzet; anders blijft het exporteren hangen.
+      OTEL_SDK_DISABLED: "True"
+      OPENZAAK_SUPERUSER_USERNAME: admin
+      OPENZAAK_SUPERUSER_EMAIL: admin@example.test
+      DJANGO_SUPERUSER_PASSWORD: ${ACC_OPENZAAK_ADMIN_WACHTWOORD:?maak eerst .env met init-geheimen.mjs}
+      UWSGI_PROCESSES: "2"
+      UWSGI_THREADS: "4"
+    ports:
+      - "8483:8000"
+    networks:
+      default:
+        aliases:
+          - openzaak.acceptatie.local
+    depends_on:
+      openzaak-db:
+        condition: service_healthy
+      openzaak-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/zaken/api/v1/', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      start_period: 60s
+      retries: 30
+    restart: unless-stopped
+
+  # Bij elke start: inloggegevens van het seed-account en de stekker, en de applicatie van het
+  # seed-account (alle rechten). setup_configuration is idempotent.
+  openzaak-init:
+    image: openzaak/open-zaak:1.30.0
+    environment:
+      <<: *openzaak-env
+      SEED_SECRET: ${ACC_OPENZAAK_SEED_SECRET:?maak eerst .env met init-geheimen.mjs}
+      STEKKER_SECRET: ${ACC_OPENZAAK_STEKKER_SECRET:?maak eerst .env met init-geheimen.mjs}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        cat > /tmp/setup.yaml <<EOF
+        vng_api_common_credentials_config_enable: true
+        vng_api_common_credentials:
+          items:
+            - identifier: vernietigingscockpit-seed
+              secret: $${SEED_SECRET}
+            - identifier: vernietigingscockpit-stekker
+              secret: $${STEKKER_SECRET}
+        vng_api_common_applicaties_config_enable: true
+        vng_api_common_applicaties:
+          items:
+            - uuid: 7a2d1c8e-0f3b-4c5d-9e6f-a1b2c3d4e5f6
+              client_ids:
+                - vernietigingscockpit-seed
+              label: Vernietigingscockpit seed (testgegevens)
+              heeft_alle_autorisaties: true
+        EOF
+        cd /app && src/manage.py setup_configuration --yaml-file /tmp/setup.yaml
+    depends_on:
+      openzaak:
+        condition: service_healthy
+
+  # Bij elke start (idempotent): catalogus, zaaktype en voorbeeldzaken in Open Zaak, en de
+  # applicatie van de stekker met alleen lees- en verwijderrechten. Het script komt uit de
+  # stekkerrepo (scripts/seed-openzaak.mjs) en heeft internet nodig (Selectielijst API).
+  openzaak-seed:
+    build:
+      context: ${STEKKER_OPENZAAK_REPO:-../../../Vernietigingscockpit-stekker-openzaak}
+    image: vernietigingscockpit-stekker-openzaak:acceptatie
+    command: ["node", "scripts/seed-openzaak.mjs", "--aantal", "20"]
+    environment:
+      OPENZAAK_URL: http://openzaak.acceptatie.local:8000
+      OPENZAAK_SEED_CLIENT_ID: vernietigingscockpit-seed
+      OPENZAAK_SEED_SECRET: ${ACC_OPENZAAK_SEED_SECRET:?maak eerst .env met init-geheimen.mjs}
+      OPENZAAK_CLIENT_ID: vernietigingscockpit-stekker
+    depends_on:
+      openzaak-init:
+        condition: service_completed_successfully
+
+  # De OpenZaak-stekker, gebouwd uit de checkout naast deze repo (of STEKKER_OPENZAAK_REPO).
+  stekker-openzaak:
+    image: vernietigingscockpit-stekker-openzaak:acceptatie
+    pull_policy: never
+    environment:
+      AUTH_ENABLED: "true"
+      AUTH_ISSUER: *issuer
+      AUTH_JWKS_URL: ${ACC_AUTH_URL:-http://host.docker.internal:8482}/realms/vernietigingscockpit/protocol/openid-connect/certs
+      AUTH_AUDIENCE: openzaak-stekker
+      OPENZAAK_ZAKEN_URL: http://openzaak.acceptatie.local:8000/zaken/api/v1/
+      OPENZAAK_DOCUMENTEN_URL: http://openzaak.acceptatie.local:8000/documenten/api/v1/
+      OPENZAAK_BESLUITEN_URL: http://openzaak.acceptatie.local:8000/besluiten/api/v1/
+      OPENZAAK_CATALOGI_URL: http://openzaak.acceptatie.local:8000/catalogi/api/v1/
+      OPENZAAK_CLIENT_ID: vernietigingscockpit-stekker
+      OPENZAAK_SECRET: ${ACC_OPENZAAK_STEKKER_SECRET:?maak eerst .env met init-geheimen.mjs}
+      STEKKER_NAAM: OpenZaak-stekker (acceptatie)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - stekker-openzaak-data:/app/runtime
+    depends_on:
+      keycloak-init:
+        condition: service_completed_successfully
+      openzaak-seed:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   migrate:
     build:
       context: ../..
@@ -135,6 +286,11 @@ services:
       SEED_STEKKER_TOKEN_URL: ${ACC_AUTH_URL:-http://host.docker.internal:8482}/realms/vernietigingscockpit/protocol/openid-connect/token
       SEED_STEKKER_CLIENT_ID: cockpit-stekker
       SEED_STEKKER_SECRET_REF: KC_STEKKER_CLIENT_SECRET
+      # Tweede stekker + taakdefinitie 'Zaken OpenZaak' (alleen als de base-URL is gezet).
+      SEED_OPENZAAK_STEKKER_BASE_URL: http://stekker-openzaak:3000
+      SEED_OPENZAAK_STEKKER_TOKEN_URL: ${ACC_AUTH_URL:-http://host.docker.internal:8482}/realms/vernietigingscockpit/protocol/openid-connect/token
+      SEED_OPENZAAK_STEKKER_CLIENT_ID: cockpit-stekker-openzaak
+      SEED_OPENZAAK_STEKKER_SECRET_REF: KC_OPENZAAK_STEKKER_CLIENT_SECRET
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -187,6 +343,8 @@ services:
       WORKER_POLL_MAX_MS: "10000"
       # Zelfde waarde als het client-secret dat keycloak-init op cockpit-stekker zet.
       KC_STEKKER_CLIENT_SECRET: ${ACC_STEKKER_GEHEIM:?maak eerst .env met init-geheimen.mjs}
+      # Idem voor cockpit-stekker-openzaak (de OpenZaak-stekker).
+      KC_OPENZAAK_STEKKER_CLIENT_SECRET: ${ACC_OPENZAAK_STEKKER_GEHEIM:?maak eerst .env met init-geheimen.mjs}
       SECRET_ENCRYPTION_KEY: ${ACC_SECRET_SLEUTEL:?maak eerst .env met init-geheimen.mjs}
       GOTENBERG_URL: http://gotenberg:3000
       ARCHIEF_PAD: /archief
@@ -204,6 +362,8 @@ services:
       gotenberg:
         condition: service_healthy
       stekker:
+        condition: service_healthy
+      stekker-openzaak:
         condition: service_healthy
     restart: unless-stopped
 
@@ -235,3 +395,5 @@ volumes:
   keycloak:
   archief:
   stekker-data:
+  openzaak-db:
+  stekker-openzaak-data:

@@ -28,6 +28,8 @@ export type VernietigingsKandidaat = {
   dekkingInTijdBegindatum?: string;
   dekkingInTijdEinddatum?: string;
   selectielijst?: string;
+  // Titel van de selectielijst (ADR-0008), voor tooltip en detailpaneel.
+  selectielijstNaam?: string;
   informatiecategorie?: string;
   stekker?: string;
 };

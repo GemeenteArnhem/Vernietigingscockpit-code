@@ -15,7 +15,8 @@ import { stekkerKandidaat } from "./helpers/kandidaat.js";
 import { maakTaakServices, type TaakServices } from "./helpers/taken.js";
 
 // ADR-0005 stap 2: automatische uitsluiting bij waardering B/N (B-M1), uitsluitredenen uit de
-// begrippenlijst, en de archiefvormer op het profiel van de proceseigenaar (B-M3).
+// begrippenlijst, en de archiefvormer op het profiel van de proceseigenaar (B-M3). ADR-0008: de
+// selectielijstcode bij import.
 
 let db: TestDatabase;
 let basis: Awaited<ReturnType<typeof maakBasisdata>>;
@@ -190,5 +191,54 @@ describe("archiefvormer op het profiel van de proceseigenaar (B-M3)", () => {
         medewerkers: [{ naam: "Peter Proceseigenaar", email: "po1@example.test", rollen: ["proceseigenaar"], archiefvormer: null }],
       })
     ).rejects.toThrow(/archiefvormer kan niet worden gewist/);
+  });
+});
+
+describe("selectielijstcode bij import (ADR-0008, DR-SL-06)", () => {
+  const metCode = (id: string, identificatieKenmerk: string): StekkerKandidaat => {
+    const kandidaat = stekkerKandidaat(id, `bron-${id}`, `Zaak ${id}`);
+    return {
+      ...kandidaat,
+      informatiecategorie: {
+        ...kandidaat.informatiecategorie,
+        begripBegrippenlijst: {
+          verwijzingNaam: "Selectielijst",
+          verwijzingIdentificatie: { identificatieKenmerk, identificatieBron: "Cockpit-selectielijsten" },
+        },
+      },
+    };
+  };
+
+  it("neemt een onbekende code op met een waarschuwing in het Import-event", async () => {
+    const taak = await importeer([metCode("sl-1", "GEM-2020"), metCode("sl-2", "GEM-2099"), metCode("sl-3", "GEM-2099")]);
+
+    expect(await kandidaatMet(taak.id, "sl-1")).toMatchObject({ selectielijstCode: "GEM-2020", selectielijstBekend: true });
+    expect(await kandidaatMet(taak.id, "sl-2")).toMatchObject({ selectielijstCode: "GEM-2099", selectielijstBekend: false });
+    const importEvent = await db.prisma.client.auditEvent.findFirstOrThrow({ where: { taakinstantieId: taak.id, eventType: "Import" } });
+    expect(importEvent.details).toMatchObject({ onbekendeSelectielijstcodes: [{ code: "GEM-2099", aantal: 2 }] });
+
+    const pagina = await taken.beoordeling.getKandidaten(rm, taak.id);
+    expect(pagina.facetten.selectielijst).toEqual(["GEM-2020", "GEM-2099"]);
+    expect(pagina.kandidaten.find((k) => k.vernietigingskandidaatId === "sl-2")?.selectielijst).toEqual({
+      code: "GEM-2099",
+      naam: "Onbekende selectielijstcode (niet in Cockpit-selectielijsten)",
+      bekend: false,
+    });
+  });
+
+  it("zonder onbekende codes staat er geen waarschuwing in het Import-event", async () => {
+    const taak = await importeer([metCode("sl-4", "GEM-2017")]);
+
+    const importEvent = await db.prisma.client.auditEvent.findFirstOrThrow({ where: { taakinstantieId: taak.id, eventType: "Import" } });
+    expect(importEvent.details).not.toHaveProperty("onbekendeSelectielijstcodes");
+  });
+
+  it("een ongeldige code is een contractfout: de selectie mislukt", async () => {
+    const taak = await importeer([metCode("sl-5", "selectielijst-2020")]);
+
+    const selectie = await db.prisma.client.selectie.findFirstOrThrow({ where: { taakinstantieId: taak.id } });
+    expect(selectie).toMatchObject({ status: "FAILED" });
+    expect(selectie.fout).toMatch(/selectielijstcode/);
+    expect(await db.prisma.client.vernietigingskandidaat.count({ where: { selectieId: selectie.id } })).toBe(0);
   });
 });

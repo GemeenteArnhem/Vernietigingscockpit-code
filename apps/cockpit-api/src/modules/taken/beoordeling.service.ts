@@ -119,7 +119,7 @@ export class BeoordelingService {
       select: {
         id: true,
         classificatieBegripCode: true,
-        selectielijst: true,
+        selectielijstCode: true,
         informatiecategorieBegripLabel: true,
         termijnLooptijd: true,
         dekkingInTijdBegindatum: true,

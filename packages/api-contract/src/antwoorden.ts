@@ -239,6 +239,10 @@ export type ApiBewaartermijn = {
   termijnEinddatum: string;
 };
 
+// De selectielijst van de informatiecategorie (ADR-0008): de selectielijstcode, met de titel uit
+// het register Cockpit-selectielijsten, of een vaste melding als de code daar niet in staat.
+export type ApiSelectielijst = { code: string; naam: string; bekend: boolean };
+
 // Het MDTO-profiel van een kandidaat (Stekker API v2), zoals de cockpit het teruggeeft.
 export type ApiMdtoKandidaat = {
   vernietigingskandidaatId: string;
@@ -251,6 +255,8 @@ export type ApiMdtoKandidaat = {
   waardering: ApiBegrip;
   bewaartermijn: ApiBewaartermijn;
   informatiecategorie: ApiBegrip;
+  // Cockpituitbreiding: de selectielijst uit `informatiecategorie.begripBegrippenlijst`.
+  selectielijst: ApiSelectielijst;
   informatiecategorieAfwijking: { toelichting: string; norm?: ApiVerwijzing } | null;
   gerelateerdInformatieobject: unknown[] | null;
   archiefvormer: ApiVerwijzing[] | null;
@@ -277,6 +283,7 @@ export type ApiKandidatenPagina = {
   // Deze pagina, plus tellingen en filterkeuzes over de hele lijst.
   pagina: { offset: number; limit: number; totaal: number };
   tellingen: { totaal: number; opgenomen: number; akkoord: number; uitgesloten: number; retour: number };
+  // `selectielijst`: de selectielijstcodes (ADR-0008); het filter `selectielijst` werkt op de code.
   facetten: { status: string[]; selectielijst: string[]; termijnLooptijd: string[]; stekker: string[] };
   kandidaten: ApiKandidaat[];
 };
@@ -290,7 +297,7 @@ export type ApiSelectieSamenvatting = {
   aantalObjecten: number;
   aantalBetrokkenen: number;
   classificatie: ApiGedeeld<string>;
-  selectielijst: ApiGedeeld<string>;
+  selectielijst: ApiGedeeld<ApiSelectielijst>;
   informatiecategorie: ApiGedeeld<string>;
   termijnLooptijd: ApiGedeeld<string>;
   stekker: ApiGedeeld<string>;

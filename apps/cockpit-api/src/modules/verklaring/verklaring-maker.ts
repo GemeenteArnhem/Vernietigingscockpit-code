@@ -133,6 +133,8 @@ export class VerklaringMaker {
         informatiecategorieBegripCode: kandidaat.informatiecategorieBegripCode,
         informatiecategorieBegripLabel: kandidaat.informatiecategorieBegripLabel,
         informatiecategorieBegrippenlijst: kandidaat.selectielijst,
+        // Selectielijstcode uit Cockpit-selectielijsten (ADR-0008, DR-SL-06 punt 5).
+        selectielijstCode: kandidaat.selectielijstCode,
         archiefvormer: archiefvormer.map((item) => item.verwijzingNaam).join(" | "),
         aantalObjecten: kandidaat.aantalObjecten,
         aantalBetrokkenen: kandidaat.aantalBetrokkenen,
@@ -409,6 +411,7 @@ export function maakCsv(rijen: Rij[]) {
     "informatiecategorieBegripCode",
     "informatiecategorieBegripLabel",
     "informatiecategorieBegrippenlijst",
+    "selectielijstCode",
     "archiefvormer",
     "aantalObjecten",
     "aantalBetrokkenen",

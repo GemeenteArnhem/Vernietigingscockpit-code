@@ -172,7 +172,8 @@ export const kandidatenQuerySchema = z.object({
     .optional()
     .transform((waarde) => (waarde ? waarde.split(",").filter(Boolean) : undefined))
     .pipe(z.array(id()).max(200).optional()),
-  selectielijst: z.string().max(200).optional(),
+  // Selectielijstcode (ADR-0008), bijvoorbeeld GEM-2020.
+  selectielijst: z.string().max(20).optional(),
   stekker: z.string().max(200).optional(),
   termijnLooptijd: z.string().max(100).optional(),
   sort: z

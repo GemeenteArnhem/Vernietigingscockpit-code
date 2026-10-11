@@ -31,6 +31,7 @@ import { AANTAL_OBJECTEN_UITLEG } from "../bulkDetails";
 import TaskExecutionHeader from "../../components/TaskExecutionHeader";
 import type { VernietigingsKandidaat } from "../../../../shared/types/destruction";
 import { getReviewQueueStatusStyle } from "../../../../shared/ui/reviewStatusStyles";
+import { SELECTIELIJST_UITLEG } from "../../../../shared/selectielijst";
 import type {
   ReviewQueueStatus,
   ReviewRecordContext,
@@ -50,6 +51,8 @@ type ReviewRecordTableRow = {
   volgnummer: number;
   classificatie: string;
   selectielijst: string;
+  // Titel van de selectielijst (ADR-0008), als tooltip op de code.
+  selectielijstNaam: string;
   informatiecategorie: string;
   termijnLooptijd: string;
   termijnEinddatum: string;
@@ -241,7 +244,7 @@ const COLUMN_TOOLTIPS: Record<TableColumnKey, string> = {
   status: "Status van beoordeling: Akkoord, Retour, Uitgesloten, Uitgesteld",
   volgnummer: "Een nummer binnen de taak die voor vernietiging in aanmerking komen",
   classificatie: "De VNG code of BAC van de te vernietigen informatieobjecten binnen de taak. Voor selectielijst vanaf 2017, Zaaktype gebruiken.",
-  selectielijst: "Selectielijst die van toepassing is, betreft jaartal van de selectielijst.",
+  selectielijst: SELECTIELIJST_UITLEG,
   informatiecategorie: "De categorie/grondslag uit de vignerende selectielijst op basis waarvan de informatieobjecten vernietigd dienen te worden",
   termijnLooptijd: "De periode dat de informatieobjecten moeten worden bewaard conform de vigerende selectielijst",
   termijnEinddatum: "Jaar en maand waarin de bewaartermijn eindigt (MDTO termijnEinddatum). Format: jjjj-mm",
@@ -926,7 +929,7 @@ function ReviewChunkedTable({
                       ) : column === "classificatie" ? (
                         row.classificatie
                       ) : column === "selectielijst" ? (
-                        row.selectielijst
+                        <span title={row.selectielijstNaam || undefined}>{row.selectielijst}</span>
                       ) : column === "informatiecategorie" ? (
                         row.informatiecategorie
                       ) : column === "termijnLooptijd" ? (

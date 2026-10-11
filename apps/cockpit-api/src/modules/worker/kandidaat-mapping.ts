@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import type { StekkerKandidaat } from "../stekker/stekker-client.js";
+import { selectielijstUitVerwijzing } from "../selectielijsten/selectielijstcode.js";
 import { parseDate } from "./worker-hulp.js";
 
 // Een kandidaat uit Stekker API v2 (MDTO-profiel, ADR-0005) naar de kolommen van
@@ -17,6 +18,8 @@ export function mapKandidaatData(
   if (!termijnEinddatum) {
     throw new Error(`Kandidaat ${kandidaat.vernietigingskandidaatId} mist een geldige bewaartermijn.termijnEinddatum.`);
   }
+
+  const selectielijst = selectielijstUitVerwijzing(kandidaat.vernietigingskandidaatId, kandidaat.informatiecategorie.begripBegrippenlijst);
 
   return {
     selectieId,
@@ -43,6 +46,8 @@ export function mapKandidaatData(
     informatiecategorieBegripLabel: kandidaat.informatiecategorie.begripLabel,
     informatiecategorieBegrippenlijst: kandidaat.informatiecategorie.begripBegrippenlijst as Prisma.InputJsonValue,
     selectielijst: kandidaat.informatiecategorie.begripBegrippenlijst.verwijzingNaam,
+    selectielijstCode: selectielijst.code,
+    selectielijstBekend: selectielijst.bekend,
     informatiecategorieAfwijking: json(kandidaat.informatiecategorieAfwijking),
     isOnderdeelVan: json(kandidaat.isOnderdeelVan),
     gerelateerdInformatieobject: json(kandidaat.gerelateerdInformatieobject),

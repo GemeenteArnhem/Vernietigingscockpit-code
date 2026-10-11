@@ -55,7 +55,7 @@ beforeAll(async () => {
         kenmerk: `BRON-${i}`,
         naam: i % 100 === 0 ? `Bijzondere zaak ${i}` : `Zaak ${i}`,
         classificatieBegripCode: i % 2 === 0 ? "A.1" : "B.2",
-        selectielijst: i % 3 === 0 ? "2017" : "2020",
+        selectielijstCode: i % 3 === 0 ? "GEM-2017" : "GEM-2020",
         termijnLooptijd: i % 2 === 0 ? "P7Y" : "P10Y",
         termijnEinddatum: new Date(Date.UTC(2020, i % 12, 1)),
         aantalObjecten: i,
@@ -90,14 +90,14 @@ describe("kandidatenlijst op de server (CC-10)", () => {
     expect(pagina.tellingen).toMatchObject({ totaal: AANTAL, opgenomen: AANTAL });
     expect(pagina.facetten).toEqual({
       status: ["nog-te-beoordelen"],
-      selectielijst: ["2017", "2020"],
+      selectielijst: ["GEM-2017", "GEM-2020"],
       termijnLooptijd: ["P10Y", "P7Y"],
       stekker: ["Teststekker"],
     });
   });
 
   it("filtert, zoekt en sorteert op de server", async () => {
-    const opSelectielijst = await taken.beoordeling.getKandidaten(rm, taakId, query({ selectielijst: "2017", limit: "1" }));
+    const opSelectielijst = await taken.beoordeling.getKandidaten(rm, taakId, query({ selectielijst: "GEM-2017", limit: "1" }));
     expect(opSelectielijst.pagina.totaal).toBe(400);
 
     const opTermijn = await taken.beoordeling.getKandidaten(rm, taakId, query({ termijnLooptijd: "P10Y", limit: "1" }));
@@ -114,19 +114,26 @@ describe("kandidatenlijst op de server (CC-10)", () => {
     await expect(taken.beoordeling.getKandidaten(rm, taakId, query({ sort: "aggregatieniveau", limit: "1" }))).resolves.toBeTruthy();
     expect(grootste.kandidaten[0].aantalObjecten).toBe(AANTAL - 1);
 
-    const ids = await taken.beoordeling.getKandidaatIds(rm, taakId, query({ selectielijst: "2017" }));
+    const ids = await taken.beoordeling.getKandidaatIds(rm, taakId, query({ selectielijst: "GEM-2017" }));
     expect(ids.ids).toHaveLength(400);
   });
 
   it("vat een selectie samen voor het detailpaneel", async () => {
     // Selectielijst 2017 (elke derde kandidaat): gedeelde selectielijst, gemengde codes.
-    const { ids } = await taken.beoordeling.getKandidaatIds(rm, taakId, query({ selectielijst: "2017" }));
+    const { ids } = await taken.beoordeling.getKandidaatIds(rm, taakId, query({ selectielijst: "GEM-2017" }));
 
     const samenvatting = await taken.beoordeling.getKandidatenSamenvatting(rm, taakId, ids);
 
     expect(samenvatting).toMatchObject({
       aantal: 400,
-      selectielijst: { waarde: "2017", verschillend: false },
+      selectielijst: {
+        waarde: {
+          code: "GEM-2017",
+          naam: "Selectielijst voor de archiefbescheiden van gemeentelijke en intergemeentelijke organen opgemaakt of ontvangen over de periode vanaf 1 januari 2017",
+          bekend: true,
+        },
+        verschillend: false,
+      },
       stekker: { waarde: "Teststekker", verschillend: false },
       classificatie: { waarde: null, verschillend: true },
       aggregatieniveau: { waarde: "Dossier", verschillend: false },

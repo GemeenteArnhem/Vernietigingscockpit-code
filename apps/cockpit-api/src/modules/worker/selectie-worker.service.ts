@@ -30,6 +30,7 @@ import {
   type StekkerVerbinding,
 } from "../stekker/stekker-client.js";
 import { mapKandidaatData } from "./kandidaat-mapping.js";
+import { onbekendeSelectielijstcodes } from "../selectielijsten/onbekende-codes.js";
 import { leesPollConfig, UitvoeringVerwerker } from "./uitvoering.js";
 import { VerklaringMaker } from "../verklaring/verklaring-maker.js";
 import { archiefAdapterVan, ArchiveringVerwerker } from "../archief/archivering.js";
@@ -501,11 +502,12 @@ export class SelectieWorkerService implements OnModuleInit, OnModuleDestroy {
           });
 
           if (remaining === 0) {
+            const onbekend = await onbekendeSelectielijstcodes(tx, selectie.taakinstantie.id);
             await this.workflow.transition(tx, {
               taakinstantieId: selectie.taakinstantie.id,
               actie: "selectie.voltooid",
               actor: SYSTEEM,
-              details: { laatsteSelectieId: selectie.id },
+              details: { laatsteSelectieId: selectie.id, ...(onbekend.length > 0 ? { onbekendeSelectielijstcodes: onbekend } : {}) },
               extraData: { gestartOp: new Date() },
             });
           }

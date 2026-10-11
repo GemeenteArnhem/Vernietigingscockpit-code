@@ -1,6 +1,7 @@
 import type { SelectieSamenvatting } from "../../../api/f3Data";
 import type { VernietigingsKandidaat } from "../../../shared/types/destruction";
 import type { ReviewDecision, ReviewQueueStatus } from "../../../shared/types/review";
+import { SELECTIELIJST_UITLEG, selectielijstDetail, selectielijstTitel } from "../../../shared/selectielijst";
 
 // Detailpaneel bij een bulkselectie, gedeeld door beoordeling en accordering (CC-10).
 // De selectie kan over meerdere pagina's gaan; dan komen de waarden uit de samenvatting
@@ -51,6 +52,7 @@ export function maakBulkDetails(
   const lokaal = {
     classificatie: getSharedValue(items.map((item) => item.row.classificatie ?? "-"), "Meerdere codes"),
     selectielijst: getSharedValue(items.map((item) => item.row.selectielijst ?? "-"), "Meerdere selectielijsten"),
+    selectielijstNaam: getSharedValue(items.map((item) => item.row.selectielijstNaam ?? "-"), "Meerdere selectielijsten"),
     informatiecategorie: getSharedValue(items.map((item) => item.row.informatiecategorie ?? "-"), "Meerdere grondslagen"),
     termijnLooptijd: getSharedValue(items.map((item) => item.row.termijnLooptijd), "Meerdere termijnen"),
     termijnEinddatum:
@@ -81,7 +83,12 @@ export function maakBulkDetails(
     { label: "Aggregatieniveau", labelTitle: AGGREGATIENIVEAU_UITLEG, value: waarden.aggregatieniveau },
     { label: "Waardering", labelTitle: WAARDERING_UITLEG, value: waarden.waardering },
     { label: "Classificatie", labelTitle: "De VNG code of BAC van de te vernietigen informatieobjecten binnen de taak. Voor selectielijst vanaf 2017, Zaaktype gebruiken.", value: waarden.classificatie },
-    { label: "Selectielijst", labelTitle: "Selectielijst die van toepassing is, betreft jaartal van de selectielijst.", value: waarden.selectielijst },
+    {
+      label: "Selectielijst",
+      labelTitle: SELECTIELIJST_UITLEG,
+      value: selectielijstDetail(waarden.selectielijst, waarden.selectielijstNaam),
+      valueTitle: selectielijstTitel(waarden.selectielijstNaam),
+    },
     { label: "Informatiecategorie", labelTitle: "De categorie/grondslag uit de vignerende selectielijst op basis waarvan de informatieobjecten vernietigd dienen te worden", value: waarden.informatiecategorie },
     { label: "Bewaartermijn", labelTitle: "De periode dat de informatieobjecten moeten worden bewaard conform de vigerende selectielijst", value: waarden.termijnLooptijd },
     { label: "Einddatum bewaartermijn", labelTitle: "Jaar en maand waarin de bewaartermijn eindigt (MDTO termijnEinddatum). Format: jjjj-mm", value: waarden.termijnEinddatum },

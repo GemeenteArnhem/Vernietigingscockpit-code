@@ -21,6 +21,7 @@ const rij = (overrides: Partial<VerklaringGegevens["rijen"][number]> = {}): Verk
   informatiecategorieBegripCode: "1.1",
   informatiecategorieBegripLabel: "Categorie 1.1",
   informatiecategorieBegrippenlijst: "Selectielijst 2017",
+  selectielijstCode: "GEM-2017",
   archiefvormer: "Gemeente Voorbeeld",
   aantalObjecten: 3,
   aantalBetrokkenen: 1,

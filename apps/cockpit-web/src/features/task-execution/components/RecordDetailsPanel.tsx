@@ -15,6 +15,8 @@ type RecordDetailsItem = {
   badgeClassName?: string;
   stacked?: boolean;
   labelTitle?: string;
+  // Tooltip op de waarde, bijvoorbeeld de volledige titel van de selectielijst (ADR-0008).
+  valueTitle?: string;
 };
 
 type RecordDetailsTab = "details" | "opmerkingen";
@@ -143,6 +145,7 @@ export default function RecordDetailsPanel({
                       {item.label}
                     </dt>
                     <dd
+                      title={item.valueTitle}
                       className={
                         item.stacked
                           ? "mt-1 whitespace-pre-line text-[14px] font-semibold leading-5 text-slate-900"

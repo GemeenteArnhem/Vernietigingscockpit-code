@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { selectielijstWeergave } from "../selectielijsten/selectielijstcode.js";
 import { ACTIEVE_SELECTIE } from "./actieve-selectie.js";
 
 // Kandidatenlijst op de server (CC-10): pagineren, zoeken, filteren en sorteren gebeurt
@@ -68,7 +69,7 @@ export function kandidatenWhere(taakinstantieId: string, query: Omit<KandidatenQ
     voorwaarden.push({ id: { in: query.ids } });
   }
   if (query.selectielijst) {
-    voorwaarden.push({ selectielijst: query.selectielijst });
+    voorwaarden.push({ selectielijstCode: query.selectielijst });
   }
   if (query.termijnLooptijd) {
     voorwaarden.push({ termijnLooptijd: query.termijnLooptijd });
@@ -140,7 +141,7 @@ export function kandidatenOrderBy(sort: Sorteersleutel, richting: "asc" | "desc"
     case "classificatie":
       return op("classificatieBegripCode");
     case "selectielijst":
-      return op("selectielijst");
+      return op("selectielijstCode");
     case "informatiecategorie":
       return op("informatiecategorieBegripLabel");
     case "termijnLooptijd":
@@ -191,7 +192,7 @@ export async function facetten(tx: Prisma.TransactionClient, taakinstantieId: st
   const basis = { selectie: { taakinstantieId, ...ACTIEVE_SELECTIE } };
   const [beoordelingen, selectielijsten, looptijden, stekkers] = await Promise.all([
     tx.vernietigingskandidaat.groupBy({ by: ["beoordeling"], where: basis }),
-    tx.vernietigingskandidaat.groupBy({ by: ["selectielijst"], where: basis }),
+    tx.vernietigingskandidaat.groupBy({ by: ["selectielijstCode"], where: basis }),
     tx.vernietigingskandidaat.groupBy({ by: ["termijnLooptijd"], where: basis }),
     tx.selectie.findMany({
       where: { taakinstantieId, ...ACTIEVE_SELECTIE, kandidaten: { some: {} } },
@@ -202,7 +203,8 @@ export async function facetten(tx: Prisma.TransactionClient, taakinstantieId: st
 
   return {
     status: beoordelingen.map((groep) => naarStatus[groep.beoordeling]).filter(Boolean),
-    selectielijst: selectielijsten.map((groep) => groep.selectielijst).filter((waarde): waarde is string => Boolean(waarde)).sort(),
+    // Selectielijstcodes (ADR-0008).
+    selectielijst: selectielijsten.map((groep) => groep.selectielijstCode).sort(),
     termijnLooptijd: looptijden.map((groep) => groep.termijnLooptijd).filter((waarde): waarde is string => Boolean(waarde)).sort(),
     stekker: Array.from(new Set(stekkers.map((selectie) => selectie.stekkerConfiguratie.stekker.naam))).sort(),
   };
@@ -213,7 +215,7 @@ export async function facetten(tx: Prisma.TransactionClient, taakinstantieId: st
 export function samenvatting(
   rijen: Array<{
     classificatieBegripCode: string | null;
-    selectielijst: string | null;
+    selectielijstCode: string;
     informatiecategorieBegripLabel: string | null;
     termijnLooptijd: string | null;
     dekkingInTijdBegindatum: string | null;
@@ -240,7 +242,7 @@ export function samenvatting(
     aantalObjecten: rijen.reduce((som, rij) => som + rij.aantalObjecten, 0),
     aantalBetrokkenen: rijen.reduce((som, rij) => som + rij.aantalBetrokkenen, 0),
     classificatie: gedeeld(rijen.map((rij) => rij.classificatieBegripCode)),
-    selectielijst: gedeeld(rijen.map((rij) => rij.selectielijst)),
+    selectielijst: gedeeld(rijen.map((rij) => selectielijstWeergave(rij.selectielijstCode))),
     informatiecategorie: gedeeld(rijen.map((rij) => rij.informatiecategorieBegripLabel)),
     termijnLooptijd: gedeeld(rijen.map((rij) => rij.termijnLooptijd)),
     stekker: gedeeld(rijen.map((rij) => rij.stekker)),

@@ -13,7 +13,8 @@
 //   node infrastructure/acceptatie/init-geheimen.mjs --domein acc.voorbeeld.nl //     --traefik-netwerk <netwerk> --traefik-entrypoint <entrypoint> --traefik-certresolver <resolver>
 //
 // Dan komen ook de adressen in .env: https://acc.voorbeeld.nl (web), https://api.acc.voorbeeld.nl
-// (API) en https://auth.acc.voorbeeld.nl (Keycloak), plus de Traefik-waarden.
+// (API), https://auth.acc.voorbeeld.nl (Keycloak) en openzaak.acc.voorbeeld.nl (beheer Open Zaak),
+// plus de Traefik-waarden.
 //
 // Een bestaand .env wordt nooit overschreven; ontbrekende waarden (na een update) worden
 // toegevoegd. Nieuwe waarden nodig? Verwijder .env zelf en
@@ -50,6 +51,7 @@ if (opties.domein) {
     ACC_WEB_HOST: domein,
     ACC_API_HOST: `api.${domein}`,
     ACC_AUTH_HOST: `auth.${domein}`,
+    ACC_OPENZAAK_HOST: `openzaak.${domein}`,
     ACC_WEB_URL: `https://${domein}`,
     ACC_API_URL: `https://api.${domein}`,
     ACC_AUTH_URL: `https://auth.${domein}`,
@@ -74,6 +76,15 @@ const altijdWillekeurig = () => ({
   ACC_STEKKER_GEHEIM: willekeurig(32),
   // Sleutel voor stekker-secrets uit stekkerbeheer: 32 bytes, base64.
   ACC_SECRET_SLEUTEL: randomBytes(32).toString("base64"),
+  // Open Zaak en de OpenZaak-stekker.
+  ACC_OPENZAAK_DB_WACHTWOORD: willekeurig(),
+  ACC_OPENZAAK_SECRET_KEY: willekeurig(48),
+  ACC_OPENZAAK_ADMIN_WACHTWOORD: willekeurig(16),
+  // ZGW-secrets in Open Zaak: van het seed-account en van de stekker (stekker → Open Zaak).
+  ACC_OPENZAAK_SEED_SECRET: willekeurig(32),
+  ACC_OPENZAAK_STEKKER_SECRET: willekeurig(32),
+  // Client-secret van cockpit-stekker-openzaak in Keycloak (cockpit → OpenZaak-stekker).
+  ACC_OPENZAAK_STEKKER_GEHEIM: willekeurig(32),
 });
 
 if (existsSync(bestand)) {
@@ -84,6 +95,12 @@ if (existsSync(bestand)) {
       .filter(Boolean)
   );
   const ontbrekend = Object.entries(altijdWillekeurig()).filter(([sleutel]) => !aanwezig.has(sleutel));
+
+  // Een serveromgeving van vóór Open Zaak: het beheer-subdomein afleiden van het web-domein.
+  const webHost = /^ACC_WEB_HOST=(.+)$/m.exec(readFileSync(bestand, "utf8"))?.[1]?.trim();
+  if (webHost && !aanwezig.has("ACC_OPENZAAK_HOST")) {
+    ontbrekend.push(["ACC_OPENZAAK_HOST", `openzaak.${webHost}`]);
+  }
 
   if (ontbrekend.length === 0) {
     console.log(`${bestand} bestaat al en is compleet; er is niets gewijzigd.`);
@@ -133,5 +150,5 @@ writeFileSync(bestand, inhoud, { encoding: "utf8", flag: "wx", mode: 0o600 });
 console.log(`Aangemaakt: ${bestand}`);
 console.log("Daar staan het wachtwoord van de testgebruikers en van het Keycloak-beheeraccount.");
 if (opties.domein) {
-  console.log(`Maak DNS-records (A) naar deze server voor: ${server.ACC_WEB_HOST}, ${server.ACC_API_HOST} en ${server.ACC_AUTH_HOST}.`);
+  console.log(`Maak DNS-records (A) naar deze server voor: ${server.ACC_WEB_HOST}, ${server.ACC_API_HOST}, ${server.ACC_AUTH_HOST} en ${server.ACC_OPENZAAK_HOST}.`);
 }

@@ -285,7 +285,8 @@ export async function getReviewSelectionSummary(
   return {
     aantal: samenvatting.aantal,
     classificatie: gedeeld(samenvatting.classificatie, "Meerdere codes", (waarde) => waarde),
-    selectielijst: gedeeld(samenvatting.selectielijst, "Meerdere selectielijsten", (waarde) => waarde),
+    selectielijst: gedeeld(samenvatting.selectielijst, "Meerdere selectielijsten", (waarde) => waarde.code),
+    selectielijstNaam: gedeeld(samenvatting.selectielijst, "Meerdere selectielijsten", (waarde) => waarde.naam),
     informatiecategorie: gedeeld(samenvatting.informatiecategorie, "Meerdere informatiecategorieën", (waarde) => waarde),
     termijnLooptijd: gedeeld(samenvatting.termijnLooptijd, "Meerdere termijnen", (waarde) => formatTermijnLooptijd(waarde)),
     stekker: gedeeld(samenvatting.stekker, "Meerdere stekkers", (waarde) => waarde),
@@ -1039,7 +1040,10 @@ function mdtoWeergave(kandidaat: ApiMdtoKandidaat, taakArchiefvormer?: ApiVerwij
     classificatie: classificatie ? (classificatie.begripCode ?? classificatie.begripLabel) : undefined,
     dekkingInTijdBegindatum: formatMonthYear(dekking?.dekkingInTijdBegindatum),
     dekkingInTijdEinddatum: formatMonthYear(dekking?.dekkingInTijdEinddatum),
-    selectielijst: kandidaat.informatiecategorie.begripBegrippenlijst.verwijzingNaam,
+    // Selectielijstcode (ADR-0008); het filter van de API werkt op de code.
+    selectielijst: kandidaat.selectielijst.code,
+    // Titel uit het register Cockpit-selectielijsten, of de melding dat de code onbekend is.
+    selectielijstNaam: kandidaat.selectielijst.naam,
     informatiecategorie: kandidaat.informatiecategorie.begripLabel,
     aggregatieniveau: kandidaat.aggregatieniveau,
     waardering: kandidaat.waardering.begripLabel,

@@ -2,8 +2,11 @@
 # Draait bij elke start van de acceptatieomgeving, na Keycloak (idempotent):
 # - wachtwoorden van de testgebruikers zetten (GEBRUIKERS_WACHTWOORD uit .env);
 # - het client-secret van cockpit-stekker zetten (STEKKER_GEHEIM uit .env);
+# - de client cockpit-stekker-openzaak (audience openzaak-stekker) aanmaken als hij ontbreekt
+#   (bestaande omgevingen lezen de realm niet opnieuw in) en zijn secret zetten
+#   (OPENZAAK_STEKKER_GEHEIM uit .env);
 # - de terugkeer-URL's van cockpit-web op het adres van de web-app zetten (WEB_URL);
-# - de scopes van de Stekker-API aanmaken en als standaardscope aan cockpit-stekker koppelen.
+# - de scopes van de Stekker-API aanmaken en als standaardscope aan beide stekkerclients koppelen.
 # Geheimen staan dus nooit in de realm-import (die in git staat).
 # Alleen bash: het Keycloak-image heeft geen awk of sed.
 set -euo pipefail
@@ -13,6 +16,7 @@ REALM=vernietigingscockpit
 : "${GEBRUIKERS_WACHTWOORD:?ontbreekt}"
 : "${STEKKER_GEHEIM:?ontbreekt}"
 : "${WEB_URL:?ontbreekt}"
+: "${OPENZAAK_STEKKER_GEHEIM:?ontbreekt}"
 
 $KC config credentials --server http://keycloak:8080 --realm master --user "$KC_ADMIN" --password "$KC_ADMIN_PASSWORD"
 
@@ -30,6 +34,22 @@ CLIENT_ID=$($KC get clients -r "$REALM" -q clientId=cockpit-stekker --fields id 
 $KC update "clients/$CLIENT_ID" -r "$REALM" -s "secret=$STEKKER_GEHEIM"
 echo "Client-secret van cockpit-stekker gezet."
 
+# Eigen client voor de OpenZaak-stekker: een token voor de teststekker werkt daar niet, en andersom.
+OZ_CLIENT_ID=$($KC get clients -r "$REALM" -q clientId=cockpit-stekker-openzaak --fields id --format csv --noquotes)
+if [ -z "$OZ_CLIENT_ID" ]; then
+  OZ_CLIENT_ID=$($KC create clients -r "$REALM" -s clientId=cockpit-stekker-openzaak \
+    -s name="Cockpit naar OpenZaak-stekker (client credentials)" -s enabled=true -s publicClient=false \
+    -s protocol=openid-connect -s serviceAccountsEnabled=true -s standardFlowEnabled=false \
+    -s directAccessGrantsEnabled=false -i)
+  $KC create "clients/$OZ_CLIENT_ID/protocol-mappers/models" -r "$REALM" -s name="audience openzaak-stekker" \
+    -s protocol=openid-connect -s protocolMapper=oidc-audience-mapper \
+    -s 'config."included.custom.audience"=openzaak-stekker' -s 'config."access.token.claim"=true' \
+    -s 'config."id.token.claim"=false' -s 'config."introspection.token.claim"=true'
+  echo "Client cockpit-stekker-openzaak aangemaakt."
+fi
+$KC update "clients/$OZ_CLIENT_ID" -r "$REALM" -s "secret=$OPENZAAK_STEKKER_GEHEIM"
+echo "Client-secret van cockpit-stekker-openzaak gezet."
+
 for SCOPE in selectie.read selectie.write vernietiging.read vernietiging.write; do
   ID=""
   while IFS=, read -r SID SNAAM; do
@@ -41,5 +61,6 @@ for SCOPE in selectie.read selectie.write vernietiging.read vernietiging.write; 
     echo "Scope $SCOPE aangemaakt."
   fi
   $KC update "clients/$CLIENT_ID/default-client-scopes/$ID" -r "$REALM" || true
+  $KC update "clients/$OZ_CLIENT_ID/default-client-scopes/$ID" -r "$REALM" || true
 done
-echo "Stekkerscopes gekoppeld aan cockpit-stekker."
+echo "Stekkerscopes gekoppeld aan cockpit-stekker en cockpit-stekker-openzaak."

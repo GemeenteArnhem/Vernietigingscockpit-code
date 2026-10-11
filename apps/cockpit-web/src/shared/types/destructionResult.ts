@@ -31,6 +31,8 @@ export type DestructionResultRow = {
   dekkingInTijdBegindatum?: string;
   dekkingInTijdEinddatum?: string;
   selectielijst?: string;
+  // Titel van de selectielijst (ADR-0008), voor tooltip en detailpaneel.
+  selectielijstNaam?: string;
   informatiecategorie?: string;
   // MDTO (ADR-0005): aggregatieniveau, waardering, identificaties als "kenmerk (bron)" en
   // de archiefvormer (van de kandidaat, anders die van de taak).

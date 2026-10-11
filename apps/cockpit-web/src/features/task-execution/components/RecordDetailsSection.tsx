@@ -1,6 +1,7 @@
 import { ContentPanelSection } from "../../../components/ContentPanel";
 import type { VernietigingsKandidaat } from "../../../shared/types/destruction";
 import { AANTAL_OBJECTEN_UITLEG } from "../review/bulkDetails";
+import { selectielijstDetail } from "../../../shared/selectielijst";
 
 type Props = {
   record: VernietigingsKandidaat;
@@ -56,7 +57,9 @@ export default function RecordDetailsSection({
           <dl className="mt-3 grid gap-x-5 gap-y-3 sm:grid-cols-2">
             <div className="border-b border-slate-100 pb-2">
               <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Selectielijst</dt>
-              <dd className="mt-1 text-sm font-medium text-slate-900">{record.selectielijst ?? "-"}</dd>
+              <dd className="mt-1 whitespace-pre-line text-sm font-medium text-slate-900" title={record.selectielijstNaam}>
+                {selectielijstDetail(record.selectielijst, record.selectielijstNaam)}
+              </dd>
             </div>
             <div className="border-b border-slate-100 pb-2">
               <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Bewaartermijn</dt>

@@ -19,6 +19,8 @@ const prisma = createPrismaClient(databaseUrl);
 // zodat het auditlog met Creatie begint.
 const TEST_STEKKER_ID = "f6d4934b-4073-4763-8212-b460d662e6a9";
 const TEST_TAAKDEFINITIE_ID = "ccc80546-381c-4e21-afda-7d430c0e60aa";
+const OPENZAAK_STEKKER_ID = "3b1f0c52-9d7e-4a68-8f21-5c0e7a4d9b13";
+const OPENZAAK_TAAKDEFINITIE_ID = "8e5a2d71-4c3b-4f9a-a6d0-2b7c1e9f3a54";
 
 async function main() {
   const afdeling = await prisma.afdeling.upsert({
@@ -135,6 +137,74 @@ async function main() {
             peildatum: "2026-01-01",
             domein: "sociaal",
           },
+        },
+      },
+    },
+  });
+
+  // De OpenZaak-stekker (acceptatieomgeving): alleen als SEED_OPENZAAK_STEKKER_BASE_URL is gezet.
+  const openZaakBaseUrl = process.env.SEED_OPENZAAK_STEKKER_BASE_URL;
+
+  if (openZaakBaseUrl) {
+    await seedOpenZaakStekker(openZaakBaseUrl, { rm, po, arch });
+  }
+}
+
+async function seedOpenZaakStekker(
+  baseUrl: string,
+  { rm, po, arch }: { rm: { id: string }; po: { id: string }; arch: { id: string } },
+) {
+  const stekker = await prisma.stekker.upsert({
+    where: { id: OPENZAAK_STEKKER_ID },
+    update: {},
+    create: {
+      id: OPENZAAK_STEKKER_ID,
+      naam: "OpenZaak-stekker",
+      omschrijving: "Zaken, documenten en besluiten in Open Zaak",
+    },
+  });
+
+  const verbinding = {
+    baseUrl,
+    authType: "oauth2_cc",
+    tokenUrl: process.env.SEED_OPENZAAK_STEKKER_TOKEN_URL ?? null,
+    clientId: process.env.SEED_OPENZAAK_STEKKER_CLIENT_ID ?? "cockpit-stekker-openzaak",
+    secretRef: process.env.SEED_OPENZAAK_STEKKER_SECRET_REF ?? "KC_OPENZAAK_STEKKER_CLIENT_SECRET",
+  };
+
+  await prisma.stekkerConfiguratie.upsert({
+    where: { stekkerId_versie: { stekkerId: stekker.id, versie: 1 } },
+    update: verbinding,
+    create: {
+      stekkerId: stekker.id,
+      versie: 1,
+      ...verbinding,
+      scopes: ["selectie.read", "selectie.write", "vernietiging.read", "vernietiging.write"],
+      parameters: {},
+      verwachteApiMajor: 2,
+      // Een selectie haalt per zaak documenten en besluiten op; ruimere time-out dan de teststekker.
+      timeouts: { connectMs: 5000, requestMs: 60000 },
+      aangemaaktDoor: "seed",
+    },
+  });
+
+  await prisma.taakdefinitie.upsert({
+    where: { id: OPENZAAK_TAAKDEFINITIE_ID },
+    update: {},
+    create: {
+      id: OPENZAAK_TAAKDEFINITIE_ID,
+      naam: "Zaken OpenZaak",
+      omschrijving: "Vernietiging van zaken in Open Zaak (Wmo-voorzieningen)",
+      categorie: "Sociaal domein",
+      frequentie: "jaarlijks",
+      startmaand: 1,
+      recordmanagerId: rm.id,
+      proceseigenaarId: po.id,
+      archivarisId: arch.id,
+      stekkers: {
+        create: {
+          stekkerId: stekker.id,
+          selectieparameters: {},
         },
       },
     },

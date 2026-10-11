@@ -16,6 +16,14 @@ npm run generate --workspace @vernietigingscockpit/stekker-client
 
 `npm run check:generated --workspace @vernietigingscockpit/stekker-client` controleert of de types nog bij de spec passen (ook in CI).
 
+Het register Cockpit-selectielijsten (ADR-0008) wordt op dezelfde manier gegenereerd, uit `designrules/begrippenlijsten/cockpit-selectielijsten.json` in de architectuurrepo (of `SELECTIELIJSTEN_REGISTER`):
+
+```bash
+npm run generate:selectielijsten --workspace @vernietigingscockpit/cockpit-api
+```
+
+`npm run check:selectielijsten --workspace @vernietigingscockpit/cockpit-api` controleert of `src/modules/selectielijsten/register.ts` nog bij het register past (ook in CI).
+
 ## Docker compose
 
 De root `compose.yaml` bouwt twee containers:

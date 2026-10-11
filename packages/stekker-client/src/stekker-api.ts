@@ -248,6 +248,35 @@ export interface components {
             termijnEinddatum: string;
         };
         /**
+         * @description MDTO informatiecategorie: de categorie uit de vastgestelde selectielijst.
+         *     `begripCode` = codering van de categorie in de selectielijst, `begripLabel` = titel van de
+         *     categorie, `begripBegrippenlijst` = de selectielijst zelf (ADR-0008, DR-SL-05).
+         *     Een afwijkende norm (hotspotlijst, specifieke wetgeving) gaat via `informatiecategorieAfwijking`.
+         */
+        Informatiecategorie: {
+            begripLabel: string;
+            begripCode?: string;
+            begripBegrippenlijst: components["schemas"]["Selectielijstverwijzing"];
+        };
+        /**
+         * @description MDTO verwijzingGegevens naar een vastgestelde selectielijst (ADR-0008).
+         *     `verwijzingNaam` = titel van de selectielijst (informatief).
+         *     `verwijzingIdentificatie.identificatieKenmerk` = de selectielijstcode uit de begrippenlijst
+         *     Cockpit-selectielijsten (`designrules/begrippenlijsten/cockpit-selectielijsten.md`),
+         *     bijvoorbeeld `GEM-2020`; `identificatieBron` = `Cockpit-selectielijsten`.
+         *     Een code die aan het patroon voldoet maar niet in het register staat, levert in de
+         *     cockpit een waarschuwing op; de kandidaat blijft (DR-SL-06).
+         */
+        Selectielijstverwijzing: {
+            verwijzingNaam: string;
+            verwijzingIdentificatie: {
+                /** @description Selectielijstcode `CODE-YYYY` of `CODE-YYYY.VV` (DR-SL-01). */
+                identificatieKenmerk: string;
+                /** @enum {string} */
+                identificatieBron: "Cockpit-selectielijsten";
+            };
+        };
+        /**
          * @description Cockpituitbreiding (geen MDTO-attribuut). Toelichting als de toegepaste informatiecategorie
          *     of bewaartermijn afwijkt van de standaardselectielijst (bijv. hotspot, specifieke wetgeving).
          */
@@ -381,8 +410,8 @@ export interface components {
          *         "begripBegrippenlijst": {
          *           "verwijzingNaam": "Selectielijst gemeenten en intergemeentelijke organen 2020",
          *           "verwijzingIdentificatie": {
-         *             "identificatieKenmerk": "selectielijst-gemeenten-2020",
-         *             "identificatieBron": "Nationaal Archief"
+         *             "identificatieKenmerk": "GEM-2020",
+         *             "identificatieBron": "Cockpit-selectielijsten"
          *           }
          *         }
          *       },
@@ -409,13 +438,7 @@ export interface components {
             dekkingInTijd?: components["schemas"]["dekkingInTijdGegevens"][];
             waardering: components["schemas"]["Waardering"];
             bewaartermijn: components["schemas"]["Bewaartermijn"];
-            /**
-             * @description MDTO informatiecategorie: de categorie uit de vastgestelde selectielijst (of hotspotlijst).
-             *     `begripCode` = codering in de selectielijst, `begripLabel` = titel,
-             *     `begripBegrippenlijst` = de selectielijst, met `verwijzingIdentificatie` voor
-             *     identificatie en versie (bij ZGW: de URL van de selectielijstklasse).
-             */
-            informatiecategorie: components["schemas"]["begripGegevens"];
+            informatiecategorie: components["schemas"]["Informatiecategorie"];
             informatiecategorieAfwijking?: components["schemas"]["InformatiecategorieAfwijking"];
             isOnderdeelVan?: components["schemas"]["verwijzingGegevens"][];
             gerelateerdInformatieobject?: components["schemas"]["gerelateerdInformatieobjectGegevens"][];

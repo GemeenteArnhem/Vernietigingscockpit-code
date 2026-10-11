@@ -27,7 +27,14 @@ const kandidaat: StekkerKandidaat = {
     termijnLooptijd: "P5Y",
     termijnEinddatum: "2025-12-15",
   },
-  informatiecategorie: { begripLabel: "Handhaving", begripCode: "11.1.2", begripBegrippenlijst: lijst("Selectielijst gemeenten 2020") },
+  informatiecategorie: {
+    begripLabel: "Handhaving",
+    begripCode: "11.1.2",
+    begripBegrippenlijst: {
+      verwijzingNaam: "Selectielijst gemeenten 2020",
+      verwijzingIdentificatie: { identificatieKenmerk: "GEM-2020", identificatieBron: "Cockpit-selectielijsten" },
+    },
+  },
   aantalObjecten: 4,
   toelichting: "Uit de bron",
 };
@@ -54,6 +61,8 @@ describe("mapKandidaatData (Stekker API v2 → MDTO-kolommen)", () => {
       informatiecategorieBegripCode: "11.1.2",
       informatiecategorieBegripLabel: "Handhaving",
       selectielijst: "Selectielijst gemeenten 2020",
+      selectielijstCode: "GEM-2020",
+      selectielijstBekend: true,
       aantalObjecten: 4,
       aantalBetrokkenen: 0,
       stekkerToelichting: "Uit de bron",
@@ -72,4 +81,30 @@ describe("mapKandidaatData (Stekker API v2 → MDTO-kolommen)", () => {
     expect(data.classificatieBegripCode).toBeNull();
     expect(data.dekkingInTijdBegindatum).toBeNull();
   });
+
+  // Selectielijstcode (ADR-0008, DR-SL-06): onbekend in het register = waarschuwing (vlag), geen
+  // of een ongeldige code = contractfout.
+  it("markeert een geldige code die niet in het register staat als onbekend", () => {
+    const data = mapKandidaatData("sel-1", metSelectielijst({ identificatieKenmerk: "GEM-2099", identificatieBron: "Cockpit-selectielijsten" }));
+
+    expect(data).toMatchObject({ selectielijstCode: "GEM-2099", selectielijstBekend: false });
+  });
+
+  it.each([
+    ["ontbrekend", undefined],
+    ["ongeldig formaat", { identificatieKenmerk: "selectielijst-2020", identificatieBron: "Cockpit-selectielijsten" }],
+    ["andere bron", { identificatieKenmerk: "GEM-2020", identificatieBron: "Nationaal Archief" }],
+  ])("weigert een kandidaat met een %s selectielijstcode", (_, identificatie) => {
+    expect(() => mapKandidaatData("sel-1", metSelectielijst(identificatie))).toThrow(/selectielijstcode/);
+  });
 });
+
+function metSelectielijst(verwijzingIdentificatie?: { identificatieKenmerk: string; identificatieBron: string }) {
+  return {
+    ...kandidaat,
+    informatiecategorie: {
+      ...kandidaat.informatiecategorie,
+      begripBegrippenlijst: { verwijzingNaam: "Selectielijst", ...(verwijzingIdentificatie ? { verwijzingIdentificatie } : {}) },
+    },
+  } as unknown as StekkerKandidaat;
+}
