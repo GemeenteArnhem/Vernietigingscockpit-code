@@ -65,7 +65,8 @@ jobs:
     needs: controle
     env:
       # Vastgepinde versie van de teststekker; bijwerken bij een nieuwe stekker- of specversie.
-      STEKKER_COMMIT: efcb4e6290ae4756afa203eb95f2176b2882b66b
+      # dev2 met Stekker API v2 (MDTO), onderdelen (ADR-0007) en selectielijstcode (ADR-0008).
+      STEKKER_COMMIT: cac00f0783ffd6bca24b96d769d0139ed492bb73
     steps:
       - uses: actions/checkout@v4
 

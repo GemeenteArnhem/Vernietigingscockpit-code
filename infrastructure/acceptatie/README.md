@@ -95,7 +95,7 @@ git clone -b dev2 https://github.com/GemeenteArnhem/Vernietigingscockpit-stekker
 ```
 
 ```bash
-git clone -b main <remote-url>/Vernietigingscockpit-stekker-openzaak.git
+git clone -b dev https://github.com/GemeenteArnhem/Vernietigingscockpit-stekker-openzaak.git
 ```
 
 ```bash
