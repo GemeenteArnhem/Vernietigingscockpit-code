@@ -56,7 +56,7 @@ export class TaakToegangService {
     const taak = await this.prisma.client.taakinstantie.findFirstOrThrow({
       where: {
         id: taakinstantieId,
-        ...(await this.overzichtWhere(user, user.roles.includes("auditor") ? "alle" : "mijn")),
+        ...(await this.toegangWhere(user)),
       },
       select: taakinstantieSelect,
     });
@@ -78,9 +78,12 @@ export class TaakToegangService {
     return { verwijderdOp: null, ...(await this.overzichtToegang(user, scope)) };
   }
 
+  // "alle": alles wat de gebruiker mag inzien, ook eerder geaccordeerde uitvoeringen.
+  // "mijn" (de werkvoorraad): de recordmanager houdt al zijn uitvoeringen; proceseigenaar en
+  // archivaris zien alleen wat in hun accorderingsstap op hen wacht.
   private async overzichtToegang(user: AuthUser, scope: "mijn" | "alle") {
-    if (scope === "alle" && user.roles.includes("auditor")) {
-      return {};
+    if (scope === "alle") {
+      return this.toegang(user);
     }
 
     const medewerkerId = await this.currentMedewerker.findForUser(user);
@@ -92,8 +95,8 @@ export class TaakToegangService {
     return {
       OR: [
         { recordmanagerId: medewerkerId },
-        { proceseigenaarId: medewerkerId },
-        { archivarisId: medewerkerId },
+        { proceseigenaarId: medewerkerId, status: "accordering_po" as const },
+        { archivarisId: medewerkerId, status: "accordering_archivaris" as const },
       ],
     };
   }

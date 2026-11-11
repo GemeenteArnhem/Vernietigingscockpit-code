@@ -24,6 +24,13 @@ export function heeftDashboard(roles: AppRole[]) {
   return DASHBOARD_ROLLEN.some((rol) => roles.includes(rol));
 }
 
+// Alleen wie Taken mag zien en geen dashboard heeft, begint bij Taken. Een gebruiker zonder
+// herkende rol landt op het dashboard; doorsturen naar Taken zou via RequireRole eindeloos
+// terugkaatsen naar /dashboard.
+export function begintBijTaken(roles: AppRole[]) {
+  return !heeftDashboard(roles) && TAKEN_ROLLEN.some((rol) => roles.includes(rol));
+}
+
 export type SessionUser = {
   id: string;
   name: string;
