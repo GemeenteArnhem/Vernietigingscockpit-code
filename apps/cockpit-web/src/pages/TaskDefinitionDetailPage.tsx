@@ -178,7 +178,7 @@ function getTaskDefinitionDecisions(
       definition
     );
   const today =
-    new Date("2026-07-01");
+    new Date();
   const plannedStartDate =
     primaryInstance?.plannedStartDate
       ? new Date(
@@ -218,15 +218,18 @@ function getTaskDefinitionDecisions(
       "warning";
   }
 
-  const decisions: TaskDefinitionDecision[] = [
-    {
-      id: "open-uitvoering",
-      title:
-        primaryActionTitle,
-      icon: primaryActionIcon,
-      tone: primaryActionTone,
-    },
-  ];
+  // Een uitvoering openen kan alleen als er een is.
+  const decisions: TaskDefinitionDecision[] = primaryInstance
+    ? [
+        {
+          id: "open-uitvoering",
+          title:
+            primaryActionTitle,
+          icon: primaryActionIcon,
+          tone: primaryActionTone,
+        },
+      ]
+    : [];
 
   if (!apiActions || apiActions.includes("taakinstantie.aanmaken")) {
     decisions.push({
@@ -618,9 +621,7 @@ export default function TaskDefinitionDetailPage() {
           {
             label: "Recordmanager",
             value:
-              primaryInstance
-                ?.recordmanager ??
-              "Niet toegewezen",
+              selectedDefinition.recordmanager,
           },
           {
             label: "Proceseigenaar",
@@ -640,11 +641,6 @@ export default function TaskDefinitionDetailPage() {
       () =>
         visibleDefinitions.map(
           (definition) => {
-            const primary =
-              getPrimaryInstance(
-                definition
-              );
-
             return {
               id: definition.id,
               taakdefinitie:
@@ -656,9 +652,7 @@ export default function TaskDefinitionDetailPage() {
                   definition
                 ),
               recordmanager:
-                primary
-                  ?.recordmanager ??
-                "Niet toegewezen",
+                definition.recordmanager,
               proceseigenaar:
                 definition.proceseigenaar,
               frequentie:

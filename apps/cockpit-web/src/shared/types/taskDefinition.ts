@@ -40,6 +40,8 @@ export type TaskDefinitionRecord = {
   subtitle: string;
   categorie: string;
   frequentie: string;
+  // De recordmanager van de taakdefinitie; nieuwe uitvoeringen nemen hem over.
+  recordmanager: string;
   proceseigenaar: string;
   archivaris: string;
   instanties: TaskDefinitionInstance[];

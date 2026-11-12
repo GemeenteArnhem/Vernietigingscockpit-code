@@ -19,6 +19,8 @@ import ShortcutPane from "../components/ShortcutPane";
 import RecordDetailsPanel from "../features/task-execution/components/RecordDetailsPanel";
 import TaskExecutionHeader from "../features/task-execution/components/TaskExecutionHeader";
 import { AppShellPortal } from "../layouts/AppShellPortalContext";
+import AanZetPortal from "../features/task-execution/AanZetPortal";
+import { useMeekijken } from "../features/task-execution/useMeekijken";
 import {
   getTaskSelection,
   startTaskSelection,
@@ -88,6 +90,8 @@ export default function RecordSelectionPage() {
   const navigate = useNavigate();
   const { taakId, id } = useParams();
   const { accessToken } = useSessionUser();
+  // Alleen wie aan zet is, krijgt acties; de andere betrokkenen kijken mee.
+  const meekijken = useMeekijken({ taakId: id, stapStatussen: ["init"] });
   const [apiConnectors, setApiConnectors] = useState<TaskExecutionConnector[] | null>(
     null
   );
@@ -299,7 +303,7 @@ export default function RecordSelectionPage() {
       const isTyping =
         tagName === "INPUT" || tagName === "TEXTAREA" || target?.isContentEditable;
 
-      if (isTyping) {
+      if (isTyping || !meekijken.aanZet) {
         return;
       }
 
@@ -319,7 +323,7 @@ export default function RecordSelectionPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [effectiveSelectedAction, handlePrimaryAction, selectedConnectorNeedsRetry]);
+  }, [effectiveSelectedAction, handlePrimaryAction, meekijken.aanZet, selectedConnectorNeedsRetry]);
 
   // Zonder stekkergegevens: een mislukte API-aanroep in het rode foutvlak, anders de lege stand.
   if (!selectedConnector) {
@@ -389,7 +393,7 @@ export default function RecordSelectionPage() {
         />
       </AppShellPortal>
 
-      <AppShellPortal slot="action">
+      <AanZetPortal slot="action" meekijken={meekijken}>
         <ActionPanel
           embedded
           title="Actie"
@@ -473,15 +477,15 @@ export default function RecordSelectionPage() {
             </div>
           </ActionPanelSection>
         </ActionPanel>
-      </AppShellPortal>
+      </AanZetPortal>
 
-      <AppShellPortal slot="shortcut">
+      <AanZetPortal slot="shortcut" meekijken={meekijken}>
         <ShortcutPane
           shortcuts={[
             { keyLabel: "W", label: "Actie uitvoeren" },
           ]}
         />
-      </AppShellPortal>
+      </AanZetPortal>
 
       <ContentPanel>
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">

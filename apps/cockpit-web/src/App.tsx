@@ -12,7 +12,7 @@ import RequireRole from "./auth/RequireRole";
 import StartPagina from "./auth/StartPagina";
 import StekkerFormPage from "./pages/StekkerFormPage";
 import StekkersPage from "./pages/StekkersPage";
-import { TAKEN_ROLLEN } from "./auth/authConfig";
+import { TAAKUITVOERING_ROLLEN, TAKEN_ROLLEN } from "./auth/authConfig";
 
 import DestructionResultPage from "./pages/DestructionResultPage";
 import TaskDefinitionCreatePage from "./pages/TaskDefinitionCreatePage";
@@ -110,7 +110,7 @@ export default function App() {
           path="/taak/:taakId/taakuitvoering/:id/selectie"
           element={
             <RequireAuth>
-              <RequireRole allowedRoles={["recordmanager"]}>
+              <RequireRole allowedRoles={TAAKUITVOERING_ROLLEN}>
                 <RecordSelectionPage />
               </RequireRole>
             </RequireAuth>
@@ -120,7 +120,7 @@ export default function App() {
           path="/taak/:taakId/taakuitvoering/:id/beoordeling"
           element={
             <RequireAuth>
-              <RequireRole allowedRoles={["recordmanager"]}>
+              <RequireRole allowedRoles={TAAKUITVOERING_ROLLEN}>
                 <RecordReviewPage />
               </RequireRole>
             </RequireAuth>
@@ -136,7 +136,7 @@ export default function App() {
           path="/taak/:taakId/taakuitvoering/:id/accordering/proceseigenaar"
           element={
             <RequireAuth>
-              <RequireRole allowedRoles={["proceseigenaar"]}>
+              <RequireRole allowedRoles={TAAKUITVOERING_ROLLEN}>
                 <ProcessOwnerApprovalPage />
               </RequireRole>
             </RequireAuth>
@@ -146,7 +146,7 @@ export default function App() {
             path="/taak/:taakId/taakuitvoering/:id/accordering/archivaris"
             element={
               <RequireAuth>
-                <RequireRole allowedRoles={["archivaris"]}>
+                <RequireRole allowedRoles={TAAKUITVOERING_ROLLEN}>
                   <ArchivistApprovalPage />
                 </RequireRole>
               </RequireAuth>
@@ -156,7 +156,7 @@ export default function App() {
             path="/taak/:taakId/taakuitvoering/:id/uitvoering"
             element={
               <RequireAuth>
-                <RequireRole allowedRoles={["recordmanager"]}>
+                <RequireRole allowedRoles={TAAKUITVOERING_ROLLEN}>
                   <RecordDestructionPage />
                 </RequireRole>
               </RequireAuth>

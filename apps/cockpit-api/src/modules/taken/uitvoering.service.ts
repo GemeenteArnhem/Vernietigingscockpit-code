@@ -1,4 +1,5 @@
 import { mdtoVelden } from "./kandidaat-weergave.js";
+import { OPMERKINGEN_INCLUDE, opmerkingenWeergave } from "./opmerkingen.js";
 import { leesArchiefvormer } from "../taakdefinities/archiefvormer.js";
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import type { AuthUser } from "../auth/auth-user.js";
@@ -73,6 +74,7 @@ export class UitvoeringService {
               include: {
                 // Eén regel per vernietiging; per selectie is er één vernietiging.
                 uitvoeringsresultaten: true,
+                opmerkingen: OPMERKINGEN_INCLUDE,
               },
               orderBy: [
                 {
@@ -123,6 +125,8 @@ export class UitvoeringService {
             bronstatus: resultaat?.bronstatus ?? null,
             logReference: resultaat?.logReference ?? null,
             correlatieId: resultaat?.correlatieId ?? null,
+            // Alleen lezen: na de vrijgave ligt alles vast.
+            opmerkingen: opmerkingenWeergave(kandidaat, { taak: { status: taak.status, ronde: 0 }, medewerkerId: null }),
             stekker: {
               id: selectie.stekkerConfiguratie.stekker.id,
               naam: selectie.stekkerConfiguratie.stekker.naam,

@@ -267,12 +267,26 @@ export type ApiMdtoKandidaat = {
   stekkerToelichting: string | null;
 };
 
+// Opmerking van recordmanager, proceseigenaar of archivaris bij een kandidaat (besluit
+// 2026-11-12). `verwijderbaar`: de ingelogde gebruiker is de auteur en zit in die stap.
+export type ApiOpmerking = {
+  id: string;
+  rol: "recordmanager" | "proceseigenaar" | "archivaris";
+  medewerker: { id: string; naam: string };
+  ronde: number;
+  tekst: string;
+  tijdstip: string;
+  verwijderbaar: boolean;
+};
+
 export type ApiKandidaat = ApiMdtoKandidaat & {
   id: string;
   volgnummer: number;
   beoordeling: string;
   uitsluitReden?: string | null;
   toelichting?: string | null;
+  // Alle niet-verwijderde opmerkingen, oudste eerst.
+  opmerkingen: ApiOpmerking[];
   stekker: {
     naam: string;
   };
@@ -391,6 +405,8 @@ export type ApiVernietigingsresultaat = ApiMdtoKandidaat & {
   bronstatus?: string | null;
   logReference?: string | null;
   correlatieId?: string | null;
+  // Opmerkingen uit beoordeling en accordering (alleen lezen; `verwijderbaar` is altijd false).
+  opmerkingen: ApiOpmerking[];
   stekker: {
     naam: string;
   };

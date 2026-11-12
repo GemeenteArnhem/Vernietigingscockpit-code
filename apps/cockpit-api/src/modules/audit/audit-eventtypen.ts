@@ -34,6 +34,7 @@ export const AUDIT_EVENTTYPEN = {
   "Archivering aangevraagd": BEGRIPPENLIJST_COCKPIT,
   "Archivering mislukt": BEGRIPPENLIJST_COCKPIT,
   "Logisch verwijderd": BEGRIPPENLIJST_COCKPIT,
+  "Opmerking verwijderd": BEGRIPPENLIJST_COCKPIT,
 } as const;
 
 export type AuditEventType = keyof typeof AUDIT_EVENTTYPEN;

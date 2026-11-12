@@ -16,8 +16,11 @@ import ActionPanel, {
 import ShortcutPane from "../components/ShortcutPane";
 import ConfirmDialog from "../components/ConfirmDialog";
 import RecordDetailsPanel from "../features/task-execution/components/RecordDetailsPanel";
+import { useOpmerkingVerwijderen } from "../features/task-execution/components/useOpmerkingVerwijderen";
 import ReviewRecordPanel from "../features/task-execution/review/components/ReviewRecordPanel";
 import { AppShellPortal } from "../layouts/AppShellPortalContext";
+import AanZetPortal from "../features/task-execution/AanZetPortal";
+import { useMeekijken } from "../features/task-execution/useMeekijken";
 import {
   bulkAccordering,
   submitProceseigenaarAccordering,
@@ -27,7 +30,6 @@ import {
 import { useSessionUser } from "../auth/useSessionUser";
 import { getReviewQueueStatusStyle } from "../shared/ui/reviewStatusStyles";
 import type {
-  ReviewComment,
   ReviewDecision,
   ReviewQueueStatus,
   ReviewRecordContext,
@@ -125,6 +127,8 @@ export default function ProcessOwnerApprovalPage() {
   const navigate = useNavigate();
   const { taakId, id } = useParams();
   const { accessToken } = useSessionUser();
+  // Alleen wie aan zet is, krijgt acties; de andere betrokkenen kijken mee.
+  const meekijken = useMeekijken({ taakId: id, stapStatussen: ["accordering_po"] });
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Lokale besluiten tot de volgende verversing van de pagina; daarna telt de server.
@@ -133,7 +137,6 @@ export default function ProcessOwnerApprovalPage() {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [deferredRecords, setDeferredRecords] = useState<Record<string, boolean>>({});
   const [selectedActions, setSelectedActions] = useState<Record<string, ReviewAction>>({});
-  const [manualComments, setManualComments] = useState<Record<string, ReviewComment[]>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [selectedTableIds, setSelectedTableIds] = useState<string[]>([]);
   const [isSavingAction, setIsSavingAction] = useState(false);
@@ -145,6 +148,13 @@ export default function ProcessOwnerApprovalPage() {
     [deferredRecords]
   );
   const lijst = useKandidatenLijst({ accessToken, taakId: id, uitgesteldeIds });
+  // Opmerkingen komen van de server; de eigen opmerking kan in deze stap weg (besluit 2026-11-12).
+  const verwijderen = useOpmerkingVerwijderen({
+    accessToken,
+    taakId: id,
+    onVerwijderd: lijst.ververs,
+    onFout: setActionError,
+  });
   const taakVersie = lijst.data?.taakVersie ?? null;
   const apiRows = lijst.data?.rows ?? null;
   const serverDecisions = lijst.data?.decisions;
@@ -176,17 +186,12 @@ export default function ProcessOwnerApprovalPage() {
 
         return {
           row,
-          context: context
-            ? {
-                ...context,
-                comments: [...context.comments, ...(manualComments[row.id] ?? [])],
-              }
-            : context,
+          context,
           queueStatus,
           snapshotVolgnummer: volgnummers?.[row.id] ?? index + 1,
         };
       }),
-    [alleDecisions, contextById, deferredRecords, manualComments, sourceRows, volgnummers]
+    [alleDecisions, contextById, deferredRecords, sourceRows, volgnummers]
   );
 
   // Al gezocht, gefilterd en gesorteerd door de server.
@@ -229,6 +234,24 @@ export default function ProcessOwnerApprovalPage() {
       ? () => lijst.naarPagina(lijst.pagina - 1)
       : undefined;
   const isBulkMode = selectedTableIds.length > 1;
+  // Aangevinkte records gaan altijd voor het actieve (blauwe) record, ook als er maar één
+  // is aangevinkt; anders kwam de actie bij een ander record terecht dan aangevinkt.
+  const heeftSelectie = selectedTableIds.length > 0;
+  const enkelAangevinkt =
+    selectedTableIds.length === 1
+      ? visibleRows.find((item) => item.row.id === selectedTableIds[0])
+      : undefined;
+  const selectieTekst =
+    selectedTableIds.length === 1
+      ? `1 geselecteerd record${enkelAangevinkt ? ` (${enkelAangevinkt.row.naam})` : ""}`
+      : `${selectedTableIds.length} geselecteerde records`;
+  // Eén record aanvinken maakt het ook het actieve record, zodat het detailpaneel klopt.
+  const kiesAangevinkt = (ids: string[]) => {
+    setSelectedTableIds(ids);
+    if (ids.length === 1) {
+      setSelectedId(ids[0]);
+    }
+  };
   const selectedBulkItems = useMemo(
     () =>
       isBulkMode
@@ -236,7 +259,7 @@ export default function ProcessOwnerApprovalPage() {
         : [],
     [isBulkMode, selectedTableIds, visibleRows]
   );
-  const actionTargetIds = isBulkMode
+  const actionTargetIds = heeftSelectie
     ? selectedTableIds
     : selectedItem
       ? [selectedItem.row.id]
@@ -306,6 +329,10 @@ export default function ProcessOwnerApprovalPage() {
   );
 
   const executeAction = async (action: ReviewAction) => {
+    if (!meekijken.aanZet) {
+      return;
+    }
+
     if (action === "open" || actionTargetIds.length === 0) {
       return;
     }
@@ -361,28 +388,6 @@ export default function ProcessOwnerApprovalPage() {
     });
 
     if (selectedNote.trim()) {
-      setManualComments((current) => {
-        const nextState = { ...current };
-        actionTargetIds.forEach((id) => {
-          nextState[id] = [
-            ...(nextState[id] ?? []),
-            {
-              author: "Proceseigenaar",
-              role: "Proceseigenaar",
-              message: selectedNote.trim(),
-              timestamp: new Date().toLocaleString("nl-NL", {
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-              }),
-            },
-          ];
-        });
-        return nextState;
-      });
-
       setNotes((current) => {
         const nextState = { ...current };
         if (isBulkMode) {
@@ -404,8 +409,12 @@ export default function ProcessOwnerApprovalPage() {
       return nextState;
     });
 
-    if (isBulkMode) {
+    // Na elke actie gaan de vinkjes eraf, zodat er geen vinkje blijft meetellen.
+    if (heeftSelectie) {
       setSelectedTableIds([]);
+    }
+
+    if (isBulkMode) {
       return;
     }
 
@@ -477,6 +486,10 @@ export default function ProcessOwnerApprovalPage() {
   };
 
   const handleSubmitDecision = async () => {
+    if (!meekijken.aanZet) {
+      return;
+    }
+
     if (!accessToken || !id || taakVersie === null || !taakId) {
       setActionError("Accordering afronden kan pas nadat de taak via de API is geladen.");
       setConfirmOpen(false);
@@ -515,6 +528,7 @@ export default function ProcessOwnerApprovalPage() {
           <RecordDetailsPanel
             record={isBulkMode ? { naam: `Selectie van ${selectedTableIds.length} records` } : selectedItem.row}
             comments={isBulkMode ? bulkComments : selectedItem.context?.comments ?? []}
+            onDeleteComment={isBulkMode ? undefined : verwijderen.onDeleteComment}
             currentIndex={isBulkMode ? 0 : selectedIndex >= 0 ? lijst.pagina * PAGINA_GROOTTE + selectedIndex + 1 : 0}
             totalCount={isBulkMode ? 0 : lijst.server.totaal}
             onPrevious={isBulkMode ? undefined : naarVorige}
@@ -633,7 +647,7 @@ export default function ProcessOwnerApprovalPage() {
         ) : null}
       </AppShellPortal>
 
-      <AppShellPortal slot="action">
+      <AanZetPortal slot="action" meekijken={meekijken}>
         <ActionPanel
           embedded
           title="Actie"
@@ -668,9 +682,9 @@ export default function ProcessOwnerApprovalPage() {
           ) : (
             <>
               <ActionPanelSection title="">
-                {isBulkMode ? (
+                {heeftSelectie ? (
                   <p className="mb-3 text-sm leading-5 text-slate-500">
-                    Je voert deze actie uit op {selectedTableIds.length} geselecteerde records.
+                    Je voert deze actie uit op {selectieTekst}.
                   </p>
                 ) : null}
                 <div className="space-y-2">
@@ -715,9 +729,9 @@ export default function ProcessOwnerApprovalPage() {
             </>
           )}
         </ActionPanel>
-      </AppShellPortal>
+      </AanZetPortal>
 
-      <AppShellPortal slot="shortcut">
+      <AanZetPortal slot="shortcut" meekijken={meekijken}>
         <ShortcutPane
           shortcuts={[
             { keyLabel: "A", label: "Vorige" },
@@ -727,7 +741,7 @@ export default function ProcessOwnerApprovalPage() {
             { keyLabel: "Y", label: "Akkoord" },
           ]}
         />
-      </AppShellPortal>
+      </AanZetPortal>
 
       <ReviewRecordPanel
         record={selectedItem?.row}
@@ -739,7 +753,7 @@ export default function ProcessOwnerApprovalPage() {
         summaryStats={summaryStats}
         reviewTableRows={reviewTableRows}
         selectedTableIds={selectedTableIds}
-        onSelectedTableIdsChange={setSelectedTableIds}
+        onSelectedTableIdsChange={kiesAangevinkt}
         activeRecordId={selectedItem?.row.id ?? null}
         onActiveRecordChange={setSelectedId}
         sortKey={lijst.sortKey}
@@ -751,6 +765,7 @@ export default function ProcessOwnerApprovalPage() {
         onNext={naarVolgende}
       />
 
+      {verwijderen.dialoog}
       <ConfirmDialog
         open={confirmOpen}
         title={hasRetour ? "Retour naar recordmanager?" : "Doorzetten naar archivaris?"}

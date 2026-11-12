@@ -42,6 +42,7 @@ function stepIdFromLabel(label: string): DashboardWorkflowStepId {
       return "UITVOERING";
     case "resultaat":
     case "archief":
+    case "gearchiveerd":
       return "RESULTAAT";
     default:
       return "SELECTIE";

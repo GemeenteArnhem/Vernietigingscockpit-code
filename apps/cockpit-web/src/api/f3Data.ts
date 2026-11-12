@@ -11,6 +11,7 @@ import type {
 } from "../shared/types/taskExecutionConnector";
 import type { VernietigingsKandidaat } from "../shared/types/destruction";
 import type { ReviewDecision, ReviewRecordContext } from "../shared/types/review";
+import type { TaskExecutionComment } from "../shared/types/taskExecution";
 import type {
   DestructionResultContext,
   DestructionResultRow,
@@ -37,6 +38,7 @@ import type {
   ApiKandidaatIds,
   ApiKandidatenPagina,
   ApiMdtoKandidaat,
+  ApiOpmerking,
   ApiVerwijzing,
   ApiSelectieSamenvatting,
   ApiSelectieStekker,
@@ -59,6 +61,7 @@ import type {
   TaakdefinitieInvoer,
 } from "@vernietigingscockpit/api-contract";
 import { apiDownload, apiRequest } from "./apiClient";
+import { voortgangVanStap } from "../shared/dashboardStappen";
 
 // Antwoord- en invoertypes komen uit het gedeelde contract met de API (CC-19).
 export type { ApiArchivering };
@@ -503,6 +506,24 @@ export async function updateKandidaatBeoordeling(
   });
 }
 
+// Taakuitvoering met status en verantwoordelijken (met id), om te bepalen wie aan zet is.
+export async function getTaakinstantie(accessToken: string, taskInstanceId: string) {
+  return apiRequest<ApiTaakinstantie>(`/taken/${taskInstanceId}`, { accessToken });
+}
+
+// Eigen opmerking logisch verwijderen, in de eigen stap (besluit 2026-11-12).
+export async function verwijderOpmerking(
+  accessToken: string,
+  taskInstanceId: string,
+  kandidaatId: string,
+  opmerkingId: string
+) {
+  return apiRequest<void>(`/taken/${taskInstanceId}/kandidaten/${kandidaatId}/opmerkingen/${opmerkingId}`, {
+    accessToken,
+    method: "DELETE",
+  });
+}
+
 export async function submitBeoordelingVoorAccordering(
   accessToken: string,
   taskInstanceId: string,
@@ -611,6 +632,7 @@ function mapTaakToDashboardRecord(taak: ApiTaakinstantie): DashboardTaskRecord {
     status,
     eigenaar: "mijn",
     stapId,
+    afgerond: taak.status === "archief",
     stap: mapStepLabel(taak.status),
     voortgang: mapProgress(taak.status),
     dagenInStap: daysSince(taak.stapSinds),
@@ -631,6 +653,7 @@ function mapTaakdefinitie(definition: ApiTaakdefinitie): TaskDefinitionRecord {
     subtitle: definition.omschrijving ?? definition.categorie,
     categorie: definition.categorie,
     frequentie: formatFrequency(definition.frequentie),
+    recordmanager: definition.verantwoordelijken.recordmanager.naam,
     proceseigenaar: definition.verantwoordelijken.proceseigenaar.naam,
     archivaris: definition.verantwoordelijken.archivaris.naam,
     instanties: (definition.instanties ?? []).map((instantie, index) =>
@@ -771,17 +794,27 @@ function mapReviewContext(
         state: "active",
       },
     ],
-    comments: candidate.toelichting
-      ? [
-          {
-            author: "Cockpit",
-            role: "Import",
-            message: candidate.toelichting,
-            timestamp: formatDate(task.stapSinds),
-          },
-        ]
-      : [],
+    comments: mapOpmerkingen(candidate.id, candidate.opmerkingen),
   };
+}
+
+const ROL_LABELS: Record<ApiOpmerking["rol"], string> = {
+  recordmanager: "Recordmanager",
+  proceseigenaar: "Proceseigenaar",
+  archivaris: "Archivaris",
+};
+
+// Opmerkingen van recordmanager, proceseigenaar en archivaris, met de naam van de auteur.
+function mapOpmerkingen(recordId: string, opmerkingen: ApiOpmerking[]): TaskExecutionComment[] {
+  return opmerkingen.map((opmerking) => ({
+    id: opmerking.id,
+    recordId,
+    author: opmerking.medewerker.naam,
+    role: ROL_LABELS[opmerking.rol],
+    message: opmerking.tekst,
+    timestamp: formatDateTime(opmerking.tijdstip),
+    verwijderbaar: opmerking.verwijderbaar,
+  }));
 }
 
 function mapDestructionResult(result: ApiVernietigingsresultaat, taakArchiefvormer?: ApiVerwijzing | null): DestructionResultRow {
@@ -872,6 +905,7 @@ function mapDestructionResultContext(
           "Vernietigingsresultaat verwerkt.",
         timestamp: formatDate(task.stapSinds),
       },
+      ...mapOpmerkingen(result.id, result.opmerkingen),
     ],
   };
 }
@@ -1217,26 +1251,15 @@ function mapStepLabel(status: string) {
     case "resultaat":
       return "Resultaat";
     case "archief":
-      return "Archief";
+      return "Gearchiveerd";
     default:
       return status;
   }
 }
 
+// Gelijk aan de bolletjes op het dashboard: na archiveren 100%, daarvoor afgeronde stappen.
 function mapProgress(status: string) {
-  const order = [
-    "init",
-    "beoordeling",
-    "accordering_po",
-    "accordering_archivaris",
-    "vrijgegeven",
-    "uitvoering",
-    "resultaat",
-    "archief",
-  ];
-  const index = Math.max(0, order.indexOf(status));
-
-  return Math.round((index / (order.length - 1)) * 100);
+  return voortgangVanStap(mapStepId(status), status === "archief");
 }
 
 function formatFrequency(frequency: string) {

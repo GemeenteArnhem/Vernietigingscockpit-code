@@ -34,6 +34,8 @@ type Props = {
   counterLabel?: string;
   detailsNotice?: string;
   emptyCommentsMessage?: string;
+  // Verwijderen van een eigen opmerking; de knop staat alleen bij `comment.verwijderbaar`.
+  onDeleteComment?: (comment: TaskExecutionComment) => void;
 };
 
 export default function RecordDetailsPanel({
@@ -49,6 +51,7 @@ export default function RecordDetailsPanel({
   counterLabel,
   detailsNotice,
   emptyCommentsMessage = "Er zijn nog geen opmerkingen toegevoegd.",
+  onDeleteComment,
 }: Props) {
   const [activeTab, setActiveTab] = useState<RecordDetailsTab>("details");
 
@@ -170,7 +173,7 @@ export default function RecordDetailsPanel({
             <div className="space-y-3">
               {comments.map((comment) => (
                 <article
-                  key={`${comment.author}-${comment.timestamp}`}
+                  key={comment.id ?? `${comment.author}-${comment.timestamp}`}
                   className="rounded-md border border-slate-200 bg-white px-3 py-3 shadow-sm shadow-slate-200/30"
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -178,7 +181,18 @@ export default function RecordDetailsPanel({
                       <p className="text-sm font-semibold text-slate-900">{comment.author}</p>
                       <p className="text-xs text-slate-500">{comment.role}</p>
                     </div>
-                    <p className="text-xs text-slate-400">{comment.timestamp}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs text-slate-400">{comment.timestamp}</p>
+                      {comment.verwijderbaar && onDeleteComment ? (
+                        <button
+                          type="button"
+                          className="text-xs text-slate-500 hover:text-red-600"
+                          onClick={() => onDeleteComment(comment)}
+                        >
+                          Verwijderen
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                   <p className="mt-2 text-sm leading-6 text-slate-600">{comment.message}</p>
                 </article>

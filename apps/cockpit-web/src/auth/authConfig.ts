@@ -15,6 +15,11 @@ export type AppRole =
 // alleen vanuit het dashboard aan hun accorderingen.
 export const TAKEN_ROLLEN: AppRole[] = ["recordmanager", "auditor", "functioneel_beheerder"];
 
+// Rollen die de stapschermen van een taakuitvoering openen. Alleen wie aan zet is, krijgt er
+// acties; de andere betrokkenen en de auditor kijken mee (useMeekijken). De API bepaalt wat
+// iemand mag zien.
+export const TAAKUITVOERING_ROLLEN: AppRole[] = ["recordmanager", "proceseigenaar", "archivaris", "auditor"];
+
 // Rollen met een werkvoorraad op het dashboard. Een gebruiker met alleen de rol functioneel
 // beheerder heeft geen dashboard en begint bij Taken.
 export const DASHBOARD_ROLLEN: AppRole[] = ["recordmanager", "proceseigenaar", "archivaris", "auditor"];

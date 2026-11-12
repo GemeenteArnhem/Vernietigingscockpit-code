@@ -13,6 +13,7 @@ import type {
   RecordPaneBarTab,
 } from "../record-pane/RecordPaneBar";
 import { reviewSummaryStatusStyles } from "../../shared/ui/reviewStatusStyles";
+import { DASHBOARD_STEPS } from "../../shared/dashboardStappen";
 import type {
   DashboardWorkflowStepId,
   TaskExecutionStatus,
@@ -22,6 +23,7 @@ type DashboardTableRow = {
   id: string;
   taakuitvoering: string;
   stapId: DashboardWorkflowStepId;
+  afgerond: boolean;
   status: TaskExecutionStatus;
   voortgangLabel: string;
   progress: number;
@@ -43,23 +45,19 @@ type Props = {
   onFilterChange: (key: string) => void;
 };
 
-const DASHBOARD_STEPS: DashboardWorkflowStepId[] = [
-  "SELECTIE",
-  "BEOORDELING",
-  "ACCORDERING_PO",
-  "ACCORDERING_ARCH",
-  "UITVOERING",
-  "RESULTAAT",
-];
-
 function DashboardProgressStepper({
   stepId,
+  afgerond,
   status,
 }: {
   stepId: DashboardWorkflowStepId;
+  afgerond: boolean;
   status: TaskExecutionStatus;
 }) {
-  const activeIndex = DASHBOARD_STEPS.findIndex((step) => step === stepId);
+  // Na archiveren is ook de laatste stap afgerond: alle bolletjes groen.
+  const activeIndex = afgerond
+    ? DASHBOARD_STEPS.length
+    : DASHBOARD_STEPS.findIndex((step) => step === stepId);
   const isDelayed = status === "VERTRAAGD";
   const isPlanned = status === "GEPLAND";
   const completeDotClass =
@@ -86,7 +84,11 @@ function DashboardProgressStepper({
   return (
     <div
       className="flex items-center"
-      aria-label={`Workflow stap ${activeIndex + 1} van ${DASHBOARD_STEPS.length}`}
+      aria-label={
+        afgerond
+          ? "Workflow afgerond"
+          : `Workflow stap ${activeIndex + 1} van ${DASHBOARD_STEPS.length}`
+      }
     >
       {DASHBOARD_STEPS.map((step, index) => {
         const isComplete = index < activeIndex;
@@ -348,6 +350,7 @@ export default function DashboardRecordPanel({
                           <div className="min-w-0 flex-1">
                             <DashboardProgressStepper
                               stepId={row.stapId}
+                              afgerond={row.afgerond}
                               status={row.status}
                             />
                           </div>

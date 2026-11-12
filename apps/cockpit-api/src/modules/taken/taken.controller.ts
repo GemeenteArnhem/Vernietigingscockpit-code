@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   Headers,
@@ -24,6 +25,7 @@ import { BeoordelingService } from "./beoordeling.service.js";
 import { BesluitvormingService } from "./besluitvorming.service.js";
 import { UitvoeringService } from "./uitvoering.service.js";
 import { DossierService } from "./dossier.service.js";
+import { OpmerkingService } from "./opmerking.service.js";
 import type { KandidatenQuery } from "./kandidaten-lijst.js";
 import type { UpdateKandidaatBeoordelingInput } from "./beoordeling.dto.js";
 import type { UpdateProceseigenaarAccorderingInput } from "./accordering.dto.js";
@@ -47,7 +49,8 @@ export class TakenController {
     @Inject(BeoordelingService) private readonly beoordeling: BeoordelingService,
     @Inject(BesluitvormingService) private readonly besluitvorming: BesluitvormingService,
     @Inject(UitvoeringService) private readonly uitvoering: UitvoeringService,
-    @Inject(DossierService) private readonly dossier: DossierService
+    @Inject(DossierService) private readonly dossier: DossierService,
+    @Inject(OpmerkingService) private readonly opmerking: OpmerkingService
   ) {}
 
   @Get()
@@ -245,6 +248,19 @@ export class TakenController {
       kandidaatId,
       body
     );
+  }
+
+  // Eigen opmerking logisch verwijderen, in de eigen stap (besluit 2026-11-12).
+  @Delete(":id/kandidaten/:kandidaatId/opmerkingen/:opmerkingId")
+  @Roles("recordmanager", "proceseigenaar", "archivaris")
+  @HttpCode(204)
+  verwijderOpmerking(
+    @CurrentUser() user: AuthUser,
+    @Param("id", UUID) id: string,
+    @Param("kandidaatId", UUID) kandidaatId: string,
+    @Param("opmerkingId", UUID) opmerkingId: string
+  ) {
+    return this.opmerking.verwijder(user, id, kandidaatId, opmerkingId);
   }
 
   @Post(":id/beoordeling/voorleggen")
