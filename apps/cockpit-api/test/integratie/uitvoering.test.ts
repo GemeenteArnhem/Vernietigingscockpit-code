@@ -869,6 +869,11 @@ describe("werkkopie verwijderen (ADR-0006)", () => {
     const { taakId, archivering } = await gearchiveerdeTaak(gotenberg.url, archief);
     const keten = await verifieerTaakKeten(db.prisma, taakId);
     await zetTermijn("P0D");
+    // Ook de opmerkingen gaan mee (via de foreign key op de kandidaat).
+    const kandidaat = await db.prisma.client.vernietigingskandidaat.findFirstOrThrow({ where: { selectie: { taakinstantieId: taakId } } });
+    await db.prisma.client.kandidaatOpmerking.create({
+      data: { kandidaatId: kandidaat.id, taakinstantieId: taakId, ronde: 1, rol: "recordmanager", tekst: "RM: opmerking", medewerkerId: basis.rm.id },
+    });
 
     const uitkomst = await opschoning().verwerk();
     expect(uitkomst.verwijderd).toContain(taakId);
@@ -877,6 +882,7 @@ describe("werkkopie verwijderen (ADR-0006)", () => {
     expect(await c.taakinstantie.count({ where: { id: taakId } })).toBe(0);
     expect(await c.auditEvent.count({ where: { taakinstantieId: taakId } })).toBe(0);
     expect(await c.kandidaatBesluit.count({ where: { taakinstantieId: taakId } })).toBe(0);
+    expect(await c.kandidaatOpmerking.count({ where: { taakinstantieId: taakId } })).toBe(0);
     expect(await c.selectie.count({ where: { taakinstantieId: taakId } })).toBe(0);
     expect(await c.verklaring.count({ where: { taakinstantieId: taakId } })).toBe(0);
     expect(await c.archivering.count({ where: { taakinstantieId: taakId } })).toBe(0);

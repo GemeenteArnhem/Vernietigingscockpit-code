@@ -1,5 +1,6 @@
 import { UITSLUITREDEN_WAARDERING } from "@vernietigingscockpit/api-contract";
 import { mdtoVelden } from "./kandidaat-weergave.js";
+import { OPMERKINGEN_INCLUDE, opmerkingenWeergave } from "./opmerkingen.js";
 import { leesArchiefvormer } from "../taakdefinities/archiefvormer.js";
 import { BadRequestException, ForbiddenException, Inject, Injectable, ConflictException } from "@nestjs/common";
 import type { AuthUser } from "../auth/auth-user.js";
@@ -28,6 +29,7 @@ export class BeoordelingService {
   // hele lijst. Zonder parameters: de eerste 500 in de vaste volgorde.
   async getKandidaten(user: AuthUser, taakinstantieId: string, query: KandidatenQuery = STANDAARD_KANDIDATEN_QUERY): Promise<ApiKandidatenPagina> {
     const taak = await this.toegang.taakVoorLijst(user, taakinstantieId);
+    const medewerkerId = await this.currentMedewerker.findForUser(user);
     const where = kandidatenWhere(taak.id, query);
     const [totaal, kandidaten, tellingen, keuzes] = await Promise.all([
       this.prisma.client.vernietigingskandidaat.count({ where }),
@@ -35,6 +37,7 @@ export class BeoordelingService {
         where,
         include: {
           besluiten: { orderBy: { tijdstip: "desc" }, take: 1 },
+          opmerkingen: OPMERKINGEN_INCLUDE,
           selectie: {
             include: {
               stekkerConfiguratie: {
@@ -91,6 +94,7 @@ export class BeoordelingService {
               tijdstip: kandidaat.besluiten[0].tijdstip.toISOString(),
             }
           : null,
+        opmerkingen: opmerkingenWeergave(kandidaat, { taak, medewerkerId }),
         stekker: {
           id: kandidaat.selectie.stekkerConfiguratie.stekker.id,
           naam: kandidaat.selectie.stekkerConfiguratie.stekker.naam,
@@ -161,6 +165,8 @@ export class BeoordelingService {
       async (tx) => {
         const kandidaten = await bulkKandidaten(tx, taak.id, input.ids);
         weigerVastUitgesloten(kandidaten);
+        // Eén tijdstip voor beoordeling en opmerking (zie verwijderBezwaar).
+        const nu = new Date();
         await tx.vernietigingskandidaat.updateMany({
           where: { id: { in: kandidaten.map((kandidaat) => kandidaat.id) } },
           data: {
@@ -168,10 +174,23 @@ export class BeoordelingService {
             uitsluitReden,
             toelichting,
             beoordeeldDoor: taak.recordmanagerId,
-            beoordeeldOp: new Date(),
+            beoordeeldOp: nu,
             versie: { increment: 1 },
           },
         });
+        if (toelichting) {
+          await tx.kandidaatOpmerking.createMany({
+            data: kandidaten.map((kandidaat) => ({
+              kandidaatId: kandidaat.id,
+              taakinstantieId: taak.id,
+              ronde: taak.ronde,
+              rol: "recordmanager",
+              tekst: toelichting,
+              medewerkerId: taak.recordmanagerId,
+              tijdstip: nu,
+            })),
+          });
+        }
         await schrijfAuditEvents(
           tx,
           { type: "user", user, rol: "recordmanager" },
@@ -227,6 +246,7 @@ export class BeoordelingService {
         selectie: {
           select: {
             taakinstantieId: true,
+            taakinstantie: { select: { ronde: true } },
           },
         },
       },
@@ -241,6 +261,8 @@ export class BeoordelingService {
     weigerVastUitgesloten([kandidaat]);
 
     const updated = await this.prisma.client.$transaction(async (tx) => {
+      // Eén tijdstip voor beoordeling en opmerking (zie verwijderBezwaar).
+      const nu = new Date();
       const result = await tx.vernietigingskandidaat.update({
         where: {
           id: kandidaat.id,
@@ -250,7 +272,7 @@ export class BeoordelingService {
           uitsluitReden,
           toelichting,
           beoordeeldDoor: currentMedewerkerId,
-          beoordeeldOp: new Date(),
+          beoordeeldOp: nu,
           versie: {
             increment: 1,
           },
@@ -263,6 +285,20 @@ export class BeoordelingService {
           versie: true,
         },
       });
+
+      if (toelichting) {
+        await tx.kandidaatOpmerking.create({
+          data: {
+            kandidaatId: kandidaat.id,
+            taakinstantieId,
+            ronde: kandidaat.selectie.taakinstantie.ronde,
+            rol: "recordmanager",
+            tekst: toelichting,
+            medewerkerId: currentMedewerkerId,
+            tijdstip: nu,
+          },
+        });
+      }
 
       await schrijfAuditEvent(tx, { type: "user", user, rol: "recordmanager" }, {
         taakinstantieId,

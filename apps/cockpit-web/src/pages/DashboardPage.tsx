@@ -462,6 +462,7 @@ export default function DashboardPage() {
           id: row.id,
           taakuitvoering: row.naam,
           stapId: row.stapId,
+          afgerond: row.afgerond,
           status: row.status,
           voortgangLabel: row.stap,
           progress: row.voortgang,

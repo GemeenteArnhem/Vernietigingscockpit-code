@@ -48,6 +48,11 @@ export class BesluitvormingService {
         await tx.kandidaatBesluit.createMany({
           data: ids.map((kandidaatId) => ({ kandidaatId, taakinstantieId: taak.id, ronde, rol, besluit, toelichting, medewerkerId })),
         });
+        if (toelichting) {
+          await tx.kandidaatOpmerking.createMany({
+            data: ids.map((kandidaatId) => ({ kandidaatId, taakinstantieId: taak.id, ronde, rol, tekst: toelichting, medewerkerId })),
+          });
+        }
         await tx.vernietigingskandidaat.updateMany({
           where: { id: { in: ids } },
           data: { ...(besluit === "RETOUR" ? { beoordeling: "RETOUR" } : {}), versie: { increment: 1 } },
@@ -178,6 +183,18 @@ export class BesluitvormingService {
           medewerkerId: currentMedewerkerId,
         },
       });
+      if (toelichting) {
+        await tx.kandidaatOpmerking.create({
+          data: {
+            kandidaatId: kandidaat.id,
+            taakinstantieId,
+            ronde: kandidaat.selectie.taakinstantie.ronde,
+            rol,
+            tekst: toelichting,
+            medewerkerId: currentMedewerkerId,
+          },
+        });
+      }
 
       const result = await tx.vernietigingskandidaat.update({
         where: { id: kandidaat.id },

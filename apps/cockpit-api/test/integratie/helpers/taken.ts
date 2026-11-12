@@ -2,6 +2,7 @@ import { CurrentMedewerkerService } from "../../../src/modules/auth/current-mede
 import { BeoordelingService } from "../../../src/modules/taken/beoordeling.service.js";
 import { BesluitvormingService } from "../../../src/modules/taken/besluitvorming.service.js";
 import { DossierService } from "../../../src/modules/taken/dossier.service.js";
+import { OpmerkingService } from "../../../src/modules/taken/opmerking.service.js";
 import { SelectieService } from "../../../src/modules/taken/selectie.service.js";
 import { TaakToegangService } from "../../../src/modules/taken/taak-toegang.service.js";
 import { UitvoeringService } from "../../../src/modules/taken/uitvoering.service.js";
@@ -19,6 +20,7 @@ export function maakTaakServices(db: TestDatabase, workflow = new WorkflowServic
     selectie: new SelectieService(db.prisma, medewerker, toegang),
     beoordeling: new BeoordelingService(db.prisma, medewerker, workflow, toegang),
     besluitvorming: new BesluitvormingService(db.prisma, medewerker, workflow, toegang),
+    opmerking: new OpmerkingService(db.prisma, medewerker),
     dossier,
     uitvoering: new UitvoeringService(db.prisma, medewerker, workflow, toegang, dossier),
   };

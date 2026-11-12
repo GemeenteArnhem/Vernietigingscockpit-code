@@ -48,26 +48,28 @@ model Afdeling {
 }
 
 model Medewerker {
-  id                          String             @id @default(uuid()) @db.Uuid
+  id                          String               @id @default(uuid()) @db.Uuid
   naam                        String
-  email                       String             @unique
+  email                       String               @unique
   rollen                      AppRole[]
-  afdelingId                  String?            @map("afdeling_id") @db.Uuid
-  afdeling                    Afdeling?          @relation(fields: [afdelingId], references: [id])
-  actief                      Boolean            @default(true)
+  afdelingId                  String?              @map("afdeling_id") @db.Uuid
+  afdeling                    Afdeling?            @relation(fields: [afdelingId], references: [id])
+  actief                      Boolean              @default(true)
   bron                        String
-  externId                    String?            @map("extern_id")
+  externId                    String?              @map("extern_id")
   // Archiefvormer (MDTO verwijzingGegevens) op het profiel van de proceseigenaar; komt mee in
   // de stamgegevens-import (ADR-0005, B-M3, besluit 2026-10-09).
   archiefvormer               Json?
   gebruiker                   Gebruiker?
-  taakdefinitiesRecordmanager Taakdefinitie[]    @relation("TaakdefinitieRecordmanager")
-  taakdefinitiesPo            Taakdefinitie[]    @relation("TaakdefinitieProceseigenaar")
-  taakdefinitiesArchivaris    Taakdefinitie[]    @relation("TaakdefinitieArchivaris")
-  takenRecordmanager          Taakinstantie[]    @relation("TaakinstantieRecordmanager")
-  takenPo                     Taakinstantie[]    @relation("TaakinstantieProceseigenaar")
-  takenArchivaris             Taakinstantie[]    @relation("TaakinstantieArchivaris")
+  taakdefinitiesRecordmanager Taakdefinitie[]      @relation("TaakdefinitieRecordmanager")
+  taakdefinitiesPo            Taakdefinitie[]      @relation("TaakdefinitieProceseigenaar")
+  taakdefinitiesArchivaris    Taakdefinitie[]      @relation("TaakdefinitieArchivaris")
+  takenRecordmanager          Taakinstantie[]      @relation("TaakinstantieRecordmanager")
+  takenPo                     Taakinstantie[]      @relation("TaakinstantieProceseigenaar")
+  takenArchivaris             Taakinstantie[]      @relation("TaakinstantieArchivaris")
   kandidaatBesluiten          KandidaatBesluit[]
+  kandidaatOpmerkingen        KandidaatOpmerking[] @relation("KandidaatOpmerkingAuteur")
+  verwijderdeOpmerkingen      KandidaatOpmerking[] @relation("KandidaatOpmerkingVerwijderdDoor")
 
   @@map("medewerker")
 }
@@ -155,42 +157,43 @@ model TaakdefinitieStekker {
 }
 
 model Taakinstantie {
-  id                 String             @id @default(uuid()) @db.Uuid
-  taakdefinitieId    String             @map("taakdefinitie_id") @db.Uuid
-  taakdefinitie      Taakdefinitie      @relation(fields: [taakdefinitieId], references: [id])
-  naam               String
-  status             TaakStatus
-  stapSinds          DateTime           @default(now()) @map("stap_sinds") @db.Timestamptz
-  ronde              Int                @default(1)
-  peildatum          DateTime?          @db.Date
+  id                   String               @id @default(uuid()) @db.Uuid
+  taakdefinitieId      String               @map("taakdefinitie_id") @db.Uuid
+  taakdefinitie        Taakdefinitie        @relation(fields: [taakdefinitieId], references: [id])
+  naam                 String
+  status               TaakStatus
+  stapSinds            DateTime             @default(now()) @map("stap_sinds") @db.Timestamptz
+  ronde                Int                  @default(1)
+  peildatum            DateTime?            @db.Date
   // Startdatum van een geplande cyclus (terugkerende taken); null bij handmatig aangemaakt.
-  geplandOp          DateTime?          @map("gepland_op") @db.Date
+  geplandOp            DateTime?            @map("gepland_op") @db.Date
   // Logisch verwijderd door de functioneel beheerder (auditlog blijft bewaard).
-  verwijderdOp       DateTime?          @map("verwijderd_op") @db.Timestamptz
-  verwijderdDoor     String?            @map("verwijderd_door")
-  recordmanagerId    String             @map("recordmanager_id") @db.Uuid
-  proceseigenaarId   String             @map("proceseigenaar_id") @db.Uuid
-  archivarisId       String             @map("archivaris_id") @db.Uuid
-  recordmanager      Medewerker         @relation("TaakinstantieRecordmanager", fields: [recordmanagerId], references: [id])
-  proceseigenaar     Medewerker         @relation("TaakinstantieProceseigenaar", fields: [proceseigenaarId], references: [id])
-  archivaris         Medewerker         @relation("TaakinstantieArchivaris", fields: [archivarisId], references: [id])
-  gestartOp          DateTime?          @map("gestart_op") @db.Timestamptz
-  afgerondOp         DateTime?          @map("afgerond_op") @db.Timestamptz
-  versie             Int                @default(1)
+  verwijderdOp         DateTime?            @map("verwijderd_op") @db.Timestamptz
+  verwijderdDoor       String?              @map("verwijderd_door")
+  recordmanagerId      String               @map("recordmanager_id") @db.Uuid
+  proceseigenaarId     String               @map("proceseigenaar_id") @db.Uuid
+  archivarisId         String               @map("archivaris_id") @db.Uuid
+  recordmanager        Medewerker           @relation("TaakinstantieRecordmanager", fields: [recordmanagerId], references: [id])
+  proceseigenaar       Medewerker           @relation("TaakinstantieProceseigenaar", fields: [proceseigenaarId], references: [id])
+  archivaris           Medewerker           @relation("TaakinstantieArchivaris", fields: [archivarisId], references: [id])
+  gestartOp            DateTime?            @map("gestart_op") @db.Timestamptz
+  afgerondOp           DateTime?            @map("afgerond_op") @db.Timestamptz
+  versie               Int                  @default(1)
   // Archiefvormer van de proceseigenaar, vastgepind bij het aanmaken van de taakuitvoering
   // (MDTO verwijzingGegevens). De applicatie zet hem altijd; latere wijzigingen van het
   // profiel werken alleen door in nieuwe uitvoeringen.
-  archiefvormer      Json?
+  archiefvormer        Json?
   // Vingerafdruk van de lijst bij de vrijgave door de archivaris (CC-9); gecontroleerd
   // bij de vernietigingsopdracht.
-  lijstHash          String?            @map("lijst_hash")
-  selecties          Selectie[]
-  verklaringen       Verklaring[]
-  auditEvents        AuditEvent[]
-  outboxItems        Outbox[]
-  vernietigingen     Vernietiging[]
-  kandidaatBesluiten KandidaatBesluit[]
-  archiveringen      Archivering[]
+  lijstHash            String?              @map("lijst_hash")
+  selecties            Selectie[]
+  verklaringen         Verklaring[]
+  auditEvents          AuditEvent[]
+  outboxItems          Outbox[]
+  vernietigingen       Vernietiging[]
+  kandidaatBesluiten   KandidaatBesluit[]
+  kandidaatOpmerkingen KandidaatOpmerking[]
+  archiveringen        Archivering[]
 
   @@map("taakinstantie")
 }
@@ -308,6 +311,7 @@ model Vernietigingskandidaat {
   versie                            Int                    @default(1)
   uitvoeringsresultaten             Uitvoeringsresultaat[]
   besluiten                         KandidaatBesluit[]
+  opmerkingen                       KandidaatOpmerking[]
 
   @@unique([selectieId, kandidaatId])
   @@index([selectieId, beoordeling])
@@ -317,43 +321,43 @@ model Vernietigingskandidaat {
 }
 
 model AuditEvent {
-  id              BigInt         @id @default(autoincrement())
-  taakinstantieId String         @map("taakinstantie_id") @db.Uuid
-  taakinstantie   Taakinstantie  @relation(fields: [taakinstantieId], references: [id])
-  tijdstip        DateTime       @default(now()) @db.Timestamptz
-  actorType       AuditActorType @map("actor_type")
-  actorId         String?        @map("actor_id")
-  actorNaam       String?        @map("actor_naam")
-  rol             AppRole?
+  id                      BigInt         @id @default(autoincrement())
+  taakinstantieId         String         @map("taakinstantie_id") @db.Uuid
+  taakinstantie           Taakinstantie  @relation(fields: [taakinstantieId], references: [id])
+  tijdstip                DateTime       @default(now()) @db.Timestamptz
+  actorType               AuditActorType @map("actor_type")
+  actorId                 String?        @map("actor_id")
+  actorNaam               String?        @map("actor_naam")
+  rol                     AppRole?
   // Eventtype als begrip (ADR-0005 §5): label en begrippenlijst (naam + versie).
-  eventType                String         @map("event_type")
-  eventTypeBegrippenlijst  String         @map("event_type_begrippenlijst")
-  entiteitType    String         @map("entiteit_type")
-  entiteitId      String         @map("entiteit_id")
-  details         Json
-  correlatieId    String?        @map("correlatie_id")
-  vorigeHash      String?        @map("vorige_hash")
-  hash            String
+  eventType               String         @map("event_type")
+  eventTypeBegrippenlijst String         @map("event_type_begrippenlijst")
+  entiteitType            String         @map("entiteit_type")
+  entiteitId              String         @map("entiteit_id")
+  details                 Json
+  correlatieId            String?        @map("correlatie_id")
+  vorigeHash              String?        @map("vorige_hash")
+  hash                    String
 
   @@index([taakinstantieId, id], map: "idx_audit_event_taak")
   @@map("audit_event")
 }
 
 model ConfiguratieEvent {
-  id           BigInt         @id @default(autoincrement())
-  tijdstip     DateTime       @default(now()) @db.Timestamptz
-  actorType    AuditActorType @map("actor_type")
-  actorId      String?        @map("actor_id")
-  actorNaam    String?        @map("actor_naam")
-  rol          AppRole?
+  id                      BigInt         @id @default(autoincrement())
+  tijdstip                DateTime       @default(now()) @db.Timestamptz
+  actorType               AuditActorType @map("actor_type")
+  actorId                 String?        @map("actor_id")
+  actorNaam               String?        @map("actor_naam")
+  rol                     AppRole?
   eventType               String         @map("event_type")
   eventTypeBegrippenlijst String         @map("event_type_begrippenlijst")
-  entiteitType String         @map("entiteit_type")
-  entiteitId   String         @map("entiteit_id")
-  details      Json
-  correlatieId String?        @map("correlatie_id")
-  vorigeHash   String?        @map("vorige_hash")
-  hash         String
+  entiteitType            String         @map("entiteit_type")
+  entiteitId              String         @map("entiteit_id")
+  details                 Json
+  correlatieId            String?        @map("correlatie_id")
+  vorigeHash              String?        @map("vorige_hash")
+  hash                    String
 
   @@map("configuratie_event")
 }
@@ -484,6 +488,30 @@ model KandidaatBesluit {
 
   @@index([kandidaatId, tijdstip])
   @@map("kandidaat_besluit")
+}
+
+// Opmerking van recordmanager, proceseigenaar of archivaris bij één kandidaat (besluit
+// 2026-11-12): de toelichting bij een beoordeling of besluit, als eigen regel per auteur. Alleen
+// logisch verwijderen, door de auteur in de eigen stap (trigger kandidaat_opmerking_bescherming).
+model KandidaatOpmerking {
+  id              String                 @id @default(uuid()) @db.Uuid
+  kandidaatId     String                 @map("kandidaat_id") @db.Uuid
+  kandidaat       Vernietigingskandidaat @relation(fields: [kandidaatId], references: [id], onDelete: Cascade)
+  taakinstantieId String                 @map("taakinstantie_id") @db.Uuid
+  taakinstantie   Taakinstantie          @relation(fields: [taakinstantieId], references: [id])
+  ronde           Int
+  // recordmanager, proceseigenaar of archivaris
+  rol             String
+  tekst           String
+  medewerkerId    String                 @map("medewerker_id") @db.Uuid
+  medewerker      Medewerker             @relation("KandidaatOpmerkingAuteur", fields: [medewerkerId], references: [id])
+  tijdstip        DateTime               @default(now()) @db.Timestamptz
+  verwijderdOp    DateTime?              @map("verwijderd_op") @db.Timestamptz
+  verwijderdDoor  String?                @map("verwijderd_door") @db.Uuid
+  verwijderaar    Medewerker?            @relation("KandidaatOpmerkingVerwijderdDoor", fields: [verwijderdDoor], references: [id])
+
+  @@index([kandidaatId, tijdstip])
+  @@map("kandidaat_opmerking")
 }
 
 // Archivering van het vernietigingsdossier (CC-18). Een poging per regel; status PENDING,

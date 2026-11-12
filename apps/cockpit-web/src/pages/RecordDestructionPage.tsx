@@ -17,6 +17,8 @@ import ShortcutPane from "../components/ShortcutPane";
 import RecordDetailsPanel from "../features/task-execution/components/RecordDetailsPanel";
 import TaskExecutionHeader from "../features/task-execution/components/TaskExecutionHeader";
 import { AppShellPortal } from "../layouts/AppShellPortalContext";
+import AanZetPortal from "../features/task-execution/AanZetPortal";
+import { useMeekijken } from "../features/task-execution/useMeekijken";
 import {
   getDestructionExecution,
   retryVernietiging,
@@ -96,6 +98,8 @@ export default function RecordDestructionPage() {
   const navigate = useNavigate();
   const { taakId, id } = useParams();
   const { accessToken } = useSessionUser();
+  // Alleen wie aan zet is, krijgt acties; de andere betrokkenen kijken mee.
+  const meekijken = useMeekijken({ taakId: id, stapStatussen: ["vrijgegeven", "uitvoering"] });
   const [selectedConnectorId, setSelectedConnectorId] = useState(
     null as string | null
   );
@@ -282,7 +286,7 @@ export default function RecordDestructionPage() {
       const isTyping =
         tagName === "INPUT" || tagName === "TEXTAREA" || target?.isContentEditable;
 
-      if (isTyping) {
+      if (isTyping || !meekijken.aanZet) {
         return;
       }
 
@@ -295,7 +299,7 @@ export default function RecordDestructionPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handlePrimaryAction]);
+  }, [handlePrimaryAction, meekijken.aanZet]);
 
   // Zonder uitvoeringsgegevens: een mislukte API-aanroep in het rode foutvlak, anders de lege stand.
   if (!selectedConnector) {
@@ -366,7 +370,7 @@ export default function RecordDestructionPage() {
         />
       </AppShellPortal>
 
-      <AppShellPortal slot="action">
+      <AanZetPortal slot="action" meekijken={meekijken}>
         <ActionPanel
           embedded
           title="Actie"
@@ -445,15 +449,15 @@ export default function RecordDestructionPage() {
             </div>
           </ActionPanelSection>
         </ActionPanel>
-      </AppShellPortal>
+      </AanZetPortal>
 
-      <AppShellPortal slot="shortcut">
+      <AanZetPortal slot="shortcut" meekijken={meekijken}>
         <ShortcutPane
           shortcuts={[
             { keyLabel: "W", label: "Actie uitvoeren" },
           ]}
         />
-      </AppShellPortal>
+      </AanZetPortal>
 
       <ContentPanel>
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">

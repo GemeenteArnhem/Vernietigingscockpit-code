@@ -6,6 +6,7 @@ import { TakenController } from "./taken.controller.js";
 import { BeoordelingService } from "./beoordeling.service.js";
 import { BesluitvormingService } from "./besluitvorming.service.js";
 import { DossierService } from "./dossier.service.js";
+import { OpmerkingService } from "./opmerking.service.js";
 import { SelectieService } from "./selectie.service.js";
 import { TaakToegangService } from "./taak-toegang.service.js";
 import { UitvoeringService } from "./uitvoering.service.js";
@@ -18,6 +19,7 @@ import { UitvoeringService } from "./uitvoering.service.js";
     SelectieService,
     BeoordelingService,
     BesluitvormingService,
+    OpmerkingService,
     DossierService,
     UitvoeringService,
   ],

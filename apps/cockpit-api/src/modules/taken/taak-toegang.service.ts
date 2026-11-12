@@ -138,6 +138,7 @@ export class TaakToegangService {
         status: true,
         stapSinds: true,
         versie: true,
+        ronde: true,
         archiefvormer: true,
         recordmanager: {
           select: {
@@ -197,6 +198,7 @@ export class TaakToegangService {
         id: true,
         status: true,
         versie: true,
+        ronde: true,
         recordmanagerId: true,
         proceseigenaarId: true,
         archivarisId: true,

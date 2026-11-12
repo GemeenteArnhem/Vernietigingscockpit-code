@@ -20,6 +20,8 @@ export type DashboardTaskRecord = {
   status: TaskExecutionStatus;
   eigenaar: "mijn" | "team";
   stapId: DashboardWorkflowStepId;
+  // Gearchiveerd: alle stappen afgerond (alle bolletjes groen).
+  afgerond: boolean;
   stap: string;
   voortgang: number;
   dagenInStap: number;
