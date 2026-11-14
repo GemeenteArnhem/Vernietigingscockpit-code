@@ -9,6 +9,7 @@ packages/*/dist
 dist
 build
 coverage
+apps/*/coverage
 logs
 *.log
 .env

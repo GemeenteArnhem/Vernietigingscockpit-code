@@ -22,6 +22,28 @@ export default defineConfig({
   resolve: { conditions: BRON },
   ssr: { resolve: { conditions: BRON, externalConditions: ["source"] } },
   test: {
+    // Testdekking (NeRDS-leidraad 13.1): alleen met `npm run test:dekking`, dat unit- en
+    // integratietests samen draait en één rapport maakt. De drempels werken als ratchet:
+    // gelijk aan de laatst gemeten dekking (naar beneden afgerond), zodat die niet daalt.
+    // Verhoog ze als de dekking stijgt. Gemeten 2026-11-13: lines 80,4%, branches 75,9%,
+    // functions 79,2%, statements 80,6%.
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.ts"],
+      exclude: [
+        "src/**/*.test.ts",
+        // Gegenereerd uit het register in de architectuurrepo (check:selectielijsten).
+        "src/modules/selectielijsten/register.ts",
+      ],
+      reporter: ["text-summary", "html", "json-summary"],
+      reportsDirectory: "coverage",
+      thresholds: {
+        lines: 80,
+        branches: 75,
+        functions: 79,
+        statements: 80,
+      },
+    },
     projects: [
       {
         test: {

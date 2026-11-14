@@ -24,6 +24,22 @@ npm run generate:selectielijsten --workspace @vernietigingscockpit/cockpit-api
 
 `npm run check:selectielijsten --workspace @vernietigingscockpit/cockpit-api` controleert of `src/modules/selectielijsten/register.ts` nog bij het register past (ook in CI).
 
+## OpenAPI-specificatie van de cockpit-API
+
+De specificatie (OpenAPI 3.1) wordt uit de code gegenereerd en staat in [apps/cockpit-api/openapi.json](apps/cockpit-api/openapi.json). Een draaiende API publiceert hem op `/api/v1/openapi.json`.
+
+- Pad, methode, statuscode, rollen en invoer komen uit de controllers (decorators en zod-schema's).
+- Antwoorden komen uit de zod-schema's in `packages/api-contract/src/antwoorden.ts`. In het register `apps/cockpit-api/src/openapi/routes.ts` staat per endpoint het antwoordschema; de compiler controleert dat dat bij de controller past.
+- Een nieuw endpoint zonder regel in het register laat de generator en de unittest falen.
+
+Na een wijziging aan een endpoint of antwoord:
+
+```bash
+npm run generate:openapi --workspace @vernietigingscockpit/cockpit-api
+```
+
+`npm run check:openapi --workspace @vernietigingscockpit/cockpit-api` controleert of `openapi.json` nog bij de code past (ook in CI).
+
 ## Docker compose
 
 De root `compose.yaml` bouwt twee containers:

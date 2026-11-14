@@ -1,0 +1,13 @@
+MDTO XML-schema (MDTO-XML1.0.1.xsd)
+
+Het XML-schema van MDTO (Metagegevens voor duurzaam toegankelijke
+overheidsinformatie) is gepubliceerd door het Nationaal Archief:
+https://www.nationaalarchief.nl/archiveren/mdto
+
+Het bestand zelf vermeldt geen licentie. De licentievoorwaarden moeten nog
+worden bevestigd bij het Nationaal Archief. Tot die tijd wordt het bestand
+ongewijzigd en alleen in de tests van deze repo gebruikt, om gegenereerde
+MDTO-XML te valideren.
+
+Zodra de licentie bekend is, vervangt de SPDX-identificatie daarvan deze
+LicenseRef in REUSE.toml en wordt dit bestand verwijderd.

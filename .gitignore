@@ -1,6 +1,6 @@
 # Nestjs specific
 /dist
-/node_modules
+node_modules/
 /build
 /tmp
 
@@ -33,3 +33,6 @@ lerna-debug.log*
 
 # Build-uitvoer van de gedeelde pakketten
 /packages/*/dist/
+
+# Testdekkingsrapporten
+coverage/

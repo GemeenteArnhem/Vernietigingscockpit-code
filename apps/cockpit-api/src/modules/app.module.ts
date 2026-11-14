@@ -18,6 +18,7 @@ import { WorkflowModule } from "./workflow/workflow.module.js";
 import { NietGevondenFilter } from "../shared/http/niet-gevonden.filter.js";
 import { RateLimitGuard, rateLimitOpties } from "../shared/http/rate-limit.js";
 import { loggingModule } from "../shared/logging/logging.js";
+import { OpenApiController } from "../openapi/openapi.controller.js";
 
 @Module({
   imports: [
@@ -47,6 +48,8 @@ import { loggingModule } from "../shared/logging/logging.js";
     WorkerModule,
     WorkflowModule,
   ],
+  // De OpenAPI-specificatie op /api/v1/openapi.json (src/openapi).
+  controllers: [OpenApiController],
   providers: [
     {
       provide: APP_FILTER,

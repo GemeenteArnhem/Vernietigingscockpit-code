@@ -6,7 +6,8 @@ import type { z } from "zod";
 // altijd 400 met een korte uitleg, nooit een 500. De services houden hun domeinregels.
 
 export class ZodPipe<T extends z.ZodType> implements PipeTransform<unknown, z.output<T>> {
-  constructor(private readonly schema: T) {}
+  // Publiek: de OpenAPI-generator leest het schema uit (src/openapi).
+  constructor(readonly schema: T) {}
 
   transform(waarde: unknown): z.output<T> {
     const uitkomst = this.schema.safeParse(waarde);

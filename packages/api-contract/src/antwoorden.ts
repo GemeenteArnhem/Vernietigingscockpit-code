@@ -1,514 +1,825 @@
-// Antwoordtypes van de cockpit-API (CC-19). De API geeft ze op als returntype van de
-// services, de web-app gebruikt ze bij het ophalen; zo merkt de compiler het als de twee
-// uit elkaar lopen. Datums zijn ISO-strings.
+// Antwoorden van de cockpit-API (CC-19), als zod-schema's met de types daaruit afgeleid. De
+// API geeft de types op als returntype van de services, de web-app gebruikt ze bij het
+// ophalen; zo merkt de compiler het als de twee uit elkaar lopen. De schema's zijn de bron
+// voor de OpenAPI-specificatie (NeRDS-leidraad H4/H9, API Design Rules). Datums zijn ISO-strings.
+//
+// Elk schema met een eigen naam staat in `apiAntwoordRegister`; in de OpenAPI-specificatie
+// wordt het een component onder die naam.
 
-import type { AppRole } from "./rollen.js";
+import { z } from "zod";
 
-export type ApiMedewerker = {
-  id: string;
-  naam: string;
-  email?: string;
-  rollen?: string[];
-};
+import { APP_ROLES } from "./rollen.js";
 
-export type ApiStekker = {
-  id: string;
-  naam: string;
-  omschrijving?: string | null;
-};
+export const apiAntwoordRegister = z.registry<{ id: string; description?: string }, z.ZodType>();
 
-export type ApiVerantwoordelijken = {
-  recordmanager: ApiMedewerker;
-  proceseigenaar: ApiMedewerker;
-  archivaris: ApiMedewerker;
-};
+function benoemd<T extends z.ZodType>(id: string, schema: T, description?: string): T {
+  apiAntwoordRegister.add(schema, description ? { id, description } : { id });
+  return schema;
+}
+
+const datumTijd = z.string().describe("ISO 8601");
+
+export const apiMedewerkerSchema = benoemd(
+  "ApiMedewerker",
+  z.object({
+    id: z.string(),
+    naam: z.string(),
+    email: z.string().optional(),
+    rollen: z.array(z.string()).optional(),
+  })
+);
+export type ApiMedewerker = z.infer<typeof apiMedewerkerSchema>;
+
+export const apiStekkerSchema = benoemd(
+  "ApiStekker",
+  z.object({
+    id: z.string(),
+    naam: z.string(),
+    omschrijving: z.string().nullish(),
+  })
+);
+export type ApiStekker = z.infer<typeof apiStekkerSchema>;
+
+export const apiVerantwoordelijkenSchema = benoemd(
+  "ApiVerantwoordelijken",
+  z.object({
+    recordmanager: apiMedewerkerSchema,
+    proceseigenaar: apiMedewerkerSchema,
+    archivaris: apiMedewerkerSchema,
+  })
+);
+export type ApiVerantwoordelijken = z.infer<typeof apiVerantwoordelijkenSchema>;
 
 // Naam en e-mail van een verantwoordelijke, zoals de taakstappen die tonen.
-export type ApiPersoon = {
-  naam: string;
-  email?: string | null;
-};
+export const apiPersoonSchema = benoemd(
+  "ApiPersoon",
+  z.object({
+    naam: z.string(),
+    email: z.string().nullish(),
+  })
+);
+export type ApiPersoon = z.infer<typeof apiPersoonSchema>;
 
-export type ApiTellingen = {
-  totaalKandidaten: number;
-  totaalObjecten: number;
-  totaalBetrokkenen: number;
-};
+export const apiTellingenSchema = benoemd(
+  "ApiTellingen",
+  z.object({
+    totaalKandidaten: z.number().int(),
+    totaalObjecten: z.number().int(),
+    totaalBetrokkenen: z.number().int(),
+  })
+);
+export type ApiTellingen = z.infer<typeof apiTellingenSchema>;
 
-export type ApiTaakinstantie = {
-  id: string;
-  naam: string;
-  status: string;
-  stapSinds: string;
-  peildatum?: string | null;
-  // Geplande startdatum van een terugkerende taak; ervoor toont de UI 'Gepland'.
-  geplandOp?: string | null;
-  gestartOp?: string | null;
-  taakdefinitie?: ApiTaakdefinitieSamenvatting;
-  verantwoordelijken: ApiVerantwoordelijken;
-  tellingen: ApiTellingen;
-  toegestaneActies?: string[];
-};
+export const apiTaakdefinitieSamenvattingSchema = benoemd(
+  "ApiTaakdefinitieSamenvatting",
+  z.object({
+    id: z.string(),
+    naam: z.string(),
+    categorie: z.string(),
+    frequentie: z.string(),
+  })
+);
+export type ApiTaakdefinitieSamenvatting = z.infer<typeof apiTaakdefinitieSamenvattingSchema>;
 
-export type ApiTaakdefinitieSamenvatting = {
-  id: string;
-  naam: string;
-  categorie: string;
-  frequentie: string;
-};
+export const apiTaakinstantieSchema = benoemd(
+  "ApiTaakinstantie",
+  z.object({
+    id: z.string(),
+    naam: z.string(),
+    status: z.string(),
+    stapSinds: datumTijd,
+    peildatum: z.string().nullish(),
+    // Geplande startdatum van een terugkerende taak; ervoor toont de UI 'Gepland'.
+    geplandOp: z.string().nullish(),
+    gestartOp: z.string().nullish(),
+    taakdefinitie: apiTaakdefinitieSamenvattingSchema.optional(),
+    verantwoordelijken: apiVerantwoordelijkenSchema,
+    tellingen: apiTellingenSchema,
+    toegestaneActies: z.array(z.string()).optional(),
+  })
+);
+export type ApiTaakinstantie = z.infer<typeof apiTaakinstantieSchema>;
 
-export type ApiTaakdefinitie = {
-  id: string;
-  naam: string;
-  omschrijving?: string | null;
-  categorie: string;
-  frequentie: string;
-  verantwoordelijken: ApiVerantwoordelijken;
-  stekkers: ApiStekker[];
-  instanties?: ApiTaakinstantie[];
-  toegestaneActies?: string[];
-};
+export const apiTaakdefinitieSchema = benoemd(
+  "ApiTaakdefinitie",
+  z.object({
+    id: z.string(),
+    naam: z.string(),
+    omschrijving: z.string().nullish(),
+    categorie: z.string(),
+    frequentie: z.string(),
+    verantwoordelijken: apiVerantwoordelijkenSchema,
+    stekkers: z.array(apiStekkerSchema),
+    instanties: z.array(apiTaakinstantieSchema).optional(),
+    toegestaneActies: z.array(z.string()).optional(),
+  })
+);
+export type ApiTaakdefinitie = z.infer<typeof apiTaakdefinitieSchema>;
 
-export type ApiMe = {
-  id: string;
-  username?: string;
-  name?: string;
-  email?: string | null;
-  roles: AppRole[];
-  actions: string[];
-  medewerkerId?: string | null;
-  medewerker?: {
-    id: string;
-    naam: string;
-    email: string;
-    afdeling: { naam: string; code: string } | null;
-  } | null;
-  laatstGezien?: string;
-};
+export const apiMeSchema = benoemd(
+  "ApiMe",
+  z.object({
+    id: z.string(),
+    username: z.string().optional(),
+    name: z.string().optional(),
+    email: z.string().nullish(),
+    roles: z.array(z.enum(APP_ROLES)),
+    actions: z.array(z.string()),
+    medewerkerId: z.string().nullish(),
+    medewerker: z
+      .object({
+        id: z.string(),
+        naam: z.string(),
+        email: z.string(),
+        afdeling: z.object({ naam: z.string(), code: z.string() }).nullable(),
+      })
+      .nullish(),
+    laatstGezien: z.string().optional(),
+  })
+);
+export type ApiMe = z.infer<typeof apiMeSchema>;
+
+// --- health ------------------------------------------------------------------------------
+
+export const apiHealthSchema = benoemd(
+  "ApiHealth",
+  z.object({
+    status: z.string(),
+    app: z.string().optional(),
+    checks: z.record(z.string(), z.string()).optional(),
+    timestamp: datumTijd,
+  })
+);
+export type ApiHealth = z.infer<typeof apiHealthSchema>;
 
 // --- stamgegevens en stekkers ------------------------------------------------------------
 
-export type ApiVerwijzing = {
-  verwijzingNaam: string;
-  verwijzingIdentificatie?: { identificatieKenmerk: string; identificatieBron: string };
-};
+export const apiIdentificatieSchema = benoemd(
+  "ApiIdentificatie",
+  z.object({ identificatieKenmerk: z.string(), identificatieBron: z.string() })
+);
+export type ApiIdentificatie = z.infer<typeof apiIdentificatieSchema>;
 
-export type ApiStamgegevensMedewerker = {
-  id: string;
-  naam: string;
-  email: string;
-  rollen: string[];
-  archiefvormer?: ApiVerwijzing | null;
-  afdeling?: {
-    naam: string;
-    code: string;
-  } | null;
-};
+export const apiVerwijzingSchema = benoemd(
+  "ApiVerwijzing",
+  z.object({
+    verwijzingNaam: z.string(),
+    verwijzingIdentificatie: apiIdentificatieSchema.optional(),
+  })
+);
+export type ApiVerwijzing = z.infer<typeof apiVerwijzingSchema>;
 
-export type ApiStekkerOptie = {
-  id: string;
-  naam: string;
-  omschrijving?: string | null;
-  actief: boolean;
-  laatsteConfiguratie?: {
-    versie: number;
-    baseUrl: string;
-    authType: string;
-    verwachteApiMajor: number;
-  } | null;
-};
+export const apiAfdelingSchema = benoemd(
+  "ApiAfdeling",
+  z.object({
+    id: z.string(),
+    naam: z.string(),
+    code: z.string(),
+    actief: z.boolean(),
+  })
+);
+export type ApiAfdeling = z.infer<typeof apiAfdelingSchema>;
+
+export const apiStamgegevensMedewerkerSchema = benoemd(
+  "ApiStamgegevensMedewerker",
+  z.object({
+    id: z.string(),
+    naam: z.string(),
+    email: z.string(),
+    rollen: z.array(z.string()),
+    archiefvormer: apiVerwijzingSchema.nullish(),
+    afdeling: z.object({ naam: z.string(), code: z.string() }).nullish(),
+  })
+);
+export type ApiStamgegevensMedewerker = z.infer<typeof apiStamgegevensMedewerkerSchema>;
+
+export const apiStamgegevensImportSchema = benoemd(
+  "ApiStamgegevensImport",
+  z.object({ afdelingen: z.number().int(), medewerkers: z.number().int() }),
+  "Aantal geïmporteerde afdelingen en medewerkers."
+);
+export type ApiStamgegevensImport = z.infer<typeof apiStamgegevensImportSchema>;
+
+export const apiStekkerOptieSchema = benoemd(
+  "ApiStekkerOptie",
+  z.object({
+    id: z.string(),
+    naam: z.string(),
+    omschrijving: z.string().nullish(),
+    actief: z.boolean(),
+    laatsteConfiguratie: z
+      .object({
+        versie: z.number().int(),
+        baseUrl: z.string(),
+        authType: z.string(),
+        verwachteApiMajor: z.number().int(),
+      })
+      .nullish(),
+  })
+);
+export type ApiStekkerOptie = z.infer<typeof apiStekkerOptieSchema>;
 
 // --- stekkerbeheer ----------------------------------------------------------------------
 
-export type ApiStekkerConfiguratie = {
-  versie: number;
-  baseUrl: string;
-  authType: string;
-  tokenUrl: string | null;
-  clientId: string | null;
-  // Het secret zelf komt nooit uit de API; alleen of er een is.
-  secretIngesteld: boolean;
-  secretRef: string | null;
-  scopes: string[];
-  verwachteApiMajor: number;
-  timeouts: Record<string, unknown>;
-  parameters: Record<string, unknown>;
-  aangemaaktDoor: string;
-  aangemaaktOp: string;
-};
+export const apiStekkerConfiguratieSchema = benoemd(
+  "ApiStekkerConfiguratie",
+  z.object({
+    versie: z.number().int(),
+    baseUrl: z.string(),
+    authType: z.string(),
+    tokenUrl: z.string().nullable(),
+    clientId: z.string().nullable(),
+    // Het secret zelf komt nooit uit de API; alleen of er een is.
+    secretIngesteld: z.boolean(),
+    secretRef: z.string().nullable(),
+    scopes: z.array(z.string()),
+    verwachteApiMajor: z.number().int(),
+    timeouts: z.record(z.string(), z.unknown()),
+    parameters: z.record(z.string(), z.unknown()),
+    aangemaaktDoor: z.string(),
+    aangemaaktOp: datumTijd,
+  })
+);
+export type ApiStekkerConfiguratie = z.infer<typeof apiStekkerConfiguratieSchema>;
 
-export type ApiStekkerBeheer = {
-  id: string;
-  naam: string;
-  omschrijving: string | null;
-  actief: boolean;
-  // Waar de stekker in gebruik is; verwijderen kan alleen als beide 0 zijn.
-  gebruik: { taakdefinities: number; selecties: number };
-  configuratie: ApiStekkerConfiguratie | null;
-  versies: Array<{ versie: number; aangemaaktDoor: string; aangemaaktOp: string }>;
-  toegestaneActies: string[];
-};
+export const apiStekkerBeheerSchema = benoemd(
+  "ApiStekkerBeheer",
+  z.object({
+    id: z.string(),
+    naam: z.string(),
+    omschrijving: z.string().nullable(),
+    actief: z.boolean(),
+    // Waar de stekker in gebruik is; verwijderen kan alleen als beide 0 zijn.
+    gebruik: z.object({ taakdefinities: z.number().int(), selecties: z.number().int() }),
+    configuratie: apiStekkerConfiguratieSchema.nullable(),
+    versies: z.array(z.object({ versie: z.number().int(), aangemaaktDoor: z.string(), aangemaaktOp: datumTijd })),
+    toegestaneActies: z.array(z.string()),
+  })
+);
+export type ApiStekkerBeheer = z.infer<typeof apiStekkerBeheerSchema>;
 
 // --- selectie ----------------------------------------------------------------------------
 
-export type ApiSelectieStekker = {
-  stekker: {
-    id: string;
-    naam: string;
-    omschrijving?: string | null;
-    actief: boolean;
-  };
-  configuratie?: {
-    id: string;
-    versie: number;
-    baseUrl: string;
-    verwachteApiMajor: number;
-  } | null;
-  selectie?: {
-    id: string;
-    externSelectieId?: string | null;
-    status: string;
-    peildatum?: string | null;
-    selectietijdstip?: string | null;
-    totaalKandidaten: number;
-    totaalObjecten: number;
-    totaalBetrokkenen: number;
-    geimporteerd: number;
-    fout?: string | null;
-  } | null;
-};
+export const apiSelectieStekkerSchema = benoemd(
+  "ApiSelectieStekker",
+  z.object({
+    stekker: z.object({
+      id: z.string(),
+      naam: z.string(),
+      omschrijving: z.string().nullish(),
+      actief: z.boolean(),
+    }),
+    configuratie: z
+      .object({
+        id: z.string(),
+        versie: z.number().int(),
+        baseUrl: z.string(),
+        verwachteApiMajor: z.number().int(),
+      })
+      .nullish(),
+    selectie: z
+      .object({
+        id: z.string(),
+        externSelectieId: z.string().nullish(),
+        status: z.string(),
+        peildatum: z.string().nullish(),
+        selectietijdstip: z.string().nullish(),
+        totaalKandidaten: z.number().int(),
+        totaalObjecten: z.number().int(),
+        totaalBetrokkenen: z.number().int(),
+        geimporteerd: z.number().int(),
+        fout: z.string().nullish(),
+      })
+      .nullish(),
+  })
+);
+export type ApiSelectieStekker = z.infer<typeof apiSelectieStekkerSchema>;
 
-export type ApiTaakSelectie = {
-  taak: {
-    id: string;
-    naam: string;
-    status: string;
-    peildatum?: string | null;
-    taakdefinitie: {
-      id: string;
-      naam: string;
-    };
-  };
-  stekkers: ApiSelectieStekker[];
-};
+export const apiTaakSelectieSchema = benoemd(
+  "ApiTaakSelectie",
+  z.object({
+    taak: z.object({
+      id: z.string(),
+      naam: z.string(),
+      status: z.string(),
+      peildatum: z.string().nullish(),
+      taakdefinitie: z.object({ id: z.string(), naam: z.string() }),
+    }),
+    stekkers: z.array(apiSelectieStekkerSchema),
+  })
+);
+export type ApiTaakSelectie = z.infer<typeof apiTaakSelectieSchema>;
 
-export type ApiSelectieGestart = ApiTaakSelectie & {
-  // Id's van de selecties die deze aanvraag heeft gemaakt.
-  aangemaakteSelecties: string[];
-};
+export const apiSelectieGestartSchema = benoemd(
+  "ApiSelectieGestart",
+  apiTaakSelectieSchema.extend({
+    // Id's van de selecties die deze aanvraag heeft gemaakt.
+    aangemaakteSelecties: z.array(z.string()),
+  })
+);
+export type ApiSelectieGestart = z.infer<typeof apiSelectieGestartSchema>;
 
 // --- kandidatenlijst (CC-10) -------------------------------------------------------------
 
-export type ApiTaakContext = {
-  id: string;
-  naam: string;
-  status: string;
-  stapSinds: string;
-  // Taakversie voor If-Match bij statuswijzigingen.
-  versie: number;
-  verantwoordelijken: {
-    recordmanager: ApiPersoon;
-    proceseigenaar: ApiPersoon;
-    archivaris: ApiPersoon;
-  };
-  // Archiefvormer van de taak (vastgepind bij aanmaken, ADR-0005 B-M3); geldt voor elke
-  // kandidaat zonder eigen archiefvormer.
-  archiefvormer?: ApiVerwijzing | null;
-};
+export const apiTaakContextSchema = benoemd(
+  "ApiTaakContext",
+  z.object({
+    id: z.string(),
+    naam: z.string(),
+    status: z.string(),
+    stapSinds: datumTijd,
+    // Taakversie voor If-Match bij statuswijzigingen.
+    versie: z.number().int(),
+    verantwoordelijken: z.object({
+      recordmanager: apiPersoonSchema,
+      proceseigenaar: apiPersoonSchema,
+      archivaris: apiPersoonSchema,
+    }),
+    // Archiefvormer van de taak (vastgepind bij aanmaken, ADR-0005 B-M3); geldt voor elke
+    // kandidaat zonder eigen archiefvormer.
+    archiefvormer: apiVerwijzingSchema.nullish(),
+  })
+);
+export type ApiTaakContext = z.infer<typeof apiTaakContextSchema>;
 
 // --- MDTO (ADR-0005): de gegevens van een vernietigingskandidaat --------------------------
 
-export type ApiIdentificatie = { identificatieKenmerk: string; identificatieBron: string };
+export const apiBegripSchema = benoemd(
+  "ApiBegrip",
+  z.object({
+    begripLabel: z.string(),
+    begripCode: z.string().optional(),
+    begripBegrippenlijst: apiVerwijzingSchema,
+  })
+);
+export type ApiBegrip = z.infer<typeof apiBegripSchema>;
 
-export type ApiBegrip = {
-  begripLabel: string;
-  begripCode?: string;
-  begripBegrippenlijst: ApiVerwijzing;
-};
+export const apiDekkingInTijdSchema = benoemd(
+  "ApiDekkingInTijd",
+  z.object({
+    dekkingInTijdType: apiBegripSchema,
+    dekkingInTijdBegindatum: z.string(),
+    dekkingInTijdEinddatum: z.string().optional(),
+  })
+);
+export type ApiDekkingInTijd = z.infer<typeof apiDekkingInTijdSchema>;
 
-export type ApiDekkingInTijd = {
-  dekkingInTijdType: ApiBegrip;
-  dekkingInTijdBegindatum: string;
-  dekkingInTijdEinddatum?: string;
-};
-
-export type ApiBewaartermijn = {
-  termijnTriggerStartLooptijd: ApiBegrip | null;
-  termijnStartdatumLooptijd: string | null;
-  termijnLooptijd: string | null;
-  termijnEinddatum: string;
-};
+export const apiBewaartermijnSchema = benoemd(
+  "ApiBewaartermijn",
+  z.object({
+    termijnTriggerStartLooptijd: apiBegripSchema.nullable(),
+    termijnStartdatumLooptijd: z.string().nullable(),
+    termijnLooptijd: z.string().nullable(),
+    termijnEinddatum: z.string(),
+  })
+);
+export type ApiBewaartermijn = z.infer<typeof apiBewaartermijnSchema>;
 
 // De selectielijst van de informatiecategorie (ADR-0008): de selectielijstcode, met de titel uit
 // het register Cockpit-selectielijsten, of een vaste melding als de code daar niet in staat.
-export type ApiSelectielijst = { code: string; naam: string; bekend: boolean };
+export const apiSelectielijstSchema = benoemd(
+  "ApiSelectielijst",
+  z.object({ code: z.string(), naam: z.string(), bekend: z.boolean() })
+);
+export type ApiSelectielijst = z.infer<typeof apiSelectielijstSchema>;
 
 // Het MDTO-profiel van een kandidaat (Stekker API v2), zoals de cockpit het teruggeeft.
-export type ApiMdtoKandidaat = {
-  vernietigingskandidaatId: string;
-  identificatie: ApiIdentificatie[];
-  naam: string;
-  omschrijving: string[] | null;
-  aggregatieniveau: string;
-  classificatie: ApiBegrip[] | null;
-  dekkingInTijd: ApiDekkingInTijd[] | null;
-  waardering: ApiBegrip;
-  bewaartermijn: ApiBewaartermijn;
-  informatiecategorie: ApiBegrip;
-  // Cockpituitbreiding: de selectielijst uit `informatiecategorie.begripBegrippenlijst`.
-  selectielijst: ApiSelectielijst;
-  informatiecategorieAfwijking: { toelichting: string; norm?: ApiVerwijzing } | null;
-  gerelateerdInformatieobject: unknown[] | null;
-  archiefvormer: ApiVerwijzing[] | null;
-  activiteit: ApiVerwijzing | null;
-  aantalObjecten: number;
-  aantalBetrokkenen: number;
-  // Toelichting van de stekker (cockpituitbreiding).
-  stekkerToelichting: string | null;
-};
+export const apiMdtoKandidaatSchema = benoemd(
+  "ApiMdtoKandidaat",
+  z.object({
+    vernietigingskandidaatId: z.string(),
+    identificatie: z.array(apiIdentificatieSchema),
+    naam: z.string(),
+    omschrijving: z.array(z.string()).nullable(),
+    aggregatieniveau: z.string(),
+    classificatie: z.array(apiBegripSchema).nullable(),
+    dekkingInTijd: z.array(apiDekkingInTijdSchema).nullable(),
+    waardering: apiBegripSchema,
+    bewaartermijn: apiBewaartermijnSchema,
+    informatiecategorie: apiBegripSchema,
+    // Cockpituitbreiding: de selectielijst uit `informatiecategorie.begripBegrippenlijst`.
+    selectielijst: apiSelectielijstSchema,
+    informatiecategorieAfwijking: z.object({ toelichting: z.string(), norm: apiVerwijzingSchema.optional() }).nullable(),
+    gerelateerdInformatieobject: z.array(z.unknown()).nullable(),
+    archiefvormer: z.array(apiVerwijzingSchema).nullable(),
+    activiteit: apiVerwijzingSchema.nullable(),
+    aantalObjecten: z.number().int(),
+    aantalBetrokkenen: z.number().int(),
+    // Toelichting van de stekker (cockpituitbreiding).
+    stekkerToelichting: z.string().nullable(),
+  })
+);
+export type ApiMdtoKandidaat = z.infer<typeof apiMdtoKandidaatSchema>;
 
 // Opmerking van recordmanager, proceseigenaar of archivaris bij een kandidaat (besluit
 // 2026-11-12). `verwijderbaar`: de ingelogde gebruiker is de auteur en zit in die stap.
-export type ApiOpmerking = {
-  id: string;
-  rol: "recordmanager" | "proceseigenaar" | "archivaris";
-  medewerker: { id: string; naam: string };
-  ronde: number;
-  tekst: string;
-  tijdstip: string;
-  verwijderbaar: boolean;
-};
+export const apiOpmerkingSchema = benoemd(
+  "ApiOpmerking",
+  z.object({
+    id: z.string(),
+    rol: z.enum(["recordmanager", "proceseigenaar", "archivaris"]),
+    medewerker: z.object({ id: z.string(), naam: z.string() }),
+    ronde: z.number().int(),
+    tekst: z.string(),
+    tijdstip: datumTijd,
+    verwijderbaar: z.boolean(),
+  })
+);
+export type ApiOpmerking = z.infer<typeof apiOpmerkingSchema>;
 
-export type ApiKandidaat = ApiMdtoKandidaat & {
-  id: string;
-  volgnummer: number;
-  beoordeling: string;
-  uitsluitReden?: string | null;
-  toelichting?: string | null;
-  // Alle niet-verwijderde opmerkingen, oudste eerst.
-  opmerkingen: ApiOpmerking[];
-  stekker: {
-    naam: string;
-  };
-};
+export const apiKandidaatSchema = benoemd(
+  "ApiKandidaat",
+  apiMdtoKandidaatSchema.extend({
+    id: z.string(),
+    volgnummer: z.number().int(),
+    beoordeling: z.string(),
+    uitsluitReden: z.string().nullish(),
+    toelichting: z.string().nullish(),
+    // Alle niet-verwijderde opmerkingen, oudste eerst.
+    opmerkingen: z.array(apiOpmerkingSchema),
+    stekker: z.object({ naam: z.string() }),
+  })
+);
+export type ApiKandidaat = z.infer<typeof apiKandidaatSchema>;
 
-export type ApiKandidatenPagina = {
-  taak: ApiTaakContext;
-  // Deze pagina, plus tellingen en filterkeuzes over de hele lijst.
-  pagina: { offset: number; limit: number; totaal: number };
-  tellingen: { totaal: number; opgenomen: number; akkoord: number; uitgesloten: number; retour: number };
-  // `selectielijst`: de selectielijstcodes (ADR-0008); het filter `selectielijst` werkt op de code.
-  facetten: { status: string[]; selectielijst: string[]; termijnLooptijd: string[]; stekker: string[] };
-  kandidaten: ApiKandidaat[];
-};
+export const apiKandidatenPaginaSchema = benoemd(
+  "ApiKandidatenPagina",
+  z.object({
+    taak: apiTaakContextSchema,
+    // Deze pagina, plus tellingen en filterkeuzes over de hele lijst.
+    pagina: z.object({ offset: z.number().int(), limit: z.number().int(), totaal: z.number().int() }),
+    tellingen: z.object({
+      totaal: z.number().int(),
+      opgenomen: z.number().int(),
+      akkoord: z.number().int(),
+      uitgesloten: z.number().int(),
+      retour: z.number().int(),
+    }),
+    // `selectielijst`: de selectielijstcodes (ADR-0008); het filter `selectielijst` werkt op de code.
+    facetten: z.object({
+      status: z.array(z.string()),
+      selectielijst: z.array(z.string()),
+      termijnLooptijd: z.array(z.string()),
+      stekker: z.array(z.string()),
+    }),
+    kandidaten: z.array(apiKandidaatSchema),
+  })
+);
+export type ApiKandidatenPagina = z.infer<typeof apiKandidatenPaginaSchema>;
 
-export type ApiKandidaatIds = { ids: string[] };
+export const apiKandidaatIdsSchema = benoemd("ApiKandidaatIds", z.object({ ids: z.array(z.string()) }));
+export type ApiKandidaatIds = z.infer<typeof apiKandidaatIdsSchema>;
 
 export type ApiGedeeld<T> = { waarde: T | null; verschillend: boolean };
 
-export type ApiSelectieSamenvatting = {
-  aantal: number;
-  aantalObjecten: number;
-  aantalBetrokkenen: number;
-  classificatie: ApiGedeeld<string>;
-  selectielijst: ApiGedeeld<ApiSelectielijst>;
-  informatiecategorie: ApiGedeeld<string>;
-  termijnLooptijd: ApiGedeeld<string>;
-  stekker: ApiGedeeld<string>;
-  aggregatieniveau: ApiGedeeld<string>;
-  waardering: ApiGedeeld<string>;
-  dekkingInTijd: ApiGedeeld<[string | null, string | null]>;
-  termijnEinddatum: { van: string | null; tot: string | null };
-  volgnummer: { van: number | null; tot: number | null };
-  statussen: string[];
-};
+function gedeeld<T extends z.ZodType>(waarde: T) {
+  return z.object({ waarde: waarde.nullable(), verschillend: z.boolean() });
+}
 
-export type ApiBijgewerkt = { bijgewerkt: number };
+export const apiSelectieSamenvattingSchema = benoemd(
+  "ApiSelectieSamenvatting",
+  z.object({
+    aantal: z.number().int(),
+    aantalObjecten: z.number().int(),
+    aantalBetrokkenen: z.number().int(),
+    classificatie: gedeeld(z.string()),
+    selectielijst: gedeeld(apiSelectielijstSchema),
+    informatiecategorie: gedeeld(z.string()),
+    termijnLooptijd: gedeeld(z.string()),
+    stekker: gedeeld(z.string()),
+    aggregatieniveau: gedeeld(z.string()),
+    waardering: gedeeld(z.string()),
+    dekkingInTijd: gedeeld(z.tuple([z.string().nullable(), z.string().nullable()])),
+    termijnEinddatum: z.object({ van: z.string().nullable(), tot: z.string().nullable() }),
+    volgnummer: z.object({ van: z.number().int().nullable(), tot: z.number().int().nullable() }),
+    statussen: z.array(z.string()),
+  })
+);
+export type ApiSelectieSamenvatting = z.infer<typeof apiSelectieSamenvattingSchema>;
+
+export const apiBijgewerktSchema = benoemd("ApiBijgewerkt", z.object({ bijgewerkt: z.number().int() }));
+export type ApiBijgewerkt = z.infer<typeof apiBijgewerktSchema>;
 
 // --- beoordeling, accordering en statuswijzigingen ---------------------------------------
 
-export type ApiKandidaatBeoordeling = {
-  id: string;
-  beoordeling: string;
-  uitsluitReden?: string | null;
-  toelichting?: string | null;
-  versie: number;
-};
+export const apiKandidaatBeoordelingSchema = benoemd(
+  "ApiKandidaatBeoordeling",
+  z.object({
+    id: z.string(),
+    beoordeling: z.string(),
+    uitsluitReden: z.string().nullish(),
+    toelichting: z.string().nullish(),
+    versie: z.number().int(),
+  })
+);
+export type ApiKandidaatBeoordeling = z.infer<typeof apiKandidaatBeoordelingSchema>;
 
-export type ApiKandidaatAccordering = {
-  id: string;
-  beoordeling: string;
-  toelichting?: string | null;
-  versie: number;
-};
+export const apiKandidaatAccorderingSchema = benoemd(
+  "ApiKandidaatAccordering",
+  z.object({
+    id: z.string(),
+    beoordeling: z.string(),
+    toelichting: z.string().nullish(),
+    versie: z.number().int(),
+  })
+);
+export type ApiKandidaatAccordering = z.infer<typeof apiKandidaatAccorderingSchema>;
 
-export type ApiTaakStatus = {
-  id: string;
-  status: string;
-  stapSinds: string;
-  versie: number;
-};
+export const apiTaakStatusSchema = benoemd(
+  "ApiTaakStatus",
+  z.object({
+    id: z.string(),
+    status: z.string(),
+    stapSinds: datumTijd,
+    versie: z.number().int(),
+  })
+);
+export type ApiTaakStatus = z.infer<typeof apiTaakStatusSchema>;
 
-export type ApiVernietigingsopdracht = ApiTaakStatus & {
-  totaalKandidaten: number;
-  aantalOpdrachten: number;
-};
+export const apiVernietigingsopdrachtSchema = benoemd(
+  "ApiVernietigingsopdracht",
+  apiTaakStatusSchema.extend({
+    totaalKandidaten: z.number().int(),
+    aantalOpdrachten: z.number().int(),
+  })
+);
+export type ApiVernietigingsopdracht = z.infer<typeof apiVernietigingsopdrachtSchema>;
 
 // --- uitvoering en resultaten ------------------------------------------------------------
 
-export type ApiResultaatTellingen = {
-  success: number;
-  failed: number;
-  notFound: number;
-  skipped: number;
-  changed: number;
-};
+export const apiResultaatTellingenSchema = benoemd(
+  "ApiResultaatTellingen",
+  z.object({
+    success: z.number().int(),
+    failed: z.number().int(),
+    notFound: z.number().int(),
+    skipped: z.number().int(),
+    changed: z.number().int(),
+  })
+);
+export type ApiResultaatTellingen = z.infer<typeof apiResultaatTellingenSchema>;
 
-export type ApiUitvoeringStekker = {
-  id: string;
-  naam: string;
-  versie?: string | null;
-  stekkerStatus: string;
-  selectieId: string;
-  externSelectieId?: string | null;
-  externVernietigingId?: string | null;
-  vernietigingStatus?: string | null;
-  vernietigingGestartOp?: string | null;
-  vernietigingAfgerondOp?: string | null;
-  aantalKandidaten: number;
-  batchGrootte?: number;
-  aantalObjecten: number;
-  fout?: string | null;
-  // Wijze van vernietiging volgens de stekker (B-M4), vanaf de vrijgave.
-  vernietigingsmethode?: string | null;
-  vernietigingsmethodeToelichting?: string | null;
-  resultaatTellingen: ApiResultaatTellingen;
-  toegestaneActies?: string[];
-};
+export const apiUitvoeringStekkerSchema = benoemd(
+  "ApiUitvoeringStekker",
+  z.object({
+    id: z.string(),
+    naam: z.string(),
+    versie: z.string().nullish(),
+    stekkerStatus: z.string(),
+    selectieId: z.string(),
+    externSelectieId: z.string().nullish(),
+    externVernietigingId: z.string().nullish(),
+    vernietigingStatus: z.string().nullish(),
+    vernietigingGestartOp: z.string().nullish(),
+    vernietigingAfgerondOp: z.string().nullish(),
+    aantalKandidaten: z.number().int(),
+    batchGrootte: z.number().int().optional(),
+    aantalObjecten: z.number().int(),
+    fout: z.string().nullish(),
+    // Wijze van vernietiging volgens de stekker (B-M4), vanaf de vrijgave.
+    vernietigingsmethode: z.string().nullish(),
+    vernietigingsmethodeToelichting: z.string().nullish(),
+    resultaatTellingen: apiResultaatTellingenSchema,
+    toegestaneActies: z.array(z.string()).optional(),
+  })
+);
+export type ApiUitvoeringStekker = z.infer<typeof apiUitvoeringStekkerSchema>;
 
-export type ApiUitvoering = {
-  // toegestaneActies: welke taakacties de API toestaat, bijv. vernietiging.opdracht_geven.
-  taak: ApiTaakContext & { toegestaneActies?: string[] };
-  stekkers: ApiUitvoeringStekker[];
-};
+export const apiUitvoeringSchema = benoemd(
+  "ApiUitvoering",
+  z.object({
+    // toegestaneActies: welke taakacties de API toestaat, bijv. vernietiging.opdracht_geven.
+    taak: apiTaakContextSchema.extend({ toegestaneActies: z.array(z.string()).optional() }),
+    stekkers: z.array(apiUitvoeringStekkerSchema),
+  })
+);
+export type ApiUitvoering = z.infer<typeof apiUitvoeringSchema>;
 
-export type ApiVernietigingsresultaat = ApiMdtoKandidaat & {
-  id: string;
-  // Leeg zolang de stekker nog geen resultaat heeft gemeld (CC-8).
-  resultaat: string | null;
-  // Tijdstip van vernietiging (MDTO-event Vernietigen), alleen bij SUCCESS.
-  eventTijd: string | null;
-  // Vernietigingsmethode van de stekker (B-M4).
-  vernietigingsmethode: string | null;
-  foutcode?: string | null;
-  foutmelding?: string | null;
-  bronstatus?: string | null;
-  logReference?: string | null;
-  correlatieId?: string | null;
-  // Opmerkingen uit beoordeling en accordering (alleen lezen; `verwijderbaar` is altijd false).
-  opmerkingen: ApiOpmerking[];
-  stekker: {
-    naam: string;
-  };
-};
+export const apiVernietigingsresultaatSchema = benoemd(
+  "ApiVernietigingsresultaat",
+  apiMdtoKandidaatSchema.extend({
+    id: z.string(),
+    // Leeg zolang de stekker nog geen resultaat heeft gemeld (CC-8).
+    resultaat: z.string().nullable(),
+    // Tijdstip van vernietiging (MDTO-event Vernietigen), alleen bij SUCCESS.
+    eventTijd: z.string().nullable(),
+    // Vernietigingsmethode van de stekker (B-M4).
+    vernietigingsmethode: z.string().nullable(),
+    foutcode: z.string().nullish(),
+    foutmelding: z.string().nullish(),
+    bronstatus: z.string().nullish(),
+    logReference: z.string().nullish(),
+    correlatieId: z.string().nullish(),
+    // Opmerkingen uit beoordeling en accordering (alleen lezen; `verwijderbaar` is altijd false).
+    opmerkingen: z.array(apiOpmerkingSchema),
+    stekker: z.object({ naam: z.string() }),
+  })
+);
+export type ApiVernietigingsresultaat = z.infer<typeof apiVernietigingsresultaatSchema>;
 
-export type ApiArchivering = {
-  id: string;
-  status: "PENDING" | "SUCCESS" | "FAILED";
-  adapter: string;
-  locatie: string | null;
-  // SHA-256 van dossier.mdto.xml in het archiefpakket.
-  dossierSha256: string | null;
-  fout: string | null;
-  aangevraagdOp: string;
-  afgerondOp: string | null;
-};
+export const apiArchiveringSchema = benoemd(
+  "ApiArchivering",
+  z.object({
+    id: z.string(),
+    status: z.enum(["PENDING", "SUCCESS", "FAILED"]),
+    adapter: z.string(),
+    locatie: z.string().nullable(),
+    // SHA-256 van dossier.mdto.xml in het archiefpakket.
+    dossierSha256: z.string().nullable(),
+    fout: z.string().nullable(),
+    aangevraagdOp: datumTijd,
+    afgerondOp: z.string().nullable(),
+  })
+);
+export type ApiArchivering = z.infer<typeof apiArchiveringSchema>;
 
-export type ApiArchiveringStand = { taakStatus: string; archivering: ApiArchivering | null };
+export const apiArchiveringStandSchema = benoemd(
+  "ApiArchiveringStand",
+  z.object({ taakStatus: z.string(), archivering: apiArchiveringSchema.nullable() })
+);
+export type ApiArchiveringStand = z.infer<typeof apiArchiveringStandSchema>;
 
-export type ApiVernietigingsresultaten = {
-  // Archivering (CC-18): laatste poging en of de recordmanager nu kan archiveren.
-  taak: ApiTaakContext & { toegestaneActies?: string[]; archivering?: ApiArchivering | null };
-  resultaten: ApiVernietigingsresultaat[];
-};
+export const apiVernietigingsresultatenSchema = benoemd(
+  "ApiVernietigingsresultaten",
+  z.object({
+    // Archivering (CC-18): laatste poging en of de recordmanager nu kan archiveren.
+    taak: apiTaakContextSchema.extend({
+      toegestaneActies: z.array(z.string()).optional(),
+      archivering: apiArchiveringSchema.nullish(),
+    }),
+    resultaten: z.array(apiVernietigingsresultaatSchema),
+  })
+);
+export type ApiVernietigingsresultaten = z.infer<typeof apiVernietigingsresultatenSchema>;
 
 // --- verklaring (CC-17) ------------------------------------------------------------------
 
 // Tijdens de uitvoering is er nog niets; daarna (tot de worker klaar is) een voorbeeld
 // met `beschikbaar: false`, en vanaf de opgeslagen versie `beschikbaar: true`.
-export type ApiVerklaringNietBeschikbaar = { beschikbaar: false; status: string };
+export const apiVerklaringNietBeschikbaarSchema = benoemd(
+  "ApiVerklaringNietBeschikbaar",
+  z.object({ beschikbaar: z.literal(false), status: z.string() })
+);
+export type ApiVerklaringNietBeschikbaar = z.infer<typeof apiVerklaringNietBeschikbaarSchema>;
 
-export type ApiVerklaringTaak = {
-  id: string;
-  naam: string;
-  status: string;
-  stapSinds: string;
-  taakdefinitie: string;
-  peildatum: string | null;
-  rondes: number;
-  afgerondOp: string | null;
-  verantwoordelijken: {
-    recordmanager: ApiPersoon;
-    proceseigenaar: ApiPersoon;
-    archivaris: ApiPersoon;
-  };
-};
+export const apiVerklaringTaakSchema = benoemd(
+  "ApiVerklaringTaak",
+  z.object({
+    id: z.string(),
+    naam: z.string(),
+    status: z.string(),
+    stapSinds: datumTijd,
+    taakdefinitie: z.string(),
+    peildatum: z.string().nullable(),
+    rondes: z.number().int(),
+    afgerondOp: z.string().nullable(),
+    verantwoordelijken: z.object({
+      recordmanager: apiPersoonSchema,
+      proceseigenaar: apiPersoonSchema,
+      archivaris: apiPersoonSchema,
+    }),
+  })
+);
+export type ApiVerklaringTaak = z.infer<typeof apiVerklaringTaakSchema>;
 
-export type ApiVernietigingsverklaring = {
-  id?: string;
-  beschikbaar: boolean;
-  taak: ApiVerklaringTaak;
-  versie: number;
-  status: string;
-  gegenereerdOp: string;
-  bijlage: {
-    bestandsnaam: string;
-    contentType: string;
-    aantalRegels: number;
-    sha256: string;
-  };
-  tellingen: ApiResultaatTellingen & {
-    aantalObjecten: number;
-    aantalBetrokkenen: number;
-  };
-};
+export const apiVerklaringOpnieuwSchema = benoemd(
+  "ApiVerklaringOpnieuw",
+  z.object({ taakinstantieId: z.string(), jobId: z.string() }),
+  "De verklaring wordt opnieuw gemaakt door de worker (job in de outbox)."
+);
+export type ApiVerklaringOpnieuw = z.infer<typeof apiVerklaringOpnieuwSchema>;
 
-export type ApiVerklaring = ApiVernietigingsverklaring | ApiVerklaringNietBeschikbaar;
+export const apiVernietigingsverklaringSchema = benoemd(
+  "ApiVernietigingsverklaring",
+  z.object({
+    id: z.string().optional(),
+    beschikbaar: z.boolean(),
+    taak: apiVerklaringTaakSchema,
+    versie: z.number().int(),
+    status: z.string(),
+    gegenereerdOp: datumTijd,
+    bijlage: z.object({
+      bestandsnaam: z.string(),
+      contentType: z.string(),
+      aantalRegels: z.number().int(),
+      sha256: z.string(),
+    }),
+    tellingen: apiResultaatTellingenSchema.extend({
+      aantalObjecten: z.number().int(),
+      aantalBetrokkenen: z.number().int(),
+    }),
+  })
+);
+export type ApiVernietigingsverklaring = z.infer<typeof apiVernietigingsverklaringSchema>;
+
+export const apiVerklaringSchema = benoemd(
+  "ApiVerklaring",
+  z.union([apiVernietigingsverklaringSchema, apiVerklaringNietBeschikbaarSchema])
+);
+export type ApiVerklaring = z.infer<typeof apiVerklaringSchema>;
+
+// --- auditlog (ADR-0003) -------------------------------------------------------------------
+
+export const apiAuditEventSchema = benoemd(
+  "ApiAuditEvent",
+  z.object({
+    id: z.string(),
+    tijdstip: datumTijd,
+    actor: z.object({ type: z.string(), id: z.string().nullable(), naam: z.string().nullable() }),
+    rol: z.string().nullable(),
+    eventType: z.string(),
+    eventTypeBegrippenlijst: z.string(),
+    entiteit: z.object({ type: z.string(), id: z.string() }),
+    details: z.unknown(),
+    correlatieId: z.string().nullable(),
+    hash: z.string(),
+  })
+);
+export type ApiAuditEvent = z.infer<typeof apiAuditEventSchema>;
+
+export const apiAuditlogPaginaSchema = benoemd(
+  "ApiAuditlogPagina",
+  z.object({
+    pagina: z.number().int(),
+    perPagina: z.number().int(),
+    totaal: z.number().int(),
+    items: z.array(apiAuditEventSchema),
+  })
+);
+export type ApiAuditlogPagina = z.infer<typeof apiAuditlogPaginaSchema>;
+
+const ketenFoutSchema = z.object({ id: z.string(), reden: z.enum(["hash", "schakel"]) });
+
+export const apiAuditVerificatieSchema = benoemd(
+  "ApiAuditVerificatie",
+  z.object({
+    taakinstantieId: z.string(),
+    intact: z.boolean(),
+    aantalEvents: z.number().int(),
+    laatsteHash: z.string().nullable(),
+    // Begrensd: bij een kapotte keten volstaan de eerste afwijkingen.
+    fouten: z.array(ketenFoutSchema),
+  })
+);
+export type ApiAuditVerificatie = z.infer<typeof apiAuditVerificatieSchema>;
 
 // --- Werkkopie en grafsteen (ADR-0006) -----------------------------------------------------
 
-export type ApiWerkkopieBewaartermijn = {
-  sleutel: "werkkopie_bewaartermijn";
-  waarde: string;
-  // "standaard": nog niet vastgelegd; geldt de beginwaarde WERKKOPIE_BEWAARTERMIJN.
-  bron: "instelling" | "standaard";
-  gewijzigdOp: string | null;
-};
+export const apiWerkkopieBewaartermijnSchema = benoemd(
+  "ApiWerkkopieBewaartermijn",
+  z.object({
+    sleutel: z.literal("werkkopie_bewaartermijn"),
+    waarde: z.string(),
+    // "standaard": nog niet vastgelegd; geldt de beginwaarde WERKKOPIE_BEWAARTERMIJN.
+    bron: z.enum(["instelling", "standaard"]),
+    gewijzigdOp: z.string().nullable(),
+  })
+);
+export type ApiWerkkopieBewaartermijn = z.infer<typeof apiWerkkopieBewaartermijnSchema>;
 
-export type ApiGrafsteen = {
-  id: string;
-  taakinstantieId: string;
-  taakdefinitieId: string;
-  archiefvormer: ApiVerwijzing;
-  archivering: { id: string; adapter: string; locatie: string; openzaakZaakId: string | null; dossierSha256: string };
-  verificatie: { tijdstip: string; uitkomst: string; aantalBestanden: number };
-  auditlog: { aantalEvents: number; laatsteHash: string };
-  lijstHash: string | null;
-  verklaring: { versie: number | null; pdfSha256: string | null };
-  afgerondOp: string | null;
-  gearchiveerdOp: string;
-  verwijderdOp: string;
-  bewaartermijnWerkkopie: string;
-  hash: string;
-};
+export const apiGrafsteenSchema = benoemd(
+  "ApiGrafsteen",
+  z.object({
+    id: z.string(),
+    taakinstantieId: z.string(),
+    taakdefinitieId: z.string(),
+    archiefvormer: apiVerwijzingSchema,
+    archivering: z.object({
+      id: z.string(),
+      adapter: z.string(),
+      locatie: z.string(),
+      openzaakZaakId: z.string().nullable(),
+      dossierSha256: z.string(),
+    }),
+    verificatie: z.object({ tijdstip: datumTijd, uitkomst: z.string(), aantalBestanden: z.number().int() }),
+    auditlog: z.object({ aantalEvents: z.number().int(), laatsteHash: z.string() }),
+    lijstHash: z.string().nullable(),
+    verklaring: z.object({ versie: z.number().int().nullable(), pdfSha256: z.string().nullable() }),
+    afgerondOp: z.string().nullable(),
+    gearchiveerdOp: datumTijd,
+    verwijderdOp: datumTijd,
+    bewaartermijnWerkkopie: z.string(),
+    hash: z.string(),
+  })
+);
+export type ApiGrafsteen = z.infer<typeof apiGrafsteenSchema>;
 
-export type ApiDossier =
-  | { status: "werkkopie_aanwezig"; taakinstantieId: string; taakStatus: string }
-  | { status: "werkkopie_verwijderd"; taakinstantieId: string; grafsteen: ApiGrafsteen };
+export const apiDossierSchema = benoemd(
+  "ApiDossier",
+  z.discriminatedUnion("status", [
+    z.object({ status: z.literal("werkkopie_aanwezig"), taakinstantieId: z.string(), taakStatus: z.string() }),
+    z.object({ status: z.literal("werkkopie_verwijderd"), taakinstantieId: z.string(), grafsteen: apiGrafsteenSchema }),
+  ])
+);
+export type ApiDossier = z.infer<typeof apiDossierSchema>;
 
-export type ApiGrafsteenVerificatie = {
-  intact: boolean;
-  aantal: number;
-  laatsteHash: string | null;
-  fouten: Array<{ id: string; reden: "hash" | "schakel" }>;
-};
+export const apiGrafsteenVerificatieSchema = benoemd(
+  "ApiGrafsteenVerificatie",
+  z.object({
+    intact: z.boolean(),
+    aantal: z.number().int(),
+    laatsteHash: z.string().nullable(),
+    fouten: z.array(ketenFoutSchema),
+  })
+);
+export type ApiGrafsteenVerificatie = z.infer<typeof apiGrafsteenVerificatieSchema>;

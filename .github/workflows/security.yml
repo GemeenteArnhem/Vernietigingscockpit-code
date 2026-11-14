@@ -1,0 +1,72 @@
+# SCA (NeRDS-leidraad 6.1): bekende kwetsbaarheden in dependencies en container-images,
+# bij elke wijziging en wekelijks. De build faalt bij HIGH of CRITICAL.
+name: Security
+
+on:
+  push:
+    branches: [main, dev, dev5, dev6]
+  pull_request:
+  schedule:
+    # Maandag 05:37 UTC; nieuwe advisories voor ongewijzigde dependencies.
+    - cron: "37 5 * * 1"
+
+permissions:
+  contents: read
+
+env:
+  # Vastgepind op digest; bijwerken met de digest van een nieuwe release op Docker Hub.
+  TRIVY_IMAGE: aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+
+jobs:
+  npm-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Leest alleen package-lock.json; installeren is niet nodig.
+      - name: npm audit (high en critical)
+        run: npm audit --audit-level=high
+
+  trivy-repo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Lockfile (dependencies). Misconfiguratie-scan van Dockerfile/compose volgt later.
+      - name: Trivy op de repository
+        run: >
+          docker run --rm -v "$PWD:/src" -w /src "$TRIVY_IMAGE"
+          fs --scanners vuln
+          --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+          --skip-dirs node_modules
+          .
+
+  trivy-images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [cockpit-api, cockpit-migrate, cockpit-web]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Alleen voor de scan: de build-args hoeven niet te kloppen, alleen syntactisch geldig.
+      - name: Image bouwen (${{ matrix.target }})
+        run: >
+          docker build --target ${{ matrix.target }}
+          --build-arg PRISMA_GENERATE_DATABASE_URL=postgresql://prisma:prisma@localhost:5432/prisma?schema=public
+          -t scan/${{ matrix.target }}:ci .
+
+      - name: Trivy op de image
+        run: >
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE"
+          image --scanners vuln
+          --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+          scan/${{ matrix.target }}:ci

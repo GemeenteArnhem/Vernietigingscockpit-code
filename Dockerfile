@@ -49,6 +49,12 @@ FROM cockpit-api-build AS cockpit-migrate
 
 ENV NODE_ENV=production
 
+# Beveiligingsupdates van Alpine, en een npm zonder bekende kwetsbaarheden (de npm in
+# node:22-alpine bevat kwetsbare dependencies). npm blijft nodig voor `npm run db:seed`.
+# apk upgrade tot drie keer: de Alpine-CDN geeft soms een tijdelijke I/O-fout.
+RUN (apk upgrade --no-cache || (sleep 5 && apk upgrade --no-cache) || (sleep 20 && apk upgrade --no-cache)) \
+  && npm install -g npm@11.21.2 && npm cache clean --force
+
 USER node
 
 CMD ["sh", "-c", "node /app/node_modules/prisma/build/index.js migrate deploy && if [ -n \"$APP_DB_USER\" ]; then node scripts/db-app-gebruiker.mjs; fi"]
@@ -73,8 +79,14 @@ COPY --from=cockpit-api-build /app/apps/cockpit-api/dist ./apps/cockpit-api/dist
 
 WORKDIR /app/apps/cockpit-api
 
+# Beveiligingsupdates van Alpine. npm, npx en corepack zijn in deze image niet nodig (de API
+# start met node) en bevatten kwetsbare dependencies; ze gaan eruit.
 # Archiefmap voor de worker (CC-18); een volume op dit pad neemt de eigenaar over.
-RUN mkdir -p /archief && chown node:node /archief
+# apk upgrade tot drie keer: de Alpine-CDN geeft soms een tijdelijke I/O-fout.
+RUN (apk upgrade --no-cache || (sleep 5 && apk upgrade --no-cache) || (sleep 20 && apk upgrade --no-cache)) \
+  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+     /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+  && mkdir -p /archief && chown node:node /archief
 
 USER node
 
@@ -112,6 +124,11 @@ RUN npm run build
 
 # Draait als niet-root gebruiker (CC-14); luistert op 8080.
 FROM nginxinc/nginx-unprivileged:1.29-alpine AS cockpit-web
+
+# Beveiligingsupdates van Alpine; daarna weer als de niet-root gebruiker van de basisimage (101).
+USER root
+RUN (apk upgrade --no-cache || (sleep 5 && apk upgrade --no-cache) || (sleep 20 && apk upgrade --no-cache))
+USER 101
 
 # De nginx-configuratie (met CSP) wordt bij het starten gemaakt uit dit template.
 COPY apps/cockpit-web/nginx.conf.template /etc/nginx/cockpit/default.conf.template

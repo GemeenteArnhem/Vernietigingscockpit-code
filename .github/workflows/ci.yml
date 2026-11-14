@@ -6,6 +6,15 @@ on:
   pull_request:
 
 jobs:
+  # Licentie- en copyrightinformatie per bestand (REUSE, NeRDS-leidraad); zie REUSE.toml.
+  reuse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: REUSE-controle
+        uses: fsfe/reuse-action@v6
+
   controle:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -50,12 +59,41 @@ jobs:
       - name: Prisma-client genereren
         run: npm run db:generate --workspace @vernietigingscockpit/cockpit-api
 
+      # OpenAPI-specificatie van de cockpit-API (NeRDS-leidraad H4/H9): gegenereerd uit de code;
+      # faalt als apps/cockpit-api/openapi.json niet meer bij de code past.
+      - name: OpenAPI-specificatie controleren
+        run: npm run check:openapi --workspace @vernietigingscockpit/cockpit-api
+
       - run: npm run typecheck
       - run: npm run lint
-      - run: npm test
-
+      # Tests met testdekking (NeRDS-leidraad 13.1): cockpit-api (unit + integratie in één run)
+      # en cockpit-web (unit, pagina's en toegankelijkheid met axe). Faalt als de dekking onder
+      # de drempels in apps/*/vitest.config.ts zakt.
       # Integratietests starten PostgreSQL via Testcontainers (Docker is beschikbaar op de runner).
-      - run: npm run test:integratie
+      - name: Tests met testdekking
+        run: npm run test:dekking
+
+      - name: Testdekking in de samenvatting
+        if: always()
+        run: |
+          for app in cockpit-api cockpit-web; do
+            bestand=apps/$app/coverage/coverage-summary.json
+            test -f "$bestand" || continue
+            node -e '
+              const t = require("./" + process.argv[1]).total;
+              const regels = ["lines", "branches", "functions", "statements"]
+                .map((k) => `| ${k} | ${t[k].pct}% | ${t[k].covered}/${t[k].total} |`);
+              console.log(["### Testdekking " + process.argv[2], "", "| Soort | Dekking | Gedekt |", "|---|---|---|", ...regels, ""].join("\n"));
+            ' "$bestand" "$app" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Dekkingsrapporten bewaren
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dekkingsrapporten
+          path: apps/*/coverage/
+          if-no-files-found: ignore
 
       - run: npm run build
 
@@ -89,7 +127,34 @@ jobs:
         env:
           DATABASE_URL: postgresql://prisma:prisma@localhost:5432/prisma?schema=public
 
+      # E2E_BEHOUD=1: de omgeving blijft draaien voor de DAST-scan hieronder.
       - name: E2E (cockpit + teststekker met OAuth2 + nep-IdP)
         run: npm run test:e2e
+        env:
+          STEKKER_REPO: ${{ github.workspace }}/stekker
+          E2E_BEHOUD: "1"
+
+      # DAST (NeRDS-leidraad 6.1): passieve ZAP-baselinescan op de API van de E2E-omgeving,
+      # zonder inloggen. Faalt alleen bij bevindingen met risico High; het rapport is een artifact.
+      - name: ZAP-baselinescan op de API
+        run: |
+          mkdir -p zap && chmod 777 zap
+          docker run --rm --network host -v "$PWD/zap:/zap/wrk" zaproxy/zap-stable:2.17.0 \
+            zap-baseline.py -t http://localhost:39700/api/v1 -I -J zap-rapport.json -r zap-rapport.html
+          hoog=$(jq '[.site[].alerts[] | select(.riskcode == "3")] | length' zap/zap-rapport.json)
+          echo "Bevindingen met risico High: $hoog"
+          test "$hoog" -eq 0
+
+      - name: ZAP-rapport bewaren
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-rapport
+          path: zap/
+          if-no-files-found: ignore
+
+      - name: E2E-omgeving opruimen
+        if: always()
+        run: docker compose -f infrastructure/compose/docker-compose.test.yml down -v --remove-orphans
         env:
           STEKKER_REPO: ${{ github.workspace }}/stekker

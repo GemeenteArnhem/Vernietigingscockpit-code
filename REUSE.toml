@@ -1,0 +1,18 @@
+# Licentie- en copyrightinformatie per bestand volgens REUSE (https://reuse.software),
+# NeRDS-leidraad. Controleren: `reuse lint` (ook in CI).
+# Bij meerdere passende regels geldt de laatste.
+version = 1
+
+[[annotations]]
+path = "**"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 Gemeente Arnhem"
+SPDX-License-Identifier = "EUPL-1.2"
+
+# XML-schema MDTO van het Nationaal Archief, alleen gebruikt in tests.
+# De licentie moet nog worden bevestigd; zie LICENSES/LicenseRef-MDTO-Nationaal-Archief.txt.
+[[annotations]]
+path = "apps/cockpit-api/test/mdto/MDTO-XML1.0.1.xsd"
+precedence = "override"
+SPDX-FileCopyrightText = "Nationaal Archief"
+SPDX-License-Identifier = "LicenseRef-MDTO-Nationaal-Archief"

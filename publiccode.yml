@@ -1,0 +1,67 @@
+# This repository adheres to the publiccode.yml standard by including this
+# metadata file that makes public software easily discoverable.
+# More info at https://github.com/publiccodeyml/publiccode.yml
+
+publiccodeYmlVersion: "0.7"
+
+name: Vernietigingscockpit
+url: "https://github.com/GemeenteArnhem/Vernietigingscockpit-code"
+
+softwareType: standalone/web
+platforms:
+  - web
+
+categories:
+  - document-management
+  - workflow-management
+
+developmentStatus: development
+
+description:
+  nl:
+    shortDescription: >-
+      Cockpit om archiefbescheiden uit aangesloten stekkers te selecteren,
+      beoordelen en vernietigen of overbrengen.
+    longDescription: >
+      De Vernietigingscockpit ondersteunt gemeenten bij het periodiek
+      vernietigen of overbrengen van archiefbescheiden die in verschillende
+      bronsystemen zijn opgeslagen.
+
+      Bronsystemen worden aangesloten via een stekker: een koppeling die de
+      Stekker API implementeert en de metadata van informatieobjecten volgens
+      MDTO aanlevert. De cockpit selecteert op basis van de selectielijst welke
+      informatieobjecten in aanmerking komen, laat medewerkers in hun eigen rol
+      de selectie beoordelen en legt alle stappen vast in een onveranderbaar
+      auditlog.
+
+      De oplossing bestaat uit een webapplicatie, een API met achtergrondworker
+      en een PostgreSQL-database, en draait in containers.
+    features:
+      - Aansluiten van bronsystemen via stekkers (Stekker API)
+      - Selectie van informatieobjecten op basis van selectielijsten
+      - Beoordeling per rol met eigen werkvoorraad
+      - Opmerkingen per record
+      - Onveranderbaar auditlog van alle handelingen
+      - Inloggen via OpenID Connect
+
+legal:
+  license: EUPL-1.2
+  mainCopyrightOwner: Gemeente Arnhem
+  repoOwner: Gemeente Arnhem
+
+intendedAudience:
+  countries:
+    - NL
+  scope:
+    - government
+
+localisation:
+  availableLanguages:
+    - nl
+  localisationReady: false
+
+maintenance:
+  type: internal
+  contacts:
+    - name: Gemeente Arnhem
+      affiliation: Gemeente Arnhem

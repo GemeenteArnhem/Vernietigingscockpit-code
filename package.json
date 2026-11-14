@@ -1,5 +1,6 @@
 {
   "name": "vernietigingscockpit-code",
+  "version": "0.1.0",
   "private": true,
   "workspaces": [
     "packages/*",
@@ -15,6 +16,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "test:integratie": "npm run test:integratie --workspace @vernietigingscockpit/cockpit-api",
+    "test:dekking": "npm run test:dekking --workspaces --if-present",
     "test:e2e": "node scripts/e2e.mjs"
   },
   "devDependencies": {
